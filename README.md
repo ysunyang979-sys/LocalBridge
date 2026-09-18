@@ -162,9 +162,53 @@ LocalBridge provides a strongly-typed bidirectional JSON-RPC 2.0 communication c
 - **Concurrency & Size Limits**: Capped at `MAX_PENDING_REQUESTS = 64` and `MAX_RPC_MESSAGE_SIZE = 1 MiB`.
 - **Timeout Management**: Dedicated timer per request (`system.ping` = 5s, `system.info` = 10s). Timed out requests reject with `RPC_TIMEOUT` and are immediately purged to prevent memory leaks.
 - **Disconnect Cleanup**: Disconnected sockets cancel all active timers and reject all pending requests immediately with `RUNNER_DISCONNECTED`.
-### 6. Management API Security Boundary
+### 6. Local Project Authorization & Sandboxing (Phase 4)
 
-- **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
+LocalBridge Phase 4 introduces a strict project authorization boundary and an impenetrable path security sandbox.
+
+#### Core Principle: Zero Remote Authorization
+Remote AI models, external MCP clients, and even the LocalBridge Server CANNOT authorize or alter local directories. Only the human user physically on the Runner machine can authorize directories using the local Runner CLI. Physical file paths (`root`, `canonicalRoot`, `absolutePath`) NEVER leave the local machine and are never transmitted over the network or saved on the Server.
+
+#### Runner Project CLI
+Run the following commands on the local machine where the Runner is installed:
+
+```bash
+# Authorize a new local directory (assigns stable UUIDv4 proj_xxx ID)
+pnpm --filter @localbridge/runner project:add /path/to/my-project --name "My Project"
+
+# List all locally authorized projects and their canonical physical roots
+pnpm --filter @localbridge/runner project:list
+
+# Temporarily disable a project without removing it
+pnpm --filter @localbridge/runner project:disable <project_id>
+
+# Re-enable a disabled project
+pnpm --filter @localbridge/runner project:enable <project_id>
+
+# Remove authorization for a project
+pnpm --filter @localbridge/runner project:remove <project_id>
+```
+
+#### Multi-Tier Path Sandbox Architecture
+Every relative path requested within a project undergoes rigorous validation:
+1. **Lexical Inspection**: Blocks directory traversal (`../`, `..\`, mixed separators), absolute paths, drive-relative paths (`C:foo`), and root-relative paths (`/foo`, `\foo`).
+2. **Windows Platform Defenses**:
+   - Rejects UNC network paths (`\\server\share`).
+   - Rejects NT device namespaces (`\\?\` and `\\.\`).
+   - Rejects NTFS Alternate Data Streams (`file.txt:stream`).
+   - Rejects DOS reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`).
+   - Rejects trailing dots and spaces on path segments (`foo.txt.`, `foo.txt `).
+   - Rejects null bytes (`\0`).
+3. **Physical Canonical Containment**: Resolves paths to physical disk targets using `fs.realpathSync.native` and enforces strict containment inside the project's canonical root using `path.relative()` to eliminate prefix-confusion vulnerabilities (`C:\Project` vs `C:\Project-Evil`).
+4. **Symlink & Junction Escape Detection**: Catches symlinks and Windows directory junctions that attempt to point outside the authorized project root with `PATH_SYMLINK_ESCAPE`.
+5. **Sensitive File Shield**: Proactively shields critical credentials and secrets (`.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `.ssh/*`, `.aws/*`, `.git/*`, `credentials.json`, `client_secret*.json`).
+
+> [!IMPORTANT]
+> **Phase 4 Status Notice**: LocalBridge is currently at Phase 4. All file reading, file writing, directory listing, and shell commands remain strictly disabled. Physical directory paths never leave the local Runner daemon.
+
+### 7. Management API Security Boundary
+
+- **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
 - **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.
 
 ---

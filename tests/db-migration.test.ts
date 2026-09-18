@@ -29,13 +29,14 @@ describe("Database Migrations & Persistence", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("applies 0001_initial.sql and tracks schema_migrations correctly", () => {
+  it("applies migrations and tracks schema_migrations correctly", () => {
     const conn = initDatabase(dbFilePath, migrationsDir);
 
-    expect(conn.migrationResult.appliedCount).toBe(1);
-    expect(conn.migrationResult.currentVersion).toBe(1);
+    expect(conn.migrationResult.appliedCount).toBe(2);
+    expect(conn.migrationResult.currentVersion).toBe(2);
     expect(conn.migrationResult.appliedMigrations).toContain("0001_initial.sql");
-    expect(getCurrentSchemaVersion(conn.db)).toBe(1);
+    expect(conn.migrationResult.appliedMigrations).toContain("0002_projects_metadata.sql");
+    expect(getCurrentSchemaVersion(conn.db)).toBe(2);
 
     // Verify tables exist
     const tables = (
@@ -52,21 +53,32 @@ describe("Database Migrations & Persistence", () => {
     expect(tables).toContain("projects");
     expect(tables).toContain("audit_logs");
 
+    // Verify projects table has no 'root' column
+    const columns = (
+      conn.db
+        .prepare("PRAGMA table_info(projects)")
+        .all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    expect(columns).not.toContain("root");
+    expect(columns).toContain("runner_id");
+    expect(columns).toContain("name");
+    expect(columns).toContain("enabled");
+
     conn.close();
   });
 
   it("is idempotent when running migrations multiple times", () => {
     const conn1 = initDatabase(dbFilePath, migrationsDir);
-    expect(conn1.migrationResult.appliedCount).toBe(1);
+    expect(conn1.migrationResult.appliedCount).toBe(2);
     conn1.close();
 
     const conn2 = initDatabase(dbFilePath, migrationsDir);
     expect(conn2.migrationResult.appliedCount).toBe(0);
-    expect(conn2.migrationResult.currentVersion).toBe(1);
+    expect(conn2.migrationResult.currentVersion).toBe(2);
     conn2.close();
   });
 
-  it("persists token and project data across database reconnections", () => {
+  it("persists token and project metadata across database reconnections", () => {
     const rawToken = generateMcpToken();
     const tokenHash = hashToken(rawToken);
 
@@ -81,10 +93,10 @@ describe("Database Migrations & Persistence", () => {
 
     conn1.db
       .prepare(
-        `INSERT INTO projects (id, name, root, enabled, created_at, updated_at)
+        `INSERT INTO projects (id, runner_id, name, enabled, first_seen_at, last_seen_at)
          VALUES (?, ?, ?, ?, ?, ?)`
       )
-      .run("proj_1", "my-blog", "D:\\Projects\\my-blog", 1, Date.now(), Date.now());
+      .run("proj_1", "runner_1", "my-blog", 1, Date.now(), Date.now());
 
     conn1.close();
 
@@ -104,7 +116,8 @@ describe("Database Migrations & Persistence", () => {
 
     expect(project).toBeDefined();
     expect(project?.name).toBe("my-blog");
-    expect(project?.root).toBe("D:\\Projects\\my-blog");
+    expect(project?.runner_id).toBe("runner_1");
+    expect((project as Record<string, unknown>).root).toBeUndefined();
 
     conn2.close();
   });

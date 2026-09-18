@@ -25,11 +25,11 @@ export interface RunnerRow {
 
 export interface ProjectRow {
   id: string;
+  runner_id: string;
   name: string;
-  root: string;
   enabled: number; // 0 or 1
-  created_at: number;
-  updated_at: number;
+  first_seen_at: number;
+  last_seen_at: number;
 }
 
 export interface AuditLogRow {

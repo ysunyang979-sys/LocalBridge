@@ -16,9 +16,9 @@ export type Project = z.infer<typeof ProjectSchema>;
  */
 export const ProjectPublicSchema = z.object({
   id: z.string(),
+  runnerId: z.string(),
   name: z.string(),
   enabled: z.boolean(),
-  gitBranch: z.string().optional(),
-  gitClean: z.boolean().optional(),
+  available: z.boolean(),
 });
 export type ProjectPublic = z.infer<typeof ProjectPublicSchema>;

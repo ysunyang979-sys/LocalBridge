@@ -6,6 +6,7 @@ export const RunnerDaemonConfigSchema = z.object({
   runnerName: z.string().default("LocalBridge-Runner"),
   runnerId: z.string().optional(),
   statePath: z.string().optional(),
+  projectsPath: z.string().optional(),
   heartbeatIntervalMs: z.number().int().positive().default(15000),
   reconnect: z
     .object({

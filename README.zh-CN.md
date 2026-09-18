@@ -164,9 +164,53 @@ LocalBridge 在 Server 与已连入的 Runner 之间建立了强类型的双向 
 - **网络中断立即回收**：Runner 意外断开时，所有未完成请求立即清理定时器并以 `RUNNER_DISCONNECTED` 失败响应，杜绝 Promise 挂死。
 - **标准错误处理**：标准 JSON-RPC 错误码（`-32700`、`-32600`、`-32601`、`-32602`、`-32603`），绝不向远端泄露本地调用栈或环境机密。
 
-### 6. 管理 API 安全边界与本地访问说明
+### 6. 本地项目授权与路径沙箱 (Phase 4)
 
-- **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
+LocalBridge Phase 4 建立了不可逾越的本地授权安全边界与高强度多层路径沙箱。
+
+#### 核心原则：零远端授权 (Zero Remote Authorization)
+远端 AI 模型、外部 MCP Client 以及 LocalBridge Server 本身，**绝对无法**指定或修改 Runner 机器上的本地文件目录。只有物理位于 Runner 机器上的合法用户，才能通过本地 Runner CLI 显式授权目录。物理真实路径（`root`、`canonicalRoot`、`absolutePath`）**绝不离开** Runner 宿主机，绝不会在网络中传输，更不会持久化到服务端数据库。
+
+#### Runner 本地项目 CLI 指令
+在运行 Runner 守护进程的本地设备终端中执行：
+
+```bash
+# 显式授权本地真实目录（生成持久稳定的 UUIDv4 标识符 proj_xxx）
+pnpm --filter @localbridge/runner project:add /path/to/my-project --name "My Project"
+
+# 列出本地已授权的所有项目及其真实物理规范根目录
+pnpm --filter @localbridge/runner project:list
+
+# 临时禁用某个项目（保持授权记录但不允许任何访问）
+pnpm --filter @localbridge/runner project:disable <project_id>
+
+# 重新启用项目
+pnpm --filter @localbridge/runner project:enable <project_id>
+
+# 彻底移除项目的本地授权
+pnpm --filter @localbridge/runner project:remove <project_id>
+```
+
+#### 多层纵深路径沙箱防护模型
+所有针对项目的相对路径操作请求均在 `@localbridge/security` 中经过严格的沙箱防御校验：
+1. **词法安全校验 (Lexical Analysis)**：拦截各种形式的目录穿越（`../`、`..\`、混合分隔符 `a/b/../../..`）、绝对路径（如 `C:\Windows` 或 `/etc/passwd`）、盘符相对路径（`C:foo`）以及根相对路径（`/foo`、`\foo`）。
+2. **Windows 平台特化防御**：
+   - 严禁 UNC 网络路径（`\\server\share`）。
+   - 严禁 NT 设备命名空间（`\\?\` 与 `\\.\`）。
+   - 严禁 NTFS 备用数据流（ADS 冒号注入，如 `file.txt:stream`）。
+   - 严禁 DOS 保留设备名（`CON`、`PRN`、`AUX`、`NUL`、`COM1`~`COM9`、`LPT1`~`LPT9`）。
+   - 严禁路径片段尾随点或空格（如 `foo.txt.` 或 `foo.txt `，防止 Windows 自动脱点导致安全策略绕过）。
+   - 严禁空字节注入（`\0`）。
+3. **物理规范包含性检查 (Canonical Containment)**：基于操作系统底层的 `fs.realpathSync.native` 获取物理真实路径，并严格使用 `path.relative()` 计算相对距离，防止前缀混淆攻击（例如 `C:\Project` 与 `C:\Project-Evil`）。
+4. **软链接与 Windows 目录联接穿越防御 (Symlink & Junction Escape Protection)**：检测并拦截指向项目根目录外部的软链接及 Windows Directory Junction，抛出 `PATH_SYMLINK_ESCAPE`。
+5. **敏感凭证屏蔽策略 (Sensitive File Shield)**：默认主动阻断高危凭证与私钥的探测与访问（包含 `.env`、`.env.*`、`*.pem`、`*.key`、`id_rsa*`、`id_ed25519*`、`.ssh/*`、`.aws/*`、`.git/*`、`credentials.json`、`client_secret*.json` 等）。
+
+> [!IMPORTANT]
+> **Phase 4 状态声明**：LocalBridge 当前处于 Phase 4。任何实际的文件读取、文件写入、目录列出、Shell 执行均未开放，物理路径绝对保留在用户本地机器。
+
+### 7. 管理 API 安全边界与本地访问说明
+
+- **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。
 
 ---

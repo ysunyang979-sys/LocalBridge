@@ -9,6 +9,9 @@ export const MAX_RPC_TIMEOUT = 300000;
 export const DEFAULT_RPC_TIMEOUT = 10000;
 export const SYSTEM_PING_TIMEOUT = 5000;
 export const SYSTEM_INFO_TIMEOUT = 10000;
+export const PROJECT_LIST_TIMEOUT = 10000;
+export const PROJECT_INFO_TIMEOUT = 5000;
+export const PROJECT_VALIDATE_TIMEOUT = 5000;
 
 export const MAX_RPC_MESSAGE_SIZE = 1024 * 1024; // 1 MiB (1,048,576 bytes)
 export const MAX_PENDING_REQUESTS = 64;
@@ -54,6 +57,48 @@ export const SystemInfoResultSchema = z.object({
 });
 export type SystemInfoResult = z.infer<typeof SystemInfoResultSchema>;
 
+// 3. project.list
+export const ProjectListParamsSchema = z.object({}).strict();
+export type ProjectListParams = z.infer<typeof ProjectListParamsSchema>;
+
+export const ProjectListItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+});
+export type ProjectListItem = z.infer<typeof ProjectListItemSchema>;
+
+export const ProjectListResultSchema = z.array(ProjectListItemSchema);
+export type ProjectListResult = z.infer<typeof ProjectListResultSchema>;
+
+// 4. project.info
+export const ProjectInfoParamsSchema = z.object({
+  projectId: z.string(),
+}).strict();
+export type ProjectInfoParams = z.infer<typeof ProjectInfoParamsSchema>;
+
+export const ProjectInfoResultSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+  healthy: z.boolean(),
+});
+export type ProjectInfoResult = z.infer<typeof ProjectInfoResultSchema>;
+
+// 5. project.validate
+export const ProjectValidateParamsSchema = z.object({
+  projectId: z.string(),
+  path: z.string().optional(),
+}).strict();
+export type ProjectValidateParams = z.infer<typeof ProjectValidateParamsSchema>;
+
+export const ProjectValidateResultSchema = z.object({
+  valid: z.boolean(),
+  isSensitive: z.boolean().optional(),
+  reason: z.string().optional(),
+});
+export type ProjectValidateResult = z.infer<typeof ProjectValidateResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -63,6 +108,18 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemInfo]: {
     params: SystemInfoParams;
     result: SystemInfoResult;
+  };
+  [RunnerRpcMethods.ProjectList]: {
+    params: ProjectListParams;
+    result: ProjectListResult;
+  };
+  [RunnerRpcMethods.ProjectInfo]: {
+    params: ProjectInfoParams;
+    result: ProjectInfoResult;
+  };
+  [RunnerRpcMethods.ProjectValidate]: {
+    params: ProjectValidateParams;
+    result: ProjectValidateResult;
   };
 }
 
@@ -77,5 +134,17 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.SystemInfo]: {
     params: SystemInfoParamsSchema,
     result: SystemInfoResultSchema,
+  },
+  [RunnerRpcMethods.ProjectList]: {
+    params: ProjectListParamsSchema,
+    result: ProjectListResultSchema,
+  },
+  [RunnerRpcMethods.ProjectInfo]: {
+    params: ProjectInfoParamsSchema,
+    result: ProjectInfoResultSchema,
+  },
+  [RunnerRpcMethods.ProjectValidate]: {
+    params: ProjectValidateParamsSchema,
+    result: ProjectValidateResultSchema,
   },
 } as const;

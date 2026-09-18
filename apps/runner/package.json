@@ -1,6 +1,6 @@
 {
   "name": "@localbridge/runner",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -9,7 +9,13 @@
     "build": "tsup src/index.ts --format esm --clean",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "project": "tsx src/cli/project-cli.ts",
+    "project:add": "tsx src/cli/project-cli.ts add",
+    "project:list": "tsx src/cli/project-cli.ts list",
+    "project:remove": "tsx src/cli/project-cli.ts remove",
+    "project:enable": "tsx src/cli/project-cli.ts enable",
+    "project:disable": "tsx src/cli/project-cli.ts disable"
   },
   "dependencies": {
     "@localbridge/protocol": "workspace:*",

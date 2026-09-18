@@ -14,11 +14,17 @@ import { detectCapabilities } from "./system/capabilities.js";
 import { ReconnectController } from "./client/reconnect.js";
 import { HeartbeatMonitor } from "./client/heartbeat.js";
 import { RunnerWsClient } from "./client/websocket.js";
+import os from "node:os";
+import path from "node:path";
 import { RpcRouter } from "./rpc/router.js";
 import { createSystemPingHandler } from "./rpc/handlers/system-ping.js";
 import { createSystemInfoHandler } from "./rpc/handlers/system-info.js";
+import { createProjectListHandler } from "./rpc/handlers/project-list.js";
+import { createProjectInfoHandler } from "./rpc/handlers/project-info.js";
+import { createProjectValidateHandler } from "./rpc/handlers/project-validate.js";
+import { ProjectRegistry } from "./projects/index.js";
 
-export const RUNNER_VERSION = "0.3.0";
+export const RUNNER_VERSION = "0.4.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -32,6 +38,7 @@ export class LocalBridgeRunner {
   readonly runnerId: string;
   readonly config: RunnerDaemonConfig;
   readonly rpcRouter: RpcRouter;
+  readonly projectRegistry: ProjectRegistry;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -43,7 +50,16 @@ export class LocalBridgeRunner {
       });
 
     this.runnerId =
-      config.runnerId || getOrCreateRunnerId(config.statePath);
+      config.runnerId ||
+      getOrCreateRunnerId(config.statePath);
+
+    const projectsPath =
+      config.projectsPath ||
+      (config.statePath
+        ? path.join(path.dirname(config.statePath), "projects.json")
+        : path.join(os.homedir(), ".localbridge", "projects.json"));
+
+    this.projectRegistry = new ProjectRegistry(projectsPath, this.logger);
 
     this.reconnectController = new ReconnectController({
       enabled: config.reconnect.enabled,
@@ -56,7 +72,7 @@ export class LocalBridgeRunner {
     this.heartbeatMonitor = new HeartbeatMonitor({
       heartbeatIntervalMs: config.heartbeatIntervalMs,
       onDeadConnection: () => {
-        this.logger.warn("Heartbeat monitor detected dead connection, terminating socket");
+        this.logger.warn("Heartbeat timeout detected; terminating runner connection");
         this.client?.terminate();
       },
       logger: this.logger,
@@ -83,6 +99,21 @@ export class LocalBridgeRunner {
         capabilities,
         tools: systemInfo.tools,
       })
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectList,
+      createProjectListHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectInfo,
+      createProjectInfoHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectValidate,
+      createProjectValidateHandler(this.projectRegistry)
     );
   }
 

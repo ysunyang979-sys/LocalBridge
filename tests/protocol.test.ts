@@ -106,9 +106,11 @@ describe("Protocol Package", () => {
   it("redacts internal project root in ProjectPublicSchema", () => {
     const fullProject = {
       id: "proj_abc",
+      runnerId: "runner_123",
       name: "my-blog",
       root: "D:\\Projects\\my-blog",
       enabled: true,
+      available: true,
       createdAt: 1700000000000,
       updatedAt: 1700000000000,
     };
@@ -118,6 +120,8 @@ describe("Protocol Package", () => {
     const publicView = ProjectPublicSchema.parse(fullProject);
     expect("root" in publicView).toBe(false);
     expect(publicView.id).toBe("proj_abc");
+    expect(publicView.runnerId).toBe("runner_123");
     expect(publicView.name).toBe("my-blog");
+    expect(publicView.available).toBe(true);
   });
 });

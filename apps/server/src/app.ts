@@ -15,10 +15,12 @@ import { initDatabase, type DatabaseConnection } from "./db/index.js";
 import { TokenService } from "./db/token-service.js";
 import { RunnerRegistry } from "./runner/registry.js";
 import { RunnerRpcService } from "./runner/rpc-service.js";
+import { ServerProjectService } from "./runner/project-service.js";
 import { healthRoutes } from "./routes/health.js";
 import { statusRoutes } from "./routes/status.js";
 import { runnerWsRoute } from "./routes/runner-ws.js";
 import { runnersRoutes } from "./routes/runners.js";
+import { projectsRoutes } from "./routes/projects.js";
 
 export interface BuildAppOptions {
   config: AppConfig;
@@ -26,6 +28,7 @@ export interface BuildAppOptions {
   tokenService?: TokenService;
   runnerRegistry?: RunnerRegistry;
   rpcService?: RunnerRpcService;
+  projectService?: ServerProjectService;
   migrationsDir?: string;
   enableLogging?: boolean;
 }
@@ -38,6 +41,7 @@ export interface BuiltAppResult {
   tokenService: TokenService;
   runnerRegistry: RunnerRegistry;
   rpcService: RunnerRpcService;
+  projectService: ServerProjectService;
 }
 
 export async function buildApp(
@@ -77,6 +81,8 @@ export async function buildApp(
     options.runnerRegistry ?? new RunnerRegistry(logger);
   const rpcService =
     options.rpcService ?? new RunnerRpcService(runnerRegistry);
+  const projectService =
+    options.projectService ?? new ServerProjectService(db.db, runnerRegistry);
 
   // Global error handler
   app.setErrorHandler(
@@ -119,7 +125,7 @@ export async function buildApp(
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "0.3.0",
+    version: "0.4.0",
     getRunnersConnected: () => runnerRegistry.count(),
     isMcpActive: () => false,
   });
@@ -128,13 +134,18 @@ export async function buildApp(
     runnerRegistry,
     rpcService,
   });
+  await app.register(projectsRoutes, {
+    prefix: "/api",
+    projectService,
+  });
 
   // Register WebSocket route for runner connections
   await app.register(runnerWsRoute, {
     tokenService,
     runnerRegistry,
+    projectService,
     db: db.db,
-    serverVersion: "0.3.0",
+    serverVersion: "0.4.0",
     heartbeatIntervalMs: 15000,
   });
 
@@ -144,5 +155,5 @@ export async function buildApp(
     db.close();
   });
 
-  return { app, db, tokenService, runnerRegistry, rpcService };
+  return { app, db, tokenService, runnerRegistry, rpcService, projectService };
 }

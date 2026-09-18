@@ -36,6 +36,11 @@ export function parseRunnerCliArgs(argv: string[]): Record<string, unknown> {
       if (val) result.configPath = val;
     } else if (arg.startsWith("--config=")) {
       result.configPath = arg.split("=")[1];
+    } else if (arg === "--projects-path") {
+      const val = argv[++i];
+      if (val) result.projectsPath = val;
+    } else if (arg.startsWith("--projects-path=")) {
+      result.projectsPath = arg.split("=")[1];
     } else if (arg === "--log-level") {
       const val = argv[++i];
       if (val) result.logLevel = val;
@@ -93,6 +98,7 @@ export function loadRunnerConfig(options: LoadRunnerConfigOptions = {}): RunnerD
   if (env.LOCALBRIDGE_RUNNER_TOKEN) rawConfig.token = env.LOCALBRIDGE_RUNNER_TOKEN;
   if (env.LOCALBRIDGE_RUNNER_NAME) rawConfig.runnerName = env.LOCALBRIDGE_RUNNER_NAME;
   if (env.LOCALBRIDGE_RUNNER_ID) rawConfig.runnerId = env.LOCALBRIDGE_RUNNER_ID;
+  if (env.LOCALBRIDGE_PROJECTS_PATH) rawConfig.projectsPath = env.LOCALBRIDGE_PROJECTS_PATH;
   if (env.LOCALBRIDGE_LOG_LEVEL) loggingSection.level = env.LOCALBRIDGE_LOG_LEVEL;
   if (env.LOCALBRIDGE_LOG_PRETTY) {
     loggingSection.pretty =
@@ -103,6 +109,7 @@ export function loadRunnerConfig(options: LoadRunnerConfigOptions = {}): RunnerD
   if (cli.serverUrl) rawConfig.serverUrl = cli.serverUrl;
   if (cli.token) rawConfig.token = cli.token;
   if (cli.runnerName) rawConfig.runnerName = cli.runnerName;
+  if (cli.projectsPath) rawConfig.projectsPath = cli.projectsPath;
   if (cli.logLevel) loggingSection.level = cli.logLevel;
   if (cli.logPretty !== undefined) loggingSection.pretty = cli.logPretty;
 

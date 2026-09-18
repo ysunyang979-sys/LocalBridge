@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import {
   PROTOCOL_VERSION,
   RunnerMethod,
+  RunnerRpcMethods,
   RunnerHelloRequestSchema,
   type RunnerHelloRequestParams,
   type JsonRpcRequest,
@@ -10,6 +11,7 @@ import {
 import { MCP_TOKEN_PREFIX } from "@localbridge/shared";
 import type { TokenService } from "../db/token-service.js";
 import { type RunnerRegistry, ActiveRunnerConnection } from "../runner/registry.js";
+import type { ServerProjectService } from "../runner/project-service.js";
 import type { TokenRow } from "../db/schema.js";
 import type Database from "better-sqlite3";
 
@@ -17,6 +19,7 @@ export interface RunnerWsOptions {
   tokenService: TokenService;
   runnerRegistry: RunnerRegistry;
   db: Database.Database;
+  projectService?: ServerProjectService;
   serverVersion?: string;
   heartbeatIntervalMs?: number;
 }
@@ -269,6 +272,35 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
                 },
               })
             );
+
+            // Auto-sync runner's authorized projects if projectService is available
+            if (options.projectService) {
+              const projectService = options.projectService;
+              activeConn
+                .request(RunnerRpcMethods.ProjectList, {})
+                .then((projects) => {
+                  const list = Array.isArray(projects) ? projects : [];
+                  projectService.syncRunnerProjects(helloParams.runnerId, list);
+                  fastify.log.info(
+                    {
+                      event: "runner_projects_synced",
+                      runnerId: helloParams.runnerId,
+                      projectCount: list.length,
+                    },
+                    `Synced ${list.length} projects for runner "${helloParams.runnerId}"`
+                  );
+                })
+                .catch((err) => {
+                  fastify.log.warn(
+                    {
+                      event: "runner_projects_sync_failed",
+                      runnerId: helloParams.runnerId,
+                      err,
+                    },
+                    `Failed to sync projects for runner "${helloParams.runnerId}"`
+                  );
+                });
+            }
 
             // Start heartbeat ping cycle
             pingTimer = setInterval(() => {

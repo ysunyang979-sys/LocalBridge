@@ -2,6 +2,9 @@ export const RunnerRpcMethods = {
   Hello: "runner.hello",
   SystemPing: "system.ping",
   SystemInfo: "system.info",
+  ProjectList: "project.list",
+  ProjectInfo: "project.info",
+  ProjectValidate: "project.validate",
 } as const;
 
 export type RunnerRpcMethod =

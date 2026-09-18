@@ -11,8 +11,8 @@
   "scripts": {
     "build": "pnpm -r --filter=./packages/* run build && pnpm --filter=@localbridge/server run build && pnpm --filter=@localbridge/runner run build",
     "typecheck": "pnpm -r run typecheck",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --pool=forks",
+    "test:watch": "vitest --pool=forks",
     "dev:server": "pnpm --filter @localbridge/server dev",
     "dev:runner": "pnpm --filter @localbridge/runner dev",
     "clean": "pnpm -r run clean"
