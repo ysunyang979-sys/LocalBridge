@@ -262,10 +262,51 @@ LocalBridge Phase 6 introduces auditable, transactional, conflict-detected file 
 - **Zero Server File Persistence**: Server acts as a stateless protocol router and never stores file contents, patch texts, or backup data.
 - **Prohibited Operations**: Directory mutation (`directory.create`, `directory.delete`), file moves/renames (`file.move`, `file.rename`), symlink modifications (`FILE_SYMLINK_WRITE_BLOCKED`), shell execution, and MCP endpoints remain strictly blocked.
 
-> [!IMPORTANT]
-> **Phase 6 Status Notice**: LocalBridge is currently at Phase 6. Safe, conflict-detected file modification operations (`file.create`, `file.write`, `file.patch`, `file.delete`, `file.restore`) are active exclusively on projects explicitly granted `read-write` access by the local user. Shell execution, Git operations, background jobs, and MCP runtime endpoints remain strictly prohibited.
+### 9. Safe Read-Only Git Inspection & Diff Engine (Phase 7)
 
-### 9. Management API Security Boundary
+LocalBridge Phase 7 introduces safe, strictly read-only Git inspection and unified diff capabilities across user-authorized projects via Server ↔ Runner typed RPC.
+
+#### Read-Only Git RPC Methods
+1. **`git.info`**:
+   - Inspects Git repository metadata: current branch, detached HEAD state, full HEAD OID, 7-character shortHead, and upstream tracking status.
+   - Returns `{ projectId, isRepository, branch, detached, head, shortHead, hasUpstream }`.
+   - Returns `{ isRepository: false, ... }` gracefully when run against non-git projects.
+
+2. **`git.status`**:
+   - Inspects working tree and index status using NUL-delimited Git porcelain v2 (`git status --porcelain=v2 --branch -uall -z`).
+   - Detects modified, added, deleted, renamed (with `oldPath`), and untracked entries.
+   - Accurately tracks `ahead` and `behind` divergence from remote upstream.
+   - **Privacy Shield**: Omit sensitive files (`.env`, `*.pem`, `id_rsa`, etc.) and flags `sensitiveEntriesFiltered: true`.
+   - **Bound Enforcement**: Limits to at most 500 entries, setting `truncated: true` if exceeded.
+   - Returns `{ projectId, branch, detached, ahead, behind, clean, entries, sensitiveEntriesFiltered, truncated }`.
+
+3. **`git.diff`**:
+   - Generates unified diffs across the project or for a targeted single file.
+   - Supports `scope: "unstaged"` (working tree vs index) and `scope: "staged"` (index vs HEAD).
+   - Configurable `contextLines` parameter (0..20, default: 3).
+   - **Attack Neutralization**: Forces `--no-ext-diff`, `--no-textconv`, `-c diff.external=`, `-c core.fsmonitor=false`, and an isolated empty hooks directory to defeat repository-level command execution attacks.
+   - **Symlink & Submodule Defense**: Omit symlinks in project-wide diffs and rejects single-file diffs on symlinks (`GIT_SYMLINK_DIFF_BLOCKED`) or submodules (`GIT_SUBMODULE_NOT_SUPPORTED`).
+   - **Output Bounds**: Capped at 256 KiB; rejects oversized diffs with `GIT_DIFF_TOO_LARGE`.
+   - Returns `{ projectId, scope, files, diff, sensitiveEntriesFiltered, symlinkEntriesFiltered, submoduleEntriesFiltered }`.
+
+4. **`git.log`**:
+   - Retrieves recent commit history using a strict NUL-delimited format (`%H%x00%h%x00%an%x00%at%x00%s`).
+   - Parses hashes, author name, timestamp (milliseconds), and commit subject.
+   - Supports commit limits (1..100, default: 20) and path scoping (`path: "sub/file.ts"`).
+   - **Privacy Boundary**: Strictly excludes author email addresses (`%ae`), commit message bodies (`%b`), and remote server addresses.
+   - Returns `{ projectId, commits }`.
+
+#### Repository Boundary & Process Hardening
+- **Repository Root Containment**: Worktree root must match project canonical root (`git rev-parse --show-toplevel === canonicalRoot`). Subdirectories of parent repositories are blocked with `GIT_REPOSITORY_BOUNDARY`.
+- **Direct Execution**: Git is spawned directly via `child_process.spawn("git", ...)` with `shell: false` to eliminate shell injection vulnerabilities.
+- **Process Bounds**: Default 10s execution timeout (max 30s) and 512 KiB buffer caps.
+- **Universal Availability**: Both `read-only` and `read-write` authorized projects can run Git inspection.
+- **Zero Physical Path Leakage**: Host physical paths, drive letters, and user home paths are sanitized from all outputs and error messages.
+
+> [!IMPORTANT]
+> **Phase 7 Status Notice**: LocalBridge is currently at Phase 7. Strictly read-only Git inspection (`git.info`, `git.status`, `git.diff`, `git.log`) and transactional file modifications are operational. Shell execution, Git mutating operations (`git.add`, `git.commit`, `git.checkout`, `git.push`, etc.), background jobs, and MCP runtime endpoints remain strictly prohibited.
+
+### 10. Management API Security Boundary
 
 - **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
 - **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.

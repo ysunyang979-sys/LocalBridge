@@ -264,10 +264,51 @@ LocalBridge Phase 6 通过 Server ↔ Runner JSON-RPC 2.0，为已授权项目�
 - **服务端零文件持久化**：Server 仅作为无状态 RPC 协议转发器，绝不存储任何源代码内容、补丁片段或备份实体。
 - **操作安全边界**：严禁目录变更（`directory.create`、`directory.delete`）、严禁文件重命名或移动（`file.move`、`file.rename`）、严禁修改符号链接（`FILE_SYMLINK_WRITE_BLOCKED`），Shell 执行与 MCP 端点依然严格处于禁用状态。
 
-> [!IMPORTANT]
-> **Phase 6 状态声明**：LocalBridge 当前处于 Phase 6（安全文件修改与事务式写操作）。仅在被本地用户显式授予 `read-write` 权限的项目中激活安全、防冲突的文件写入与恢复。Shell 执行、Git 操作、构建/测试运行及 MCP 运行时端点在此阶段依然严格禁止。
+### 9. 安全只读 Git 仓库检查与差异引擎 (Phase 7)
 
-### 9. 管理 API 安全边界与本地访问说明
+LocalBridge Phase 7 通过 Server ↔ Runner 强类型 RPC，为已授权项目引入严格受控、只读的 Git 仓库状态检查与 Unified Diff 差异比对能力。
+
+#### 只读 Git RPC 方法
+1. **`git.info`**：
+   - 获取 Git 仓库核心元数据：当前分支名称、是否处于 Detached HEAD 状态、完整 HEAD Commit OID、7 位短 Hash (`shortHead`) 以及是否存在远端上游追踪。
+   - 返回 `{ projectId, isRepository, branch, detached, head, shortHead, hasUpstream }`。
+   - 对非 Git 项目安全返回 `{ isRepository: false, ... }`，不抛出异常。
+
+2. **`git.status`**：
+   - 基于空字符（NUL byte）分隔的 Git Porcelain v2 格式解析工作区与暂存区状态（`git status --porcelain=v2 --branch -uall -z`）。
+   - 全面检测新增、修改、删除、重命名（包含 `oldPath` 追溯）与未跟踪文件。
+   - 精准统计相比远程上游的超前/落后提交数（`ahead` / `behind`）。
+   - **隐私屏蔽屏障**：自动过滤敏感文件（如 `.env`、`*.pem`、`id_rsa` 等），并标记 `sensitiveEntriesFiltered: true`。
+   - **条目上限截断**：严格限制返回至多 500 个变更条目，超出时设置 `truncated: true`。
+   - 返回 `{ projectId, branch, detached, ahead, behind, clean, entries, sensitiveEntriesFiltered, truncated }`。
+
+3. **`git.diff`**：
+   - 支持全项目范围或针对单个指定文件的 Unified Diff 差异对比。
+   - 支持 `scope: "unstaged"`（工作区 vs 暂存区）与 `scope: "staged"`（暂存区 vs HEAD 提交）。
+   - 支持动态配置上下文行数参数（`contextLines: 0~20`，默认 3）。
+   - **仓库级命令注入防御**：强制注入 `--no-ext-diff`、`--no-textconv`、`-c diff.external=`、`-c core.fsmonitor=false` 以及独立隔离的空 Hooks 目录，彻底粉碎基于 `.git/config` 或 `.gitattributes` 的外部命令执行利用链。
+   - **符号链接与子模块防御**：项目级 diff 自动过滤符号链接，单文件 diff 显式阻断符号链接（`GIT_SYMLINK_DIFF_BLOCKED`）与 Git 子模块（`GIT_SUBMODULE_NOT_SUPPORTED`）。
+   - **输出体积极限保护**：Diff 输出严格限制在 256 KiB 以内，超大 Diff 主动抛出 `GIT_DIFF_TOO_LARGE` 终止。
+   - 返回 `{ projectId, scope, files, diff, sensitiveEntriesFiltered, symlinkEntriesFiltered, submoduleEntriesFiltered }`。
+
+4. **`git.log`**：
+   - 基于自定义 NUL 分隔格式（`%H%x00%h%x00%an%x00%at%x00%s`）获取最近提交记录。
+   - 提取 Commit 完整 Hash、短 Hash、作者昵称、毫秒级时间戳以及提交说明主题。
+   - 支持获取条数限制（`limit: 1~100`，默认 20）以及路径范围限定（`path: "sub/file.ts"`）。
+   - **隐私保护边界**：严格剔除作者电子邮箱（`%ae`）、Commit 详细正文（`%b`）以及远端服务器地址。
+   - 返回 `{ projectId, commits }`。
+
+#### 仓库边界与进程加固策略
+- **仓库根边界对齐 (Repository Root Containment)**：Git 工作区根目录必须严格等同于项目物理规范路径（`git rev-parse --show-toplevel === canonicalRoot`）。严禁对父级仓库的子目录执行 Git 命令，越界直接抛出 `GIT_REPOSITORY_BOUNDARY`。
+- **直接进程执行 (No Shell)**：通过 `child_process.spawn("git", ...)` 直接执行二进制文件，禁用 Shell 解析（`shell: false`），消除 Shell 参数注入隐患。
+- **超时与缓冲区硬限制**：默认单次命令执行超时为 10 秒（上限 30 秒），标准输出缓冲区限制为 512 KiB。
+- **通用权限可用性**：处于 `read-only` 和 `read-write` 访问模式的已授权项目均可安全执行只读 Git 检查。
+- **物理路径零泄露**：统一脱敏错误信息与 Diff 输出中的物理路径、盘符与操作系统用户目录。
+
+> [!IMPORTANT]
+> **Phase 7 状态声明**：LocalBridge 当前处于 Phase 7（安全只读 Git 仓库检查与差异引擎）。严格受限的只读 Git 操作（`git.info`、`git.status`、`git.diff`、`git.log`）与事务式文件修改均已就绪。Shell 执行、Git 变更命令（`git.add`、`git.commit`、`git.checkout`、`git.push` 等）、构建/测试运行及 MCP 运行时端点在此阶段依然严格禁止。
+
+### 10. 管理 API 安全边界与本地访问说明
 
 - **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。

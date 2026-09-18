@@ -30,11 +30,16 @@ import { createFileWriteHandler } from "./rpc/handlers/file-write.js";
 import { createFilePatchHandler } from "./rpc/handlers/file-patch.js";
 import { createFileDeleteHandler } from "./rpc/handlers/file-delete.js";
 import { createFileRestoreHandler } from "./rpc/handlers/file-restore.js";
+import { createGitInfoHandler } from "./rpc/handlers/git-info.js";
+import { createGitStatusHandler } from "./rpc/handlers/git-status.js";
+import { createGitDiffHandler } from "./rpc/handlers/git-diff.js";
+import { createGitLogHandler } from "./rpc/handlers/git-log.js";
 import { ProjectRegistry } from "./projects/index.js";
 import { FilesystemService } from "./filesystem/index.js";
 import { BackupService } from "./backup/index.js";
+import { GitService } from "./git/index.js";
 
-export const RUNNER_VERSION = "0.6.0";
+export const RUNNER_VERSION = "0.7.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -51,6 +56,7 @@ export class LocalBridgeRunner {
   readonly projectRegistry: ProjectRegistry;
   readonly backupService: BackupService;
   readonly filesystemService: FilesystemService;
+  readonly gitService: GitService;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -100,6 +106,11 @@ export class LocalBridgeRunner {
     this.filesystemService = new FilesystemService(
       this.projectRegistry,
       this.backupService,
+      this.logger
+    );
+
+    this.gitService = new GitService(
+      this.projectRegistry,
       this.logger
     );
 
@@ -179,6 +190,26 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.FileRestore,
       createFileRestoreHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitInfo,
+      createGitInfoHandler(this.gitService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitStatus,
+      createGitStatusHandler(this.gitService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitDiff,
+      createGitDiffHandler(this.gitService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitLog,
+      createGitLogHandler(this.gitService)
     );
   }
 

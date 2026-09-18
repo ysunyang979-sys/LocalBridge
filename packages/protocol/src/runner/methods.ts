@@ -13,6 +13,10 @@ export const RunnerRpcMethods = {
   FilePatch: "file.patch",
   FileDelete: "file.delete",
   FileRestore: "file.restore",
+  GitInfo: "git.info",
+  GitStatus: "git.status",
+  GitDiff: "git.diff",
+  GitLog: "git.log",
 } as const;
 
 export type RunnerRpcMethod =
@@ -31,12 +35,13 @@ export const RunnerMethod = {
   FILE_PATCH: RunnerRpcMethods.FilePatch,
   FILE_DELETE: RunnerRpcMethods.FileDelete,
   FILE_RESTORE: RunnerRpcMethods.FileRestore,
+  GIT_INFO: RunnerRpcMethods.GitInfo,
+  GIT_STATUS: RunnerRpcMethods.GitStatus,
+  GIT_DIFF: RunnerRpcMethods.GitDiff,
+  GIT_LOG: RunnerRpcMethods.GitLog,
   FILE_SEARCH: "file.search",
   TEXT_SEARCH: "text.search",
   SHELL_RUN: "shell.run",
-  GIT_STATUS: "git.status",
-  GIT_DIFF: "git.diff",
-  GIT_LOG: "git.log",
   JOB_START: "job.start",
   JOB_STATUS: "job.status",
   JOB_LOGS: "job.logs",

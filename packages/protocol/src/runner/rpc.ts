@@ -314,6 +314,128 @@ export const FileRestoreResultSchema = z
   .strict();
 export type FileRestoreResult = z.infer<typeof FileRestoreResultSchema>;
 
+// 14. git.info
+export const GitInfoParamsSchema = z
+  .object({
+    projectId: z.string(),
+  })
+  .strict();
+export type GitInfoParams = z.infer<typeof GitInfoParamsSchema>;
+
+export const GitInfoResultSchema = z
+  .object({
+    projectId: z.string(),
+    isRepository: z.boolean(),
+    branch: z.string().nullable(),
+    detached: z.boolean(),
+    head: z.string().nullable(),
+    shortHead: z.string().nullable(),
+    hasUpstream: z.boolean(),
+  })
+  .strict();
+export type GitInfoResult = z.infer<typeof GitInfoResultSchema>;
+
+// 15. git.status
+export const GitStatusEntryKindSchema = z.enum([
+  "modified",
+  "added",
+  "deleted",
+  "renamed",
+  "typechanged",
+  "untracked",
+  "conflicted",
+]);
+export type GitStatusEntryKind = z.infer<typeof GitStatusEntryKindSchema>;
+
+export const GitStatusEntrySchema = z
+  .object({
+    path: z.string(),
+    indexStatus: z.string(),
+    worktreeStatus: z.string(),
+    kind: GitStatusEntryKindSchema,
+    oldPath: z.string().optional(),
+  })
+  .strict();
+export type GitStatusEntry = z.infer<typeof GitStatusEntrySchema>;
+
+export const GitStatusParamsSchema = z
+  .object({
+    projectId: z.string(),
+  })
+  .strict();
+export type GitStatusParams = z.infer<typeof GitStatusParamsSchema>;
+
+export const GitStatusResultSchema = z
+  .object({
+    projectId: z.string(),
+    branch: z.string().nullable(),
+    detached: z.boolean(),
+    ahead: z.number().int().nonnegative(),
+    behind: z.number().int().nonnegative(),
+    clean: z.boolean(),
+    entries: z.array(GitStatusEntrySchema),
+    sensitiveEntriesFiltered: z.boolean(),
+    truncated: z.boolean(),
+  })
+  .strict();
+export type GitStatusResult = z.infer<typeof GitStatusResultSchema>;
+
+// 16. git.diff
+export const GitDiffScopeSchema = z.enum(["unstaged", "staged"]);
+export type GitDiffScope = z.infer<typeof GitDiffScopeSchema>;
+
+export const GitDiffParamsSchema = z
+  .object({
+    projectId: z.string(),
+    scope: GitDiffScopeSchema.default("unstaged"),
+    path: z.string().optional(),
+    contextLines: z.number().int().min(0).max(20).default(3),
+  })
+  .strict();
+export type GitDiffParams = z.infer<typeof GitDiffParamsSchema>;
+
+export const GitDiffResultSchema = z
+  .object({
+    projectId: z.string(),
+    scope: GitDiffScopeSchema,
+    files: z.array(z.string()),
+    diff: z.string(),
+    sensitiveEntriesFiltered: z.boolean(),
+    symlinkEntriesFiltered: z.boolean(),
+    submoduleEntriesFiltered: z.boolean(),
+  })
+  .strict();
+export type GitDiffResult = z.infer<typeof GitDiffResultSchema>;
+
+// 17. git.log
+export const GitCommitSummarySchema = z
+  .object({
+    hash: z.string(),
+    shortHash: z.string(),
+    authorName: z.string(),
+    timestamp: z.number().int(),
+    subject: z.string(),
+  })
+  .strict();
+export type GitCommitSummary = z.infer<typeof GitCommitSummarySchema>;
+
+export const GitLogParamsSchema = z
+  .object({
+    projectId: z.string(),
+    limit: z.number().int().min(1).max(100).default(20),
+    path: z.string().optional(),
+  })
+  .strict();
+export type GitLogParams = z.infer<typeof GitLogParamsSchema>;
+
+export const GitLogResultSchema = z
+  .object({
+    projectId: z.string(),
+    commits: z.array(GitCommitSummarySchema),
+  })
+  .strict();
+export type GitLogResult = z.infer<typeof GitLogResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -367,6 +489,22 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.FileRestore]: {
     params: FileRestoreParams;
     result: FileRestoreResult;
+  };
+  [RunnerRpcMethods.GitInfo]: {
+    params: GitInfoParams;
+    result: GitInfoResult;
+  };
+  [RunnerRpcMethods.GitStatus]: {
+    params: GitStatusParams;
+    result: GitStatusResult;
+  };
+  [RunnerRpcMethods.GitDiff]: {
+    params: GitDiffParams;
+    result: GitDiffResult;
+  };
+  [RunnerRpcMethods.GitLog]: {
+    params: GitLogParams;
+    result: GitLogResult;
   };
 }
 
@@ -425,5 +563,21 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.FileRestore]: {
     params: FileRestoreParamsSchema,
     result: FileRestoreResultSchema,
+  },
+  [RunnerRpcMethods.GitInfo]: {
+    params: GitInfoParamsSchema,
+    result: GitInfoResultSchema,
+  },
+  [RunnerRpcMethods.GitStatus]: {
+    params: GitStatusParamsSchema,
+    result: GitStatusResultSchema,
+  },
+  [RunnerRpcMethods.GitDiff]: {
+    params: GitDiffParamsSchema,
+    result: GitDiffResultSchema,
+  },
+  [RunnerRpcMethods.GitLog]: {
+    params: GitLogParamsSchema,
+    result: GitLogResultSchema,
   },
 } as const;
