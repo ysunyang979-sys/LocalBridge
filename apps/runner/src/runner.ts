@@ -1,6 +1,6 @@
 import {
   PROTOCOL_VERSION,
-  RunnerMethod,
+  RunnerRpcMethods,
   type RunnerCapabilities,
   type RunnerSystemInfo,
   type RunnerHelloResponse,
@@ -14,8 +14,11 @@ import { detectCapabilities } from "./system/capabilities.js";
 import { ReconnectController } from "./client/reconnect.js";
 import { HeartbeatMonitor } from "./client/heartbeat.js";
 import { RunnerWsClient } from "./client/websocket.js";
+import { RpcRouter } from "./rpc/router.js";
+import { createSystemPingHandler } from "./rpc/handlers/system-ping.js";
+import { createSystemInfoHandler } from "./rpc/handlers/system-info.js";
 
-export const RUNNER_VERSION = "0.2.0";
+export const RUNNER_VERSION = "0.3.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -28,6 +31,7 @@ export class LocalBridgeRunner {
   private stopping = false;
   readonly runnerId: string;
   readonly config: RunnerDaemonConfig;
+  readonly rpcRouter: RpcRouter;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -57,6 +61,33 @@ export class LocalBridgeRunner {
       },
       logger: this.logger,
     });
+
+    this.rpcRouter = new RpcRouter(this.logger);
+    this.registerDefaultHandlers();
+  }
+
+  private registerDefaultHandlers(): void {
+    const systemInfo: RunnerSystemInfo = collectSystemInfo();
+    const capabilities: RunnerCapabilities = detectCapabilities(systemInfo.tools);
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.SystemPing,
+      createSystemPingHandler({ runnerId: this.runnerId })
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.SystemInfo,
+      createSystemInfoHandler({
+        runnerId: this.runnerId,
+        version: RUNNER_VERSION,
+        capabilities,
+        tools: systemInfo.tools,
+      })
+    );
+  }
+
+  get router(): RpcRouter {
+    return this.rpcRouter;
   }
 
   /**
@@ -125,6 +156,12 @@ export class LocalBridgeRunner {
       onError: (err) => {
         this.logger.warn({ err: err.message }, "WebSocket connection error");
       },
+      onMessage: async (data) => {
+        const response = await this.rpcRouter.handle(data as string | Buffer);
+        if (response && this.client) {
+          this.client.send(JSON.stringify(response));
+        }
+      },
     });
 
     try {
@@ -164,7 +201,7 @@ export class LocalBridgeRunner {
     );
 
     const result = await this.client.call<RunnerHelloResponse>(
-      RunnerMethod.RUNNER_HELLO,
+      RunnerRpcMethods.Hello,
       helloParams,
       8000
     );

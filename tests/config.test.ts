@@ -30,6 +30,15 @@ describe("Config Loader & Precedence", () => {
     expect(config.logging.level).toBe("info");
   });
 
+  it("server host defaults to 127.0.0.1 for loopback security boundary", () => {
+    const config = loadConfig({
+      configPath: path.join(tmpDir, "non-existent.json"),
+      env: {},
+      cliArgs: [],
+    });
+    expect(config.server.host).toBe("127.0.0.1");
+  });
+
   it("parses CLI arguments accurately", () => {
     const parsed = parseCliArgs([
       "--host",

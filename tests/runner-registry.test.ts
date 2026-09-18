@@ -50,6 +50,16 @@ function createMockConnection(runnerId: string, name: string): { conn: RunnerCon
     connectedAt: Date.now(),
     lastSeenAt: Date.now(),
     missedPings: 0,
+    pendingRequests: new Map(),
+    metrics: {
+      requestsSent: 0,
+      responsesReceived: 0,
+      timeouts: 0,
+      errors: 0,
+    },
+    request: vi.fn(),
+    handleIncomingMessage: vi.fn(),
+    dispose: vi.fn(),
   };
 
   return { conn, socket };

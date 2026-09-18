@@ -134,4 +134,28 @@ describe("Runner WebSocket Authentication", () => {
     expect(result.success).toBe(false);
     expect(result.statusCode).toBe(401);
   });
+
+  it("rejects runner token passed via URL query parameter with 401", async () => {
+    const result = await new Promise<{ success: boolean; statusCode?: number }>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/runner/ws?token=${validRunnerToken}`, {
+        handshakeTimeout: 3000,
+      });
+
+      ws.on("open", () => {
+        ws.close();
+        resolve({ success: true, statusCode: 101 });
+      });
+
+      ws.on("unexpected-response", (_req, res) => {
+        resolve({ success: false, statusCode: res.statusCode });
+      });
+
+      ws.on("error", () => {
+        // Socket error
+      });
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.statusCode).toBe(401);
+  });
 });

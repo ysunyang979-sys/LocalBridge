@@ -77,7 +77,14 @@ describe("Runner Handshake Protocol", () => {
           arch: "x64",
           hostname: "test-pc",
           nodeVersion: "v24.0.0",
-          tools: { git: "2.46.2" },
+          tools: {
+            git: "2.46.2",
+            node: "24.0.0",
+            npm: "10.0.0",
+            pnpm: "10.14.0",
+            python: null,
+            docker: null,
+          },
         },
         capabilities: {
           filesystem: true,
@@ -104,7 +111,7 @@ describe("Runner Handshake Protocol", () => {
     expect(response.result).toBeDefined();
     expect(response.result.accepted).toBe(true);
     expect(response.result.protocolVersion).toBe("1.0");
-    expect(response.result.serverVersion).toBe("0.2.0");
+    expect(response.result.serverVersion).toBe("0.3.0");
     expect(response.result.heartbeatIntervalMs).toBe(15000);
 
     // Verify registered in memory registry
@@ -131,7 +138,14 @@ describe("Runner Handshake Protocol", () => {
           arch: "arm64",
           hostname: "arm-host",
           nodeVersion: "v24.0.0",
-          tools: {},
+          tools: {
+            git: null,
+            node: "24.0.0",
+            npm: null,
+            pnpm: null,
+            python: null,
+            docker: null,
+          },
         },
         capabilities: {
           filesystem: true,

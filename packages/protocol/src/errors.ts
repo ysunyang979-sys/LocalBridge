@@ -15,10 +15,41 @@ export const LocalBridgeErrorCode = {
   INVALID_REQUEST: "INVALID_REQUEST",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   PROTOCOL_VERSION_UNSUPPORTED: "PROTOCOL_VERSION_UNSUPPORTED",
+  RPC_TIMEOUT: "RPC_TIMEOUT",
+  RUNNER_DISCONNECTED: "RUNNER_DISCONNECTED",
+  RUNNER_BUSY: "RUNNER_BUSY",
+  RPC_MESSAGE_TOO_LARGE: "RPC_MESSAGE_TOO_LARGE",
+  RPC_INVALID_RESPONSE: "RPC_INVALID_RESPONSE",
+  RPC_REMOTE_ERROR: "RPC_REMOTE_ERROR",
 } as const;
 
 export type LocalBridgeErrorCode =
   (typeof LocalBridgeErrorCode)[keyof typeof LocalBridgeErrorCode];
+
+export const JsonRpcStandardErrorCode = {
+  ParseError: -32700,
+  InvalidRequest: -32600,
+  MethodNotFound: -32601,
+  InvalidParams: -32602,
+  InternalError: -32603,
+  DuplicateRequestId: -32001,
+} as const;
+
+export type JsonRpcStandardErrorCode =
+  (typeof JsonRpcStandardErrorCode)[keyof typeof JsonRpcStandardErrorCode];
+
+export class RemoteRpcError extends Error {
+  readonly code: number;
+  readonly data?: unknown;
+
+  constructor(code: number, message: string, data?: unknown) {
+    super(message);
+    this.name = "RemoteRpcError";
+    this.code = code;
+    this.data = data;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
 export const LocalBridgeErrorSchema = z.object({
   code: z.nativeEnum(LocalBridgeErrorCode),

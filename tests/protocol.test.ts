@@ -93,7 +93,10 @@ describe("Protocol Package", () => {
       tools: {
         git: "2.46.2",
         node: "22.14.0",
+        npm: null,
         pnpm: "10.14.0",
+        python: null,
+        docker: null,
       },
     };
     const parsed = RunnerSystemInfoSchema.safeParse(sysInfo);

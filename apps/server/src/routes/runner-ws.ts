@@ -9,7 +9,7 @@ import {
 } from "@localbridge/protocol";
 import { MCP_TOKEN_PREFIX } from "@localbridge/shared";
 import type { TokenService } from "../db/token-service.js";
-import type { RunnerRegistry } from "../runner/registry.js";
+import { type RunnerRegistry, ActiveRunnerConnection } from "../runner/registry.js";
 import type { TokenRow } from "../db/schema.js";
 import type Database from "better-sqlite3";
 
@@ -46,16 +46,12 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
     {
       websocket: true,
       preValidation: async (request, reply) => {
-        // 1. Extract token from header or query
+        // 1. Extract token strictly from Authorization: Bearer header (no URL query token allowed)
         const authHeader = request.headers.authorization;
         let token: string | undefined;
 
         if (authHeader && authHeader.startsWith("Bearer ")) {
           token = authHeader.substring(7).trim();
-        } else if (typeof request.headers["x-runner-token"] === "string") {
-          token = request.headers["x-runner-token"].trim();
-        } else if (request.query && typeof (request.query as Record<string, unknown>).token === "string") {
-          token = ((request.query as Record<string, unknown>).token as string).trim();
         }
 
         if (!token) {
@@ -242,7 +238,7 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
             }
 
             // Register with in-memory RunnerRegistry
-            runnerRegistry.register({
+            const activeConn = new ActiveRunnerConnection({
               runnerId: helloParams.runnerId,
               name: helloParams.name,
               socket,
@@ -256,7 +252,9 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
               connectedAt: now,
               lastSeenAt: now,
               missedPings: 0,
+              logger: fastify.log,
             });
+            runnerRegistry.register(activeConn);
 
             // Respond with handshake confirmation
             socket.send(
@@ -294,9 +292,16 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
             return;
           }
 
-          // Subsequent messages handling (e.g. tool execution results in future phases)
+          // Subsequent messages handling (e.g. RPC responses)
+          if (activeRunnerId) {
+            const runner = runnerRegistry.get(activeRunnerId);
+            if (runner) {
+              runner.lastSeenAt = Date.now();
+              runner.handleIncomingMessage(data);
+            }
+          }
         } catch (err) {
-          fastify.log.error(err, "Failed to parse message from runner");
+          fastify.log.error(err, "Failed to process message from runner");
         }
       });
 

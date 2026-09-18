@@ -1,6 +1,16 @@
+export const RunnerRpcMethods = {
+  Hello: "runner.hello",
+  SystemPing: "system.ping",
+  SystemInfo: "system.info",
+} as const;
+
+export type RunnerRpcMethod =
+  (typeof RunnerRpcMethods)[keyof typeof RunnerRpcMethods];
+
 export const RunnerMethod = {
-  RUNNER_HELLO: "runner.hello",
-  SYSTEM_INFO: "system.info",
+  RUNNER_HELLO: RunnerRpcMethods.Hello,
+  SYSTEM_PING: RunnerRpcMethods.SystemPing,
+  SYSTEM_INFO: RunnerRpcMethods.SystemInfo,
   PROJECT_VALIDATE: "project.validate",
   DIRECTORY_LIST: "directory.list",
   FILE_READ: "file.read",

@@ -1,7 +1,6 @@
 import WebSocket from "ws";
 import type {
   JsonRpcRequest,
-  JsonRpcResponse,
   JsonRpcId,
 } from "@localbridge/protocol";
 import type { Logger } from "@localbridge/shared";
@@ -13,7 +12,7 @@ export interface RunnerWsClientOptions {
   onOpen?: () => void;
   onClose?: (code: number, reason: string) => void;
   onError?: (err: Error) => void;
-  onMessage?: (msg: unknown) => void;
+  onMessage?: (data: WebSocket.Data) => void;
 }
 
 export class RunnerWsClient {
@@ -173,18 +172,18 @@ export class RunnerWsClient {
   private handleIncoming(data: WebSocket.Data): void {
     try {
       const text = typeof data === "string" ? data : data.toString("utf-8");
-      const parsed = JSON.parse(text) as JsonRpcResponse;
+      const parsed = JSON.parse(text) as Record<string, unknown>;
 
       if (parsed && typeof parsed === "object" && "id" in parsed && parsed.id !== null) {
-        const pending = this.pendingRequests.get(parsed.id);
+        const pending = this.pendingRequests.get(parsed.id as JsonRpcId);
         if (pending) {
           clearTimeout(pending.timer);
-          this.pendingRequests.delete(parsed.id);
+          this.pendingRequests.delete(parsed.id as JsonRpcId);
 
           if ("error" in parsed && parsed.error) {
-            const err = new Error(parsed.error.message || "RPC Error");
-            (err as Error & { code?: number; data?: unknown }).code = parsed.error.code;
-            (err as Error & { code?: number; data?: unknown }).data = parsed.error.data;
+            const err = new Error((parsed.error as { message?: string }).message || "RPC Error");
+            (err as Error & { code?: number; data?: unknown }).code = (parsed.error as { code?: number }).code;
+            (err as Error & { code?: number; data?: unknown }).data = (parsed.error as { data?: unknown }).data;
             pending.reject(err);
           } else if ("result" in parsed) {
             pending.resolve(parsed.result);
@@ -193,9 +192,11 @@ export class RunnerWsClient {
         }
       }
 
-      this.options.onMessage?.(parsed);
+      // If not pending request response, forward to onMessage (e.g. Server-to-Runner RPC request)
+      this.options.onMessage?.(data);
     } catch {
-      // Non-JSON or malformed message
+      // Pass raw data even if parse fails so router can return JSON-RPC parse error (-32700)
+      this.options.onMessage?.(data);
     }
   }
 

@@ -11,12 +11,12 @@ export const RunnerCapabilitiesSchema = z.object({
 export type RunnerCapabilities = z.infer<typeof RunnerCapabilitiesSchema>;
 
 export const RunnerToolsSchema = z.object({
-  git: z.string().optional(),
-  node: z.string().optional(),
-  pnpm: z.string().optional(),
-  npm: z.string().optional(),
-  python: z.string().optional(),
-  docker: z.string().optional(),
+  git: z.string().nullable(),
+  node: z.string().nullable(),
+  npm: z.string().nullable(),
+  pnpm: z.string().nullable(),
+  python: z.string().nullable(),
+  docker: z.string().nullable(),
 });
 export type RunnerTools = z.infer<typeof RunnerToolsSchema>;
 

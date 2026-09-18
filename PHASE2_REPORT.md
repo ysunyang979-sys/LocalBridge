@@ -90,14 +90,14 @@ localbridge/
    - **MCP Client Token**：以 `lb_` 开头，仅供 AI 客户端访问 `/mcp` 端点。如果用于 Runner WebSocket 升级，将被 `preValidation` 钩子拦截并返回 `403 Forbidden`。
    - **Runner Daemon Token**：以 `lbr_` 开头，采用 `crypto.randomBytes(32)` 生成 256 位强随机熵（共 68 个字符）。
 2. **WebSocket 升级阶段强校验 (Pre-Upgrade Validation)**：
-   - 服务端使用 `@fastify/websocket`，在 HTTP 请求生命周期的 `preValidation` 阶段提取认证凭证：优先从 `Authorization: Bearer lbr_...` 提取，若不存在则回退至 URL 查询参数 `?token=lbr_...`。
+   - 服务端使用 `@fastify/websocket`，在 HTTP 请求生命周期的 `preValidation` 阶段提取认证凭证：仅从 `Authorization: Bearer lbr_...` 提取，严禁通过 URL Query 参数传递 Token。
    - 凭证缺失 $\rightarrow$ `401 Unauthorized`；
    - 格式不正确或非 `lbr_` 前缀 $\rightarrow$ `403 Forbidden`；
    - 令牌不存在、已撤销 (`revoked_at != null`) 或已过期 (`expires_at < now`) $\rightarrow$ `401 Unauthorized`。
    - 升级中断后直接返回标准 HTTP 响应，未通过认证的连接绝不会升级为 WebSocket。
 3. **安全哈希与防时序侧信道**：
    - 数据库只存储单向哈希 `token_hash = sha256(full_token)`，明文 Token 仅在 `token:create` 时输出一次，绝不落地保存。
-   - 校验时对输入 Token 进行实时 SHA-256 哈希，并通过 `crypto.timingSafeEqual` 进行恒定时间比对，杜绝时序攻击。
+   - 固定长度 SHA-256 摘要配合 crypto.timingSafeEqual，降低 Token 比较阶段的时序侧信道风险。
 
 ---
 
@@ -363,7 +363,7 @@ apps/runner typecheck: Done (tsc --noEmit)
 2. **严格的权限隔离原则**：
    - MCP 令牌与 Runner 令牌严格按前缀和用途隔离，杜绝持有 MCP Token 的 AI 客户端伪造 Runner 接入系统。
 3. **抗时序攻击设计**：
-   - 令牌哈希对比使用 `crypto.timingSafeEqual`，完全消除因字符串比对耗时差异造成的侧信道泄露风险。
+   - 固定长度 SHA-256 摘要配合 crypto.timingSafeEqual，降低 Token 比较阶段的时序侧信道风险。
 4. **数据库零明文凭证**：
    - 数据库只保留 256-bit 单向 SHA-256 摘要，即便数据库文件被读取，也无法逆推出原始 Token。
 5. **防挂死与拒绝服务防御**：

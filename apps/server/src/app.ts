@@ -6,10 +6,15 @@ import Fastify, {
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { createLogger, type AppConfig } from "@localbridge/shared";
-import { LocalBridgeError, LocalBridgeErrorCode } from "@localbridge/protocol";
+import {
+  LocalBridgeError,
+  LocalBridgeErrorCode,
+  RemoteRpcError,
+} from "@localbridge/protocol";
 import { initDatabase, type DatabaseConnection } from "./db/index.js";
 import { TokenService } from "./db/token-service.js";
 import { RunnerRegistry } from "./runner/registry.js";
+import { RunnerRpcService } from "./runner/rpc-service.js";
 import { healthRoutes } from "./routes/health.js";
 import { statusRoutes } from "./routes/status.js";
 import { runnerWsRoute } from "./routes/runner-ws.js";
@@ -20,6 +25,7 @@ export interface BuildAppOptions {
   db?: DatabaseConnection;
   tokenService?: TokenService;
   runnerRegistry?: RunnerRegistry;
+  rpcService?: RunnerRpcService;
   migrationsDir?: string;
   enableLogging?: boolean;
 }
@@ -31,6 +37,7 @@ export interface BuiltAppResult {
   db: DatabaseConnection;
   tokenService: TokenService;
   runnerRegistry: RunnerRegistry;
+  rpcService: RunnerRpcService;
 }
 
 export async function buildApp(
@@ -45,6 +52,7 @@ export async function buildApp(
 
   const app = Fastify({
     loggerInstance: logger,
+    disableRequestLogging: !enableLogging,
   });
 
   // CORS
@@ -52,8 +60,12 @@ export async function buildApp(
     origin: config.server.corsOrigin,
   });
 
-  // WebSocket support
-  await app.register(websocket);
+  // WebSocket support with transport-level maxPayload = 1 MiB (1048576 bytes)
+  await app.register(websocket, {
+    options: {
+      maxPayload: 1048576,
+    },
+  });
 
   // SQLite database
   const db =
@@ -63,12 +75,27 @@ export async function buildApp(
   const tokenService = options.tokenService ?? new TokenService(db.db);
   const runnerRegistry =
     options.runnerRegistry ?? new RunnerRegistry(logger);
+  const rpcService =
+    options.rpcService ?? new RunnerRpcService(runnerRegistry);
 
   // Global error handler
   app.setErrorHandler(
     (error: FastifyError | Error, _request: FastifyRequest, reply: FastifyReply) => {
       if (error instanceof LocalBridgeError) {
-        return reply.status(400).send(error.toJSON());
+        let status = 400;
+        if (error.code === LocalBridgeErrorCode.RUNNER_OFFLINE) status = 404;
+        else if (error.code === LocalBridgeErrorCode.RPC_TIMEOUT) status = 504;
+        else if (error.code === LocalBridgeErrorCode.RUNNER_BUSY) status = 503;
+        else if (error.code === LocalBridgeErrorCode.RUNNER_DISCONNECTED) status = 502;
+        return reply.status(status).send(error.toJSON());
+      }
+
+      if (error instanceof RemoteRpcError) {
+        return reply.status(502).send({
+          code: LocalBridgeErrorCode.RPC_REMOTE_ERROR,
+          message: error.message,
+          details: { remoteCode: error.code, data: error.data },
+        });
       }
 
       const fastifyErr = error as FastifyError;
@@ -92,13 +119,14 @@ export async function buildApp(
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "0.2.0",
+    version: "0.3.0",
     getRunnersConnected: () => runnerRegistry.count(),
     isMcpActive: () => false,
   });
   await app.register(runnersRoutes, {
     prefix: "/api",
     runnerRegistry,
+    rpcService,
   });
 
   // Register WebSocket route for runner connections
@@ -106,7 +134,7 @@ export async function buildApp(
     tokenService,
     runnerRegistry,
     db: db.db,
-    serverVersion: "0.2.0",
+    serverVersion: "0.3.0",
     heartbeatIntervalMs: 15000,
   });
 
@@ -116,5 +144,5 @@ export async function buildApp(
     db.close();
   });
 
-  return { app, db, tokenService, runnerRegistry };
+  return { app, db, tokenService, runnerRegistry, rpcService };
 }

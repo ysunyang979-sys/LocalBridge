@@ -2,7 +2,7 @@ import os from "node:os";
 import child_process from "node:child_process";
 import type { RunnerSystemInfo, RunnerTools } from "@localbridge/protocol";
 
-export function probeToolVersion(command: string, args: string[] = ["--version"]): string | undefined {
+export function probeToolVersion(command: string, args: string[] = ["--version"]): string | null {
   try {
     const fullCmd = `${command} ${args.join(" ")}`;
     const output = child_process.execSync(fullCmd, {
@@ -12,9 +12,9 @@ export function probeToolVersion(command: string, args: string[] = ["--version"]
       windowsHide: true,
     });
     const firstLine = output.trim().split(/\r?\n/)[0];
-    return firstLine ? firstLine.replace(/^[a-zA-Z\s]+version\s+/i, "").trim() : undefined;
+    return firstLine ? firstLine.replace(/^[a-zA-Z\s]+version\s+/i, "").trim() : null;
   } catch {
-    return undefined;
+    return null;
   }
 }
 
@@ -24,7 +24,7 @@ export function detectTools(): RunnerTools {
     node: probeToolVersion("node", ["-v"]),
     npm: probeToolVersion("npm", ["-v"]),
     pnpm: probeToolVersion("pnpm", ["-v"]),
-    python: probeToolVersion("python", ["--version"]) || probeToolVersion("python3", ["--version"]),
+    python: probeToolVersion("python", ["--version"]) ?? probeToolVersion("python3", ["--version"]),
     docker: probeToolVersion("docker", ["--version"]),
   };
 }

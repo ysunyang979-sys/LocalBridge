@@ -34,7 +34,7 @@ LocalBridge Runner (用户本地驻留 Node.js 守护进程)
 ### 核心安全保障
 - **服务端无权直读磁盘**：Server 绝不直接读取项目物理文件，仅作为协议中继与授权分发枢纽；Runner 主动向 Server 发起安全 WebSocket 连接。
 - **项目沙箱与规范路径校验**：AI 仅能感知抽象的 `project_id`。所有文件访问在执行前均经过真实规范路径（Canonical Path）校验，彻底防御 `../` 路径穿越、符号链接越权（Symlink Escape）、Windows Junction 逃逸及 UNC 路径。
-- **双 Token 体系绝对隔离**：MCP 客户端 Token（`lb_` 前缀）与 Runner 认证 Token（`lbr_` 前缀）均基于 256-bit 高熵随机数（`crypto.randomBytes(32)`）生成，数据库仅存储 SHA-256 哈希值（`token_hash`），明文 Token 仅在创建时返回一次，绝不落地。
+- **双 Token 体系绝对隔离**：MCP 客户端 Token（`lb_` 前缀）与 Runner 认证 Token（`lbr_` 前缀）均基于 256-bit 高熵随机数（`crypto.randomBytes(32)`）生成，数据库仅存储 SHA-256 哈希值（`token_hash`），明文 Token 仅在创建时返回一次，绝不落地。固定长度 SHA-256 摘要配合 crypto.timingSafeEqual，降低 Token 比较阶段的时序侧信道风险。
 - **命令风险防护引擎**：Shell 命令严格划分为 `SAFE`、`CAUTION`、`DANGEROUS` 三级，高危命令（如 `rm -rf /`、`format`、`reg delete`、`DROP DATABASE` 等）默认无条件拦截。
 - **敏感文件拦截屏障**：默认严密拦截 `.env*`、`*.pem`、`*.key`、`id_rsa` 等机密配置文件，除非用户在项目中明确放行。
 
@@ -140,6 +140,34 @@ curl http://127.0.0.1:18080/api/status
 # 列出当前在线的 Runner
 curl http://127.0.0.1:18080/api/runners
 ```
+
+### 5. Server ↔ Runner RPC 调用链路 (Phase 3)
+
+LocalBridge 在 Server 与已连入的 Runner 之间建立了强类型的双向 JSON-RPC 2.0 通信链路：
+
+#### 核心方法与调试端点
+- `system.ping`：应用层端到端连通性往返校验。
+  ```bash
+  curl -X POST http://127.0.0.1:18080/api/runners/<runner_id>/ping
+  # {"pong": true, "timestamp": 1742250000000, "runnerId": "..."}
+  ```
+- `system.info`：实时查询 Runner 环境与工具链版本（自动脱敏敏感环境变量与路径）。
+  ```bash
+  curl http://127.0.0.1:18080/api/runners/<runner_id>/system-info
+  ```
+
+#### 请求生命周期与可靠性保证
+- **关联 ID 唯一性**：请求全局使用高强度密码学随机 ID `req_<UUID>`，拒绝简单自增 ID。
+- **端到端双向类型约束**：基于 `RunnerRpcMap` 与 Zod Schema，服务端发送前/接收后以及 Runner 端接收后均执行强类型校验。
+- **并发与消息大小防护**：单个 Runner 连接并发 RPC 挂起上限限制为 `MAX_PENDING_REQUESTS = 64`，单条消息上限 `MAX_RPC_MESSAGE_SIZE = 1 MiB`。
+- **严格超时与内存防泄漏**：每个请求独立挂载超时熔断（`system.ping` 为 5 秒，`system.info` 为 10 秒），超时自动清除挂起状态并抛出 `RPC_TIMEOUT`。
+- **网络中断立即回收**：Runner 意外断开时，所有未完成请求立即清理定时器并以 `RUNNER_DISCONNECTED` 失败响应，杜绝 Promise 挂死。
+- **标准错误处理**：标准 JSON-RPC 错误码（`-32700`、`-32600`、`-32601`、`-32602`、`-32603`），绝不向远端泄露本地调用栈或环境机密。
+
+### 6. 管理 API 安全边界与本地访问说明
+
+- **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
+- **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。
 
 ---
 
