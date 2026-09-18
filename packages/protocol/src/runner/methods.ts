@@ -5,6 +5,9 @@ export const RunnerRpcMethods = {
   ProjectList: "project.list",
   ProjectInfo: "project.info",
   ProjectValidate: "project.validate",
+  DirectoryList: "directory.list",
+  FileStat: "file.stat",
+  FileRead: "file.read",
 } as const;
 
 export type RunnerRpcMethod =
@@ -14,9 +17,10 @@ export const RunnerMethod = {
   RUNNER_HELLO: RunnerRpcMethods.Hello,
   SYSTEM_PING: RunnerRpcMethods.SystemPing,
   SYSTEM_INFO: RunnerRpcMethods.SystemInfo,
-  PROJECT_VALIDATE: "project.validate",
-  DIRECTORY_LIST: "directory.list",
-  FILE_READ: "file.read",
+  PROJECT_VALIDATE: RunnerRpcMethods.ProjectValidate,
+  DIRECTORY_LIST: RunnerRpcMethods.DirectoryList,
+  FILE_STAT: RunnerRpcMethods.FileStat,
+  FILE_READ: RunnerRpcMethods.FileRead,
   FILE_CREATE: "file.create",
   FILE_WRITE: "file.write",
   FILE_PATCH: "file.patch",

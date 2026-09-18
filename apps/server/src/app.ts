@@ -125,7 +125,7 @@ export async function buildApp(
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "0.4.0",
+    version: "0.5.0",
     getRunnersConnected: () => runnerRegistry.count(),
     isMcpActive: () => false,
   });
@@ -145,7 +145,7 @@ export async function buildApp(
     runnerRegistry,
     projectService,
     db: db.db,
-    serverVersion: "0.4.0",
+    serverVersion: "0.5.0",
     heartbeatIntervalMs: 15000,
   });
 

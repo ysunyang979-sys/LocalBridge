@@ -22,9 +22,13 @@ import { createSystemInfoHandler } from "./rpc/handlers/system-info.js";
 import { createProjectListHandler } from "./rpc/handlers/project-list.js";
 import { createProjectInfoHandler } from "./rpc/handlers/project-info.js";
 import { createProjectValidateHandler } from "./rpc/handlers/project-validate.js";
+import { createDirectoryListHandler } from "./rpc/handlers/directory-list.js";
+import { createFileStatHandler } from "./rpc/handlers/file-stat.js";
+import { createFileReadHandler } from "./rpc/handlers/file-read.js";
 import { ProjectRegistry } from "./projects/index.js";
+import { FilesystemService } from "./filesystem/index.js";
 
-export const RUNNER_VERSION = "0.4.0";
+export const RUNNER_VERSION = "0.5.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -39,6 +43,7 @@ export class LocalBridgeRunner {
   readonly config: RunnerDaemonConfig;
   readonly rpcRouter: RpcRouter;
   readonly projectRegistry: ProjectRegistry;
+  readonly filesystemService: FilesystemService;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -78,6 +83,11 @@ export class LocalBridgeRunner {
       logger: this.logger,
     });
 
+    this.filesystemService = new FilesystemService(
+      this.projectRegistry,
+      this.logger
+    );
+
     this.rpcRouter = new RpcRouter(this.logger);
     this.registerDefaultHandlers();
   }
@@ -114,6 +124,21 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.ProjectValidate,
       createProjectValidateHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.DirectoryList,
+      createDirectoryListHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FileStat,
+      createFileStatHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FileRead,
+      createFileReadHandler(this.filesystemService)
     );
   }
 

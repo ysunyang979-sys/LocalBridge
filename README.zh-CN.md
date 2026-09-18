@@ -205,10 +205,38 @@ pnpm --filter @localbridge/runner project:remove <project_id>
 4. **软链接与 Windows 目录联接穿越防御 (Symlink & Junction Escape Protection)**：检测并拦截指向项目根目录外部的软链接及 Windows Directory Junction，抛出 `PATH_SYMLINK_ESCAPE`。
 5. **敏感凭证屏蔽策略 (Sensitive File Shield)**：默认主动阻断高危凭证与私钥的探测与访问（包含 `.env`、`.env.*`、`*.pem`、`*.key`、`id_rsa*`、`id_ed25519*`、`.ssh/*`、`.aws/*`、`.git/*`、`credentials.json`、`client_secret*.json` 等）。
 
-> [!IMPORTANT]
-> **Phase 4 状态声明**：LocalBridge 当前处于 Phase 4。任何实际的文件读取、文件写入、目录列出、Shell 执行均未开放，物理路径绝对保留在用户本地机器。
+### 7. 安全只读文件系统与目录浏览 (Phase 5)
 
-### 7. 管理 API 安全边界与本地访问说明
+LocalBridge Phase 5 通过 Server ↔ Runner 强类型 RPC，在用户授权的项目边界内提供了严格受限的只读文件系统探测与 UTF-8 文本切片浏览能力。
+
+#### 只读 RPC 方法
+1. **`directory.list`**：
+   - 用户已授权项目目录的单层（Non-recursive）内容列出。
+   - **敏感凭证过滤**：自动过滤匹配敏感凭证策略的文件（`.env*`、`.git/*`、`id_rsa*`、`.npmrc`、`.pypirc` 等），条目绝不出现在的 `entries` 中，并置位 `sensitiveEntriesFiltered: true`。
+   - **确定性排序与不透明游标分页**：按文件名标准化升序排序；支持 `limit`（1~200，默认 100）与 base64url JSON 不透明游标（`nextCursor`）。
+   - **软链接可访问性识别**：自动探测符号链接目标，若目标指向项目外部或断开则标记 `accessible: false`。
+
+2. **`file.stat`**：
+   - 检查文件、目录或安全符号链接的元数据，不读取文件内容。
+   - 返回规范项目相对路径、条目名称、类型（`"file" | "directory" | "symlink"`）、字节大小（Size）与修改时间戳（`modifiedAt`）。
+   - 对敏感凭证文件立刻抛出 `SENSITIVE_FILE_BLOCKED`。
+
+3. **`file.read`**：
+   - 使用显式只读模式（`"r"`）安全读取 UTF-8 文本文件切片。
+   - **行窗口切片分段**：基于 1 索引的 `startLine` 与 `maxLines`（单次最高 500 行），返回强类型 `{ line: number, text: string }` 行数组。
+   - **严格大小限制**：8 MiB 文件上限（`FILE_TOO_LARGE`）、128 KiB 单行长度上限（`FILE_LINE_TOO_LONG`）以及 128 KiB 单次读取文本截断（`truncated: true`）。
+   - **二进制与编码检测**：前 8 KiB 进行 NUL 字节空值探针（`BINARY_FILE`），并强制验证严格的 UTF-8 可解码性（`FILE_ENCODING_UNSUPPORTED`），自动剥离 UTF-8 BOM。
+
+#### 核心安全与隐私承诺
+- **绝不实现任何写操作**：`file.write`、`file.create`、`file.patch`、`file.delete`、`directory.create`、`directory.delete` 均严禁实现并保持完全空缺。
+- **物理路径零泄露**：真实物理路径（`root`、`canonicalRoot`、`absolutePath`）绝不离开本地 Runner 守护进程，绝不在 RPC 载荷或服务端日志中暴露。
+- **服务端零文件持久化**：LocalBridge Server 仅作为无状态 RPC 路由器，绝不持久化任何文件内容或目录树数据。
+- **严禁命令或代码执行**：Shell、Git CLI 执行、构建测试命令及后台作业依然完全处于禁用状态。
+
+> [!IMPORTANT]
+> **Phase 5 状态声明**：LocalBridge 当前处于 Phase 5（安全只读文件系统与目录浏览）。仅提供授权项目内的只读操作（`directory.list`、`file.stat`、`file.read`）。任何文件写操作、文件删除、Shell 执行以及 MCP 运行时端点在此阶段依然严格禁止。
+
+### 8. 管理 API 安全边界与本地访问说明
 
 - **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。

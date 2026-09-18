@@ -1,5 +1,6 @@
 import {
   JsonRpcStandardErrorCode,
+  LocalBridgeErrorCode,
   MAX_RPC_MESSAGE_SIZE,
   RunnerRpcSchemas,
   type RunnerRpcMethodName,
@@ -186,12 +187,31 @@ export class RpcRouter {
         `RPC handler failed for method "${method}"`
       );
 
+      const errObj = err as Record<string, unknown> | null;
+      const isKnownLocalBridgeError =
+        errObj !== null &&
+        typeof errObj === "object" &&
+        typeof errObj["code"] === "string" &&
+        Object.values(LocalBridgeErrorCode).includes(
+          errObj["code"] as LocalBridgeErrorCode
+        );
+
+      const errCode = isKnownLocalBridgeError
+        ? (errObj["code"] as LocalBridgeErrorCode)
+        : undefined;
+
+      const errMsg =
+        isKnownLocalBridgeError && typeof errObj["message"] === "string"
+          ? errObj["message"]
+          : "Internal error";
+
       return {
         jsonrpc: "2.0",
         id,
         error: {
           code: JsonRpcStandardErrorCode.InternalError,
-          message: "Internal error",
+          message: errMsg,
+          ...(errCode ? { data: { code: errCode } } : {}),
         },
       };
     } finally {

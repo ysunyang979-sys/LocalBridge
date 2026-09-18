@@ -28,6 +28,15 @@ describe("Sensitive File Policy", () => {
       ".aws/credentials",
       ".aws/config",
       "config/master.key",
+      ".npmrc",
+      ".pypirc",
+      ".netrc",
+      "certs/identity.p12",
+      "certs/bundle.pfx",
+      "security/keystore.jks",
+      "android/app/release.keystore",
+      ".docker/config.json",
+      ".docker/credentials",
     ];
 
     for (const file of sensitiveCases) {
@@ -52,6 +61,10 @@ describe("Sensitive File Policy", () => {
       "src/keys.ts", // must not match *.key
       "test/pem-parser.test.ts",
       "git-status.ts",
+      "docs/npmrc-guide.md", // must not match .npmrc
+      "src/mypypirc.ts", // must not match .pypirc
+      "notes/netrc.txt", // must not match .netrc
+      "docs/project.keystore.md", // must not match *.keystore
     ];
 
     for (const file of safeCases) {

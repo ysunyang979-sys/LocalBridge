@@ -41,22 +41,12 @@ export const FileDeleteResponseSchema = z.object({
 });
 export type FileDeleteResponse = z.infer<typeof FileDeleteResponseSchema>;
 
-export const DirectoryEntrySchema = z.object({
-  name: z.string(),
-  path: z.string(),
-  isDirectory: z.boolean(),
-  isFile: z.boolean(),
-  isSymlink: z.boolean(),
-  size: z.number(),
-  mtime: z.number(),
-});
-export type DirectoryEntry = z.infer<typeof DirectoryEntrySchema>;
-
-export const DirectoryListResponseSchema = z.object({
-  path: z.string(),
-  entries: z.array(DirectoryEntrySchema),
-});
-export type DirectoryListResponse = z.infer<typeof DirectoryListResponseSchema>;
+export {
+  DirectoryEntrySchema,
+  type DirectoryEntry,
+  DirectoryListResultSchema as DirectoryListResponseSchema,
+  type DirectoryListResult as DirectoryListResponse,
+} from "./rpc.js";
 
 export const FileSearchMatchSchema = z.object({
   path: z.string(),

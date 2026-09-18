@@ -381,7 +381,27 @@ export class ActiveRunnerConnection implements RunnerConnection {
         `Remote RPC error for "${pending.method}": [${code}] ${message}`
       );
 
-      pending.reject(new RemoteRpcError(code, message, errObj.data));
+      const dataObj =
+        errObj.data && typeof errObj.data === "object"
+          ? (errObj.data as Record<string, unknown>)
+          : undefined;
+      if (
+        dataObj &&
+        typeof dataObj.code === "string" &&
+        Object.values(LocalBridgeErrorCode).includes(
+          dataObj.code as LocalBridgeErrorCode
+        )
+      ) {
+        pending.reject(
+          new LocalBridgeError(
+            dataObj.code as LocalBridgeErrorCode,
+            message,
+            dataObj
+          )
+        );
+      } else {
+        pending.reject(new RemoteRpcError(code, message, errObj.data));
+      }
       return;
     }
 

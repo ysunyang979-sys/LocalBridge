@@ -59,5 +59,25 @@ export function isSensitiveFile(relativePath: string): boolean {
     return true;
   }
 
+  // 8. Package manager and network credentials (.npmrc, .pypirc, .netrc)
+  if (basename === ".npmrc" || basename === ".pypirc" || basename === ".netrc") {
+    return true;
+  }
+
+  // 9. Keystore and certificate bundles (*.p12, *.pfx, *.jks, *.keystore)
+  if (
+    basename.endsWith(".p12") ||
+    basename.endsWith(".pfx") ||
+    basename.endsWith(".jks") ||
+    basename.endsWith(".keystore")
+  ) {
+    return true;
+  }
+
+  // 10. Container secrets (.docker/*)
+  if (segments.includes(".docker")) {
+    return true;
+  }
+
   return false;
 }

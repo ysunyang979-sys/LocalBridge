@@ -99,6 +99,94 @@ export const ProjectValidateResultSchema = z.object({
 });
 export type ProjectValidateResult = z.infer<typeof ProjectValidateResultSchema>;
 
+// 6. directory.list
+export const DirectoryListParamsSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string().default("."),
+    limit: z.number().int().min(1).max(200).default(100),
+    cursor: z.string().nullable().optional(),
+  })
+  .strict();
+export type DirectoryListParams = z.infer<typeof DirectoryListParamsSchema>;
+
+export const DirectoryEntrySchema = z
+  .object({
+    name: z.string(),
+    type: z.enum(["file", "directory", "symlink"]),
+    size: z.number().optional(),
+    modifiedAt: z.number().optional(),
+    accessible: z.boolean().optional(),
+  })
+  .strict();
+export type DirectoryEntry = z.infer<typeof DirectoryEntrySchema>;
+
+export const DirectoryListResultSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    entries: z.array(DirectoryEntrySchema),
+    nextCursor: z.string().nullable(),
+    sensitiveEntriesFiltered: z.boolean(),
+  })
+  .strict();
+export type DirectoryListResult = z.infer<typeof DirectoryListResultSchema>;
+
+// 7. file.stat
+export const FileStatParamsSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+  })
+  .strict();
+export type FileStatParams = z.infer<typeof FileStatParamsSchema>;
+
+export const FileStatResultSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    name: z.string(),
+    type: z.enum(["file", "directory", "symlink"]),
+    size: z.number().optional(),
+    modifiedAt: z.number(),
+    accessible: z.boolean().optional(),
+  })
+  .strict();
+export type FileStatResult = z.infer<typeof FileStatResultSchema>;
+
+// 8. file.read
+export const FileReadParamsSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    startLine: z.number().int().min(1).default(1),
+    maxLines: z.number().int().min(1).max(500).default(300),
+  })
+  .strict();
+export type FileReadParams = z.infer<typeof FileReadParamsSchema>;
+
+export const FileLineSchema = z
+  .object({
+    line: z.number().int().min(1),
+    text: z.string(),
+  })
+  .strict();
+export type FileLine = z.infer<typeof FileLineSchema>;
+
+export const FileReadResultSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    encoding: z.literal("utf-8"),
+    startLine: z.number().int().min(1),
+    endLine: z.number().int().min(0),
+    nextLine: z.number().int().min(1).nullable(),
+    truncated: z.boolean(),
+    lines: z.array(FileLineSchema),
+  })
+  .strict();
+export type FileReadResult = z.infer<typeof FileReadResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -120,6 +208,18 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.ProjectValidate]: {
     params: ProjectValidateParams;
     result: ProjectValidateResult;
+  };
+  [RunnerRpcMethods.DirectoryList]: {
+    params: DirectoryListParams;
+    result: DirectoryListResult;
+  };
+  [RunnerRpcMethods.FileStat]: {
+    params: FileStatParams;
+    result: FileStatResult;
+  };
+  [RunnerRpcMethods.FileRead]: {
+    params: FileReadParams;
+    result: FileReadResult;
   };
 }
 
@@ -146,5 +246,17 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.ProjectValidate]: {
     params: ProjectValidateParamsSchema,
     result: ProjectValidateResultSchema,
+  },
+  [RunnerRpcMethods.DirectoryList]: {
+    params: DirectoryListParamsSchema,
+    result: DirectoryListResultSchema,
+  },
+  [RunnerRpcMethods.FileStat]: {
+    params: FileStatParamsSchema,
+    result: FileStatResultSchema,
+  },
+  [RunnerRpcMethods.FileRead]: {
+    params: FileReadParamsSchema,
+    result: FileReadResultSchema,
   },
 } as const;

@@ -64,7 +64,7 @@ describe("Runner Daemon & Server End-to-End Integration", () => {
       version: string;
     };
     expect(initialStatus.runners_connected).toBe(0);
-    expect(initialStatus.version).toBe("0.4.0");
+    expect(initialStatus.version).toBe("0.5.0");
 
     // 2. Instantiate and start Runner daemon
     const silentLogger = createLogger({ level: "silent" });

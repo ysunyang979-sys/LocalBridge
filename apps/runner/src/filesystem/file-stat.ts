@@ -1,0 +1,72 @@
+import fs from "node:fs";
+import path from "node:path";
+import {
+  LocalBridgeError,
+  LocalBridgeErrorCode,
+  type FileStatResult,
+} from "@localbridge/protocol";
+import { resolveProjectPath, isSensitiveFile } from "@localbridge/security";
+import { sanitizeFsError } from "./errors.js";
+
+export interface StatFileOptions {
+  projectId: string;
+  canonicalRoot: string;
+  projectRelativePath: string;
+}
+
+/**
+ * Inspect metadata of a file, directory, or symlink within the sandbox.
+ * Rejects sensitive files and escaping symlinks with zero physical path leakage.
+ */
+export function statFile(options: StatFileOptions): FileStatResult {
+  const { projectId, canonicalRoot, projectRelativePath } = options;
+
+  // 1. Sensitive file check
+  if (isSensitiveFile(projectRelativePath)) {
+    throw new LocalBridgeError(
+      LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED,
+      "Access to sensitive credential file is blocked"
+    );
+  }
+
+  // 2. Resolve target in sandbox (enforcing canonical containment and symlink escape checks)
+  const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
+    mustExist: true,
+  });
+
+  // 3. Inspect target stats
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(resolved.canonicalPath);
+  } catch (err) {
+    sanitizeFsError(err, "Failed to stat target path");
+  }
+
+  const normalizedRelativePath = path.posix.normalize(
+    projectRelativePath.replace(/\\/g, "/")
+  );
+
+  const name =
+    normalizedRelativePath === "." || normalizedRelativePath === ""
+      ? path.basename(canonicalRoot)
+      : path.posix.basename(normalizedRelativePath);
+
+  if (stat.isDirectory()) {
+    return {
+      projectId,
+      path: normalizedRelativePath,
+      name,
+      type: "directory",
+      modifiedAt: Math.floor(stat.mtimeMs),
+    };
+  }
+
+  return {
+    projectId,
+    path: normalizedRelativePath,
+    name,
+    type: "file",
+    size: stat.size,
+    modifiedAt: Math.floor(stat.mtimeMs),
+  };
+}
