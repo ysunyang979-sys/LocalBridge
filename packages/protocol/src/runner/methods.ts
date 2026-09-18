@@ -19,6 +19,13 @@ export const RunnerRpcMethods = {
   GitLog: "git.log",
   CommandClassify: "command.classify",
   CommandRun: "command.run",
+  JobStart: "job.start",
+  JobStatus: "job.status",
+  JobLogs: "job.logs",
+  JobCancel: "job.cancel",
+  JobList: "job.list",
+  BuildStart: "build.start",
+  TestStart: "test.start",
 } as const;
 
 export type RunnerRpcMethod =
@@ -45,10 +52,13 @@ export const RunnerMethod = {
   COMMAND_RUN: RunnerRpcMethods.CommandRun,
   FILE_SEARCH: "file.search",
   TEXT_SEARCH: "text.search",
-  JOB_START: "job.start",
-  JOB_STATUS: "job.status",
-  JOB_LOGS: "job.logs",
-  JOB_CANCEL: "job.cancel",
+  JOB_START: RunnerRpcMethods.JobStart,
+  JOB_STATUS: RunnerRpcMethods.JobStatus,
+  JOB_LOGS: RunnerRpcMethods.JobLogs,
+  JOB_CANCEL: RunnerRpcMethods.JobCancel,
+  JOB_LIST: RunnerRpcMethods.JobList,
+  BUILD_START: RunnerRpcMethods.BuildStart,
+  TEST_START: RunnerRpcMethods.TestStart,
 } as const;
 
 export type RunnerMethod = (typeof RunnerMethod)[keyof typeof RunnerMethod];

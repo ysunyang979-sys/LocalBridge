@@ -535,6 +535,183 @@ export const CommandRunResultSchema = z
   .strict();
 export type CommandRunResult = z.infer<typeof CommandRunResultSchema>;
 
+// Phase 9: Job States
+export const JobStateSchema = z.enum([
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "timed-out",
+]);
+export type JobState = z.infer<typeof JobStateSchema>;
+
+// 20. job.start
+export const JobStartParamsSchema = z
+  .object({
+    command: CommandSpecSchema,
+    timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+  })
+  .strict();
+export type JobStartParams = z.infer<typeof JobStartParamsSchema>;
+
+export const JobStartResultSchema = z
+  .object({
+    jobId: z.string(),
+    state: JobStateSchema,
+    createdAt: z.number().int(),
+  })
+  .strict();
+export type JobStartResult = z.infer<typeof JobStartResultSchema>;
+
+// 21. job.status
+export const JobStatusParamsSchema = z
+  .object({
+    jobId: z.string(),
+  })
+  .strict();
+export type JobStatusParams = z.infer<typeof JobStatusParamsSchema>;
+
+export const JobStatusResultSchema = z
+  .object({
+    jobId: z.string(),
+    projectId: z.string(),
+    state: JobStateSchema,
+    risk: CommandRiskLevelSchema,
+    createdAt: z.number().int(),
+    startedAt: z.number().int().nullable(),
+    finishedAt: z.number().int().nullable(),
+    exitCode: z.number().int().nullable(),
+    signal: z.string().nullable(),
+    durationMs: z.number().int().nonnegative(),
+  })
+  .strict();
+export type JobStatusResult = z.infer<typeof JobStatusResultSchema>;
+
+// 22. job.logs
+export const JobLogChunkSchema = z
+  .object({
+    seq: z.number().int().positive(),
+    stream: z.enum(["stdout", "stderr"]),
+    timestamp: z.number().int(),
+    text: z.string(),
+  })
+  .strict();
+export type JobLogChunk = z.infer<typeof JobLogChunkSchema>;
+
+export const JobLogsParamsSchema = z
+  .object({
+    jobId: z.string(),
+    cursor: z.string().nullable().optional(),
+    limit: z.number().int().min(1).max(200).default(100),
+  })
+  .strict();
+export type JobLogsParams = z.infer<typeof JobLogsParamsSchema>;
+
+export const JobLogsResultSchema = z
+  .object({
+    jobId: z.string(),
+    chunks: z.array(JobLogChunkSchema),
+    nextCursor: z.string().nullable(),
+    truncated: z.boolean(),
+    droppedBytes: z.number().int().nonnegative(),
+  })
+  .strict();
+export type JobLogsResult = z.infer<typeof JobLogsResultSchema>;
+
+// 23. job.cancel
+export const JobCancelParamsSchema = z
+  .object({
+    jobId: z.string(),
+  })
+  .strict();
+export type JobCancelParams = z.infer<typeof JobCancelParamsSchema>;
+
+export const JobCancelResultSchema = z
+  .object({
+    jobId: z.string(),
+    state: JobStateSchema,
+    alreadyTerminal: z.boolean(),
+  })
+  .strict();
+export type JobCancelResult = z.infer<typeof JobCancelResultSchema>;
+
+// 24. job.list
+export const JobListParamsSchema = z
+  .object({
+    projectId: z.string().optional(),
+    state: JobStateSchema.optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+  })
+  .strict();
+export type JobListParams = z.infer<typeof JobListParamsSchema>;
+
+export const JobSummarySchema = z
+  .object({
+    jobId: z.string(),
+    projectId: z.string(),
+    state: JobStateSchema,
+    commandKind: z.string(),
+    risk: CommandRiskLevelSchema,
+    createdAt: z.number().int(),
+    startedAt: z.number().int().nullable(),
+    finishedAt: z.number().int().nullable(),
+    exitCode: z.number().int().nullable(),
+  })
+  .strict();
+export type JobSummary = z.infer<typeof JobSummarySchema>;
+
+export const JobListResultSchema = z
+  .object({
+    jobs: z.array(JobSummarySchema),
+  })
+  .strict();
+export type JobListResult = z.infer<typeof JobListResultSchema>;
+
+// 25. build.start
+export const BuildStartParamsSchema = z
+  .object({
+    projectId: z.string(),
+    manager: z.enum(["npm", "pnpm"]).default("pnpm"),
+    script: z.string().default("build"),
+    args: z.array(z.string()).max(64).default([]),
+    cwd: z.string().default("."),
+    timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+  })
+  .strict();
+export type BuildStartParams = z.infer<typeof BuildStartParamsSchema>;
+
+export const BuildStartResultSchema = z
+  .object({
+    jobId: z.string(),
+    state: JobStateSchema,
+    createdAt: z.number().int(),
+  })
+  .strict();
+export type BuildStartResult = z.infer<typeof BuildStartResultSchema>;
+
+// 26. test.start
+export const TestStartParamsSchema = z
+  .object({
+    projectId: z.string(),
+    manager: z.enum(["npm", "pnpm"]).default("pnpm"),
+    script: z.string().default("test"),
+    args: z.array(z.string()).max(64).default([]),
+    cwd: z.string().default("."),
+    timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+  })
+  .strict();
+export type TestStartParams = z.infer<typeof TestStartParamsSchema>;
+
+export const TestStartResultSchema = z
+  .object({
+    jobId: z.string(),
+    state: JobStateSchema,
+    createdAt: z.number().int(),
+  })
+  .strict();
+export type TestStartResult = z.infer<typeof TestStartResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -612,6 +789,34 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.CommandRun]: {
     params: CommandRunParams;
     result: CommandRunResult;
+  };
+  [RunnerRpcMethods.JobStart]: {
+    params: JobStartParams;
+    result: JobStartResult;
+  };
+  [RunnerRpcMethods.JobStatus]: {
+    params: JobStatusParams;
+    result: JobStatusResult;
+  };
+  [RunnerRpcMethods.JobLogs]: {
+    params: JobLogsParams;
+    result: JobLogsResult;
+  };
+  [RunnerRpcMethods.JobCancel]: {
+    params: JobCancelParams;
+    result: JobCancelResult;
+  };
+  [RunnerRpcMethods.JobList]: {
+    params: JobListParams;
+    result: JobListResult;
+  };
+  [RunnerRpcMethods.BuildStart]: {
+    params: BuildStartParams;
+    result: BuildStartResult;
+  };
+  [RunnerRpcMethods.TestStart]: {
+    params: TestStartParams;
+    result: TestStartResult;
   };
 }
 
@@ -694,5 +899,33 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.CommandRun]: {
     params: CommandRunParamsSchema,
     result: CommandRunResultSchema,
+  },
+  [RunnerRpcMethods.JobStart]: {
+    params: JobStartParamsSchema,
+    result: JobStartResultSchema,
+  },
+  [RunnerRpcMethods.JobStatus]: {
+    params: JobStatusParamsSchema,
+    result: JobStatusResultSchema,
+  },
+  [RunnerRpcMethods.JobLogs]: {
+    params: JobLogsParamsSchema,
+    result: JobLogsResultSchema,
+  },
+  [RunnerRpcMethods.JobCancel]: {
+    params: JobCancelParamsSchema,
+    result: JobCancelResultSchema,
+  },
+  [RunnerRpcMethods.JobList]: {
+    params: JobListParamsSchema,
+    result: JobListResultSchema,
+  },
+  [RunnerRpcMethods.BuildStart]: {
+    params: BuildStartParamsSchema,
+    result: BuildStartResultSchema,
+  },
+  [RunnerRpcMethods.TestStart]: {
+    params: TestStartParamsSchema,
+    result: TestStartResultSchema,
   },
 } as const;

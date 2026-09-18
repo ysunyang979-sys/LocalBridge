@@ -36,6 +36,13 @@ import { createGitDiffHandler } from "./rpc/handlers/git-diff.js";
 import { createGitLogHandler } from "./rpc/handlers/git-log.js";
 import { createCommandClassifyHandler } from "./rpc/handlers/command-classify.js";
 import { createCommandRunHandler } from "./rpc/handlers/command-run.js";
+import { createJobStartHandler } from "./rpc/handlers/job-start.js";
+import { createJobStatusHandler } from "./rpc/handlers/job-status.js";
+import { createJobLogsHandler } from "./rpc/handlers/job-logs.js";
+import { createJobCancelHandler } from "./rpc/handlers/job-cancel.js";
+import { createJobListHandler } from "./rpc/handlers/job-list.js";
+import { createBuildStartHandler } from "./rpc/handlers/build-start.js";
+import { createTestStartHandler } from "./rpc/handlers/test-start.js";
 import { ProjectRegistry } from "./projects/index.js";
 import { FilesystemService } from "./filesystem/index.js";
 import { BackupService } from "./backup/index.js";
@@ -45,8 +52,9 @@ import {
   ExecutableRegistry,
   ProcessRunner,
 } from "./process/index.js";
+import { JobManager } from "./jobs/index.js";
 
-export const RUNNER_VERSION = "0.8.0";
+export const RUNNER_VERSION = "0.9.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -67,6 +75,7 @@ export class LocalBridgeRunner {
   readonly executableRegistry: ExecutableRegistry;
   readonly processRunner: ProcessRunner;
   readonly commandExecutionService: CommandExecutionService;
+  readonly jobManager: JobManager;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -133,6 +142,13 @@ export class LocalBridgeRunner {
       this.projectRegistry,
       this.executableRegistry,
       this.processRunner,
+      runnerStateDir,
+      this.logger
+    );
+
+    this.jobManager = new JobManager(
+      this.projectRegistry,
+      this.executableRegistry,
       runnerStateDir,
       this.logger
     );
@@ -244,6 +260,41 @@ export class LocalBridgeRunner {
       RunnerRpcMethods.CommandRun,
       createCommandRunHandler(this.commandExecutionService)
     );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.JobStart,
+      createJobStartHandler(this.jobManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.JobStatus,
+      createJobStatusHandler(this.jobManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.JobLogs,
+      createJobLogsHandler(this.jobManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.JobCancel,
+      createJobCancelHandler(this.jobManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.JobList,
+      createJobListHandler(this.jobManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.BuildStart,
+      createBuildStartHandler(this.jobManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.TestStart,
+      createTestStartHandler(this.jobManager)
+    );
   }
 
   get router(): RpcRouter {
@@ -276,6 +327,7 @@ export class LocalBridgeRunner {
     this.state = "stopped";
     this.reconnectController.cancel();
     this.heartbeatMonitor.stop();
+    await this.jobManager.stop();
 
     if (this.client) {
       this.logger.info("Closing WebSocket connection to server...");

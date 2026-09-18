@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import {
   LocalBridgeError,
   LocalBridgeErrorCode,
@@ -30,13 +31,14 @@ function getComparisonKey(p: string): string {
   return process.platform === "win32" ? p.toLowerCase() : p;
 }
 
-export class ProjectRegistry {
+export class ProjectRegistry extends EventEmitter {
   private readonly projects = new Map<string, RunnerProjectRecord>();
 
   constructor(
     private readonly storagePath: string,
     private readonly logger?: Logger
   ) {
+    super();
     this.reload();
   }
 
@@ -149,6 +151,7 @@ export class ProjectRegistry {
       `Removed authorized project "${existing.name}" (${projectId})`
     );
 
+    this.emit("project:removed", projectId);
     return true;
   }
 
@@ -162,6 +165,7 @@ export class ProjectRegistry {
     project.enabled = true;
     project.updatedAt = Date.now();
     this.save();
+    this.emit("project:enabled", projectId);
     return true;
   }
 
@@ -175,6 +179,7 @@ export class ProjectRegistry {
     project.enabled = false;
     project.updatedAt = Date.now();
     this.save();
+    this.emit("project:disabled", projectId);
     return true;
   }
 
@@ -202,9 +207,11 @@ export class ProjectRegistry {
     }
 
     project.accessMode = accessMode;
+    let downgradedExecution = false;
     // Security coupling: if accessMode is downgraded to read-only, project-code execution must be disabled
     if (accessMode === "read-only" && project.executionMode === "project-code") {
       project.executionMode = "disabled";
+      downgradedExecution = true;
       this.logger?.warn(
         { event: "project_execution_mode_downgraded", projectId },
         `Downgraded executionMode to "disabled" because accessMode was set to "read-only"`
@@ -217,6 +224,11 @@ export class ProjectRegistry {
       { event: "project_access_mode_changed", projectId, accessMode },
       `Set access mode for project "${project.name}" (${projectId}) to "${accessMode}"`
     );
+
+    this.emit("project:access_mode_changed", projectId, accessMode);
+    if (downgradedExecution) {
+      this.emit("project:execution_mode_changed", projectId, "disabled");
+    }
 
     return project;
   }
@@ -265,6 +277,7 @@ export class ProjectRegistry {
       `Set execution mode for project "${project.name}" (${projectId}) to "${executionMode}"`
     );
 
+    this.emit("project:execution_mode_changed", projectId, executionMode);
     return project;
   }
 

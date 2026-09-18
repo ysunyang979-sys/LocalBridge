@@ -364,9 +364,57 @@ Commands must be submitted using a structured, discriminated `CommandSpec`:
 > **Project Code Trust Boundary**: Commands running in `project-code` mode execute with the local OS user privileges of the Runner process. While LocalBridge enforces strict parameter validation, path containment, environment stripping, resource caps, and process tree termination, it does not provide OS-level containerization or hypervisor isolation. Users must only grant `project-code` execution to projects whose scripts and dependencies they trust.
 
 > [!IMPORTANT]
-> **Phase 8 Status Notice**: LocalBridge has completed Phase 8. Controlled, risk-classified command execution (`command.classify`, `command.run`), read-only Git inspection, and transactional filesystem operations are fully operational. Background jobs, MCP runtime endpoints, and GUI remain slated for future phases.
+> **Phase 8 Status Notice**: LocalBridge completed Phase 8 (Controlled Command Execution).
 
-### 11. Management API Security Boundary
+### 11. Build/Test & Background Job System (Phase 9)
+
+LocalBridge Phase 9 introduces a robust, asynchronous background job execution subsystem designed for long-running build tasks, test suites, and project scripts (`job.start`, `job.status`, `job.logs`, `job.cancel`, `job.list`, `build.start`, `test.start`) over JSON-RPC 2.0.
+
+#### Zero Raw Shell Guarantee & Unified Security Model
+- **Strictly Prohibited**: No raw shell execution (`shell.run`, `cmd.exe /c`, `powershell -Command`, `bash -c`, `sh -c`), no arbitrary binary invocation, and no remote command strings.
+- **Inherited Policy**: Background jobs execute strictly through Phase 8's structured `CommandSpec` and policy engine.
+- **Execution Modes**: Only projects explicitly granted `executionMode: "project-code"` and `accessMode: "read-write"` can execute background scripts, builds, or tests.
+
+#### High-Level `build.start` and `test.start` Wrappers
+- Dedicated high-level RPC methods for project builds and test runs:
+  - `build.start`: Defaults to `pnpm run build` or `npm run build` (or specified custom script).
+  - `test.start`: Defaults to `pnpm run test` or `npm run test` (or specified custom script).
+- Preflight validation verifies that `package.json` exists in the working directory and defines the requested script; throws `BUILD_SCRIPT_NOT_FOUND` or `TEST_SCRIPT_NOT_FOUND` before process spawning.
+- **No Automatic Dependency Installation**: Missing `node_modules` or packages results in normal process execution failure recorded in job logs; LocalBridge never automatically runs `npm install` or `pnpm install`.
+
+#### Concurrency & Rate Limiting
+- **Per-Runner Limit**: At most 4 concurrent running jobs across the entire Runner daemon (`MAX_RUNNING_JOBS_PER_RUNNER = 4`). Exceeding throws `JOB_CAPACITY_EXCEEDED`.
+- **Per-Project Limit**: At most 2 concurrent running jobs for any single authorized project (`MAX_RUNNING_JOBS_PER_PROJECT = 2`). Exceeding throws `JOB_CAPACITY_EXCEEDED`.
+- **Rate Limit**: At most 20 job starts per minute (`MAX_JOB_STARTS_PER_MINUTE = 20`). Exceeding throws `JOB_RATE_LIMITED`.
+- Slots are immediately released upon job termination (succeeded, failed, cancelled, timed-out).
+
+#### Execution Bounds & Process Tree Termination
+- **Timeouts**: Configurable per job from 1s to 3600s (default 600s / 10 minutes). On timeout, the entire process tree is terminated via `taskkill.exe /PID <pid> /T /F` on Windows or process groups on POSIX, transitioning the job to `timed-out`.
+- **Precedence**: Job-level timeout takes precedence over `CommandSpec.timeoutMs` to prevent conflicting dual timers.
+- **Idempotent Cancellation**: Calling `job.cancel` aborts active process trees immediately; cancelling an already finished job is safely idempotent and returns `alreadyTerminal: true`.
+
+#### In-Memory Ring Buffer & Sanitized Log Streaming
+- **4 MiB Ring Buffer**: Each job maintains an in-memory ring buffer (up to 4 MiB) with FIFO dropping of oldest chunks when exceeded. Tracks `truncated: true` and `droppedBytes`.
+- **Pre-Storage Sanitization**: ANSI color sequences, CSI controls, and OSC hyperlinks are stripped before buffering. Physical host paths are redacted to `<project-root>`, `<runner-state>`, and `<user-home>` while preserving UTF-8 text, Chinese characters, and Unicode emojis.
+- **Cursor Pagination**: Querying `job.logs` supports base64url sequential cursors (`lastSeq`), bounded to at most 100 chunks and 128 KiB of text per RPC response.
+- **Zero Server Log Persistence**: Server stores audit metadata in SQLite, but never persists stdout/stderr streams.
+
+#### Runner Ownership & Disconnect Continuity
+- Background jobs are owned by the local Runner process, not the ephemeral WebSocket connection.
+- If the WebSocket disconnects while jobs are running, jobs continue executing uninterrupted on the local machine.
+- Reconnected callers can query status and fetch logs using the stable `job_<UUIDv4>` identifier.
+
+#### Immediate Revocation & Downgrade Abort
+- When a project is removed or disabled in the local ProjectRegistry, or when its permissions are downgraded (`executionMode` set to `disabled`/`safe-only`, or `accessMode` set to `read-only`), all active background jobs for that project are terminated immediately.
+
+#### Trust Boundary Notice
+> [!WARNING]
+> **Background Job Trust Boundary**: Background jobs execute with local OS user privileges. LocalBridge provides strict sandboxing, path validation, environment variable stripping, resource limits, and process tree termination, but does not provide hardware virtualization or OS container isolation. Grant `project-code` permission only to trusted repositories.
+
+> [!IMPORTANT]
+> **Phase 9 Status Notice**: LocalBridge has completed Phase 9. Asynchronous background build and test jobs (`job.*`, `build.start`, `test.start`), controlled command execution, read-only Git inspection, and transactional filesystem modifications are fully operational. MCP runtime endpoints (Phase 10) and Desktop GUI (Phase 11) remain for upcoming phases.
+
+### 12. Management API Security Boundary
 
 - **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
 - **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.

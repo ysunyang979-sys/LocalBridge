@@ -31,6 +31,13 @@ export function initDatabase(
     close: () => {
       if (db.open) {
         db.close();
+        if (typeof global.gc === "function") {
+          try {
+            global.gc();
+          } catch {
+            // ignore
+          }
+        }
       }
     },
   };

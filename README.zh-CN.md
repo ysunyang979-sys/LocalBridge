@@ -366,9 +366,57 @@ LocalBridge Phase 8 引入了强类型、风险分类、经用户授权的受控
 > **项目代码信任边界声明**：在 `project-code` 模式下运行的命令具有 Runner 进程宿主操作系统的同等用户权限。LocalBridge 提供了极其严苛的参数校验、路径限制、环境净化、缓冲区上限与超时终止机制，但并不提供操作系统内核级容器沙箱或虚拟机级物理隔离。用户必须仅对完全信任的代码与依赖项启用 `project-code` 模式。
 
 > [!IMPORTANT]
-> **Phase 8 状态声明**：LocalBridge 已完成 Phase 8。受控风险评估命令执行（`command.classify`、`command.run`）、安全只读 Git 检查与事务式文件修改均已全面就绪。后台长期任务、MCP 运行时端点及桌面 GUI 仍将在后续阶段实现。
+> **Phase 8 状态声明**：LocalBridge 已完成 Phase 8（受控命令执行与风险分级）。
 
-### 11. 管理 API 安全边界与本地访问说明
+### 11. 构建/测试与后台任务系统 (Phase 9)
+
+LocalBridge Phase 9 引入了面向长时间运行的构建、测试及项目脚本的异步后台任务子系统（`job.start`、`job.status`、`job.logs`、`job.cancel`、`job.list`、`build.start`、`test.start`），并通过 JSON-RPC 2.0 提供完整的生命周期管理。
+
+#### 零原生 Shell 保证与统一安全模型
+- **严格禁止**：严禁执行任何任意 Shell（`shell.run`、`cmd.exe /c`、`powershell -Command`、`bash -c`、`sh -c`），严禁任意可执行文件路径及自由命令字符串。
+- **沿用 Phase 8 策略**：所有后台任务均必须通过 Phase 8 严格定义的结构化 `CommandSpec` 与安全策略引擎派发。
+- **权限限制**：仅当项目被显式赋予 `executionMode: "project-code"` 且处于 `accessMode: "read-write"` 模式时，才允许运行后台脚本与构建/测试任务。
+
+#### 高层级 `build.start` 与 `test.start` 封装
+- 专为项目构建与测试提供的类型化高层 RPC 接口：
+  - `build.start`：默认执行 `pnpm run build` 或 `npm run build`（或指定的自定义构建脚本）。
+  - `test.start`：默认执行 `pnpm run test` 或 `npm run test`（或指定的自定义测试脚本）。
+- 执行前严格校验项目根目录下是否存在 `package.json` 并包含所请求的 script；若缺失则直接抛出 `BUILD_SCRIPT_NOT_FOUND` 或 `TEST_SCRIPT_NOT_FOUND`，拒绝生成进程。
+- **绝不自动安装依赖**：缺失 `node_modules` 将作为常规构建失败如实记录在日志中；LocalBridge 严禁自动执行 `npm install` 或 `pnpm install`。
+
+#### 并发容量与速率限制
+- **Runner 级并发限制**：整个 Runner 守护进程全局最多允许 4 个并行运行的任务（`MAX_RUNNING_JOBS_PER_RUNNER = 4`）。超出时抛出 `JOB_CAPACITY_EXCEEDED`。
+- **项目级并发限制**：单个已授权项目最多允许 2 个并行运行的任务（`MAX_RUNNING_JOBS_PER_PROJECT = 2`）。超出时抛出 `JOB_CAPACITY_EXCEEDED`。
+- **启动速率限制**：每分钟最多允许发起 20 次任务启动（`MAX_JOB_STARTS_PER_MINUTE = 20`）。超出时抛出 `JOB_RATE_LIMITED`。
+- 任务一旦结束（成功、失败、取消、超时），占用的配额容量将立即自动释放。
+
+#### 执行边界与进程树级终止
+- **超时保护**：支持为任务配置 1 秒 ~ 3600 秒（默认 600 秒 / 10 分钟）的执行时限。超时触发后，在 Windows 上调用 `taskkill.exe /PID <pid> /T /F`，在 POSIX 上向进程组发送信号，彻底杀死整棵子进程树，任务状态转换为 `timed-out`。
+- **优先级**：任务级 `timeoutMs` 优先于 `CommandSpec.timeoutMs`，避免产生双重定时器冲突。
+- **幂等取消**：调用 `job.cancel` 立即终止正在运行的进程树；若任务已处于终态，则安全返回 `alreadyTerminal: true`。
+
+#### 内存环形缓冲区与日志流式脱敏
+- **4 MiB 内存环形缓冲区**：每个任务在内存中维护最多 4 MiB 的日志缓冲，超额时按 FIFO 规则自动淘汰最旧数据块，并精确统计 `truncated: true` 与 `droppedBytes`。
+- **入库前脱敏**：ANSI 颜色码、CSI 控制符及 OSC 超链接在存入缓冲区前即被剔除；敏感物理路径统一重命名为 `<project-root>`、`<runner-state>` 与 `<user-home>` 占位符，同时完整保留 UTF-8 编码、中文字符及 Emoji。
+- **基于游标的分页拉取**：`job.logs` 支持通过 base64url 游标（`lastSeq`）进行无缝连续拉取，单次 RPC 响应严格限制在最多 100 个 chunk 及 128 KiB 文本之内。
+- **Server 端零日志持久化**：Server 仅在 SQLite 中审计任务元数据，绝不持久化 stdout/stderr 日志。
+
+#### Runner 本地所有权与断网连续性
+- 后台任务的所有权属于本地 Runner 守护进程，而非临时的 WebSocket 连接。
+- 若网络抖动或 WebSocket 意外中断，本地正在运行的任务不受任何影响，继续在本地后台执行。
+- 重新连接后，调用方可凭唯一的 `job_<UUIDv4>` ID 查询任务最新状态并增量拉取完整日志。
+
+#### 权限变更即时中断 (Revocation Abort)
+- 一旦用户在 ProjectRegistry 中移除项目、禁用项目，或者将项目降级为 `disabled`/`safe-only` 或 `read-only`，Runner 将即时感知并强制杀死该项目名下所有正在运行的后台任务。
+
+#### 信任边界免责声明
+> [!WARNING]
+> **后台任务信任边界声明**：后台任务具有 Runner 进程宿主操作系统的同等用户权限。LocalBridge 提供了极其严苛的参数校验、路径限制、环境净化、缓冲区上限与超时终止机制，但并不提供操作系统内核级容器沙箱或虚拟机级物理隔离。用户必须仅对完全信任的代码与依赖项启用 `project-code` 模式。
+
+> [!IMPORTANT]
+> **Phase 9 状态声明**：LocalBridge 已完成 Phase 9。异步后台构建与测试任务（`job.*`、`build.start`、`test.start`）、受控命令执行、安全只读 Git 检查与事务式文件修改均已全面就绪。MCP 运行时端点（Phase 10）及桌面 GUI（Phase 11）将在后续阶段实现。
+
+### 12. 管理 API 安全边界与本地访问说明
 
 - **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。
