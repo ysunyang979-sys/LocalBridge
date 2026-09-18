@@ -1,0 +1,42 @@
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Database & local data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+localbridge.db*
+
+# Environment & local config
+.env
+.env.local
+.env.*.local
+config.local.json
+config.local.toml
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Cache
+.turbo/
+.cache/
+.vitest/

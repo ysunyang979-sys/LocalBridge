@@ -1,0 +1,22 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 18080,
+    "dbPath": "localbridge.db",
+    "corsOrigin": true
+  },
+  "runner": {
+    "name": "Local-Dev-Runner",
+    "serverUrl": "ws://127.0.0.1:18080/runner"
+  },
+  "security": {
+    "maxFileSize": 2097152,
+    "commandTimeout": 60,
+    "allowSensitiveFiles": false
+  },
+  "logging": {
+    "level": "info",
+    "pretty": true
+  },
+  "projects": []
+}
