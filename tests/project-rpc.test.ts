@@ -42,6 +42,7 @@ describe("Runner Project RPC Handlers & Sanitization", () => {
       name: "demo-app",
       enabled: true,
       accessMode: "read-only",
+      executionMode: "disabled",
     });
 
     // Explicit check that sensitive physical properties are absent
@@ -63,6 +64,7 @@ describe("Runner Project RPC Handlers & Sanitization", () => {
       enabled: true,
       healthy: true,
       accessMode: "read-only",
+      executionMode: "disabled",
     });
 
     const record = result as Record<string, unknown>;

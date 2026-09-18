@@ -1,21 +1,4 @@
-import { z } from "zod";
-
-export const CommandRiskLevel = {
-  SAFE: "SAFE",
-  CAUTION: "CAUTION",
-  DANGEROUS: "DANGEROUS",
-} as const;
-
-export type CommandRiskLevel =
-  (typeof CommandRiskLevel)[keyof typeof CommandRiskLevel];
-
-export const CommandRiskAssessmentSchema = z.object({
-  level: z.nativeEnum(CommandRiskLevel),
-  reason: z.string().optional(),
-  matchedPattern: z.string().optional(),
-});
-
-export type CommandRiskAssessment = z.infer<typeof CommandRiskAssessmentSchema>;
+export * from "./command/types.js";
 
 export const DEFAULT_SENSITIVE_PATTERNS = [
   ".env",

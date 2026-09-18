@@ -21,6 +21,10 @@ export function loadProjectsState(filePath: string): ProjectStateFile {
         projects: parsed.projects.map((p) => ({
           ...p,
           accessMode: p.accessMode === "read-write" ? "read-write" : "read-only",
+          executionMode:
+            p.executionMode === "safe-only" || p.executionMode === "project-code"
+              ? p.executionMode
+              : "disabled",
         })),
       };
     }

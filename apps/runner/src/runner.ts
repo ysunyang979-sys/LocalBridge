@@ -34,12 +34,19 @@ import { createGitInfoHandler } from "./rpc/handlers/git-info.js";
 import { createGitStatusHandler } from "./rpc/handlers/git-status.js";
 import { createGitDiffHandler } from "./rpc/handlers/git-diff.js";
 import { createGitLogHandler } from "./rpc/handlers/git-log.js";
+import { createCommandClassifyHandler } from "./rpc/handlers/command-classify.js";
+import { createCommandRunHandler } from "./rpc/handlers/command-run.js";
 import { ProjectRegistry } from "./projects/index.js";
 import { FilesystemService } from "./filesystem/index.js";
 import { BackupService } from "./backup/index.js";
 import { GitService } from "./git/index.js";
+import {
+  CommandExecutionService,
+  ExecutableRegistry,
+  ProcessRunner,
+} from "./process/index.js";
 
-export const RUNNER_VERSION = "0.7.0";
+export const RUNNER_VERSION = "0.8.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -57,6 +64,9 @@ export class LocalBridgeRunner {
   readonly backupService: BackupService;
   readonly filesystemService: FilesystemService;
   readonly gitService: GitService;
+  readonly executableRegistry: ExecutableRegistry;
+  readonly processRunner: ProcessRunner;
+  readonly commandExecutionService: CommandExecutionService;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -71,11 +81,14 @@ export class LocalBridgeRunner {
       config.runnerId ||
       getOrCreateRunnerId(config.statePath);
 
+    const runnerStateDir =
+      config.statePath
+        ? path.dirname(config.statePath)
+        : path.join(os.homedir(), ".localbridge");
+
     const projectsPath =
       config.projectsPath ||
-      (config.statePath
-        ? path.join(path.dirname(config.statePath), "projects.json")
-        : path.join(os.homedir(), ".localbridge", "projects.json"));
+      path.join(runnerStateDir, "projects.json");
 
     this.projectRegistry = new ProjectRegistry(projectsPath, this.logger);
 
@@ -111,6 +124,16 @@ export class LocalBridgeRunner {
 
     this.gitService = new GitService(
       this.projectRegistry,
+      this.logger
+    );
+
+    this.executableRegistry = new ExecutableRegistry(this.logger);
+    this.processRunner = new ProcessRunner(this.logger);
+    this.commandExecutionService = new CommandExecutionService(
+      this.projectRegistry,
+      this.executableRegistry,
+      this.processRunner,
+      runnerStateDir,
       this.logger
     );
 
@@ -210,6 +233,16 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.GitLog,
       createGitLogHandler(this.gitService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CommandClassify,
+      createCommandClassifyHandler(this.commandExecutionService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CommandRun,
+      createCommandRunHandler(this.commandExecutionService)
     );
   }
 

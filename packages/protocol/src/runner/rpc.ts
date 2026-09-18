@@ -60,6 +60,9 @@ export type SystemInfoResult = z.infer<typeof SystemInfoResultSchema>;
 export const ProjectAccessModeSchema = z.enum(["read-only", "read-write"]);
 export type ProjectAccessMode = z.infer<typeof ProjectAccessModeSchema>;
 
+export const ProjectExecutionModeSchema = z.enum(["disabled", "safe-only", "project-code"]);
+export type ProjectExecutionMode = z.infer<typeof ProjectExecutionModeSchema>;
+
 // 3. project.list
 export const ProjectListParamsSchema = z.object({}).strict();
 export type ProjectListParams = z.infer<typeof ProjectListParamsSchema>;
@@ -69,6 +72,7 @@ export const ProjectListItemSchema = z.object({
   name: z.string(),
   enabled: z.boolean(),
   accessMode: ProjectAccessModeSchema.default("read-only"),
+  executionMode: ProjectExecutionModeSchema.default("disabled"),
 });
 export type ProjectListItem = z.infer<typeof ProjectListItemSchema>;
 
@@ -87,6 +91,7 @@ export const ProjectInfoResultSchema = z.object({
   enabled: z.boolean(),
   healthy: z.boolean(),
   accessMode: ProjectAccessModeSchema.default("read-only"),
+  executionMode: ProjectExecutionModeSchema.default("disabled"),
 });
 export type ProjectInfoResult = z.infer<typeof ProjectInfoResultSchema>;
 
@@ -436,6 +441,100 @@ export const GitLogResultSchema = z
   .strict();
 export type GitLogResult = z.infer<typeof GitLogResultSchema>;
 
+// Command Risk Level
+export const CommandRiskLevelSchema = z.enum(["SAFE", "CAUTION", "DANGEROUS"]);
+export type CommandRiskLevel = z.infer<typeof CommandRiskLevelSchema>;
+
+// CommandSpec Discriminated Union
+export const ToolVersionCommandSchema = z
+  .object({
+    kind: z.literal("tool-version"),
+    projectId: z.string(),
+    tool: z.enum(["node", "npm", "pnpm", "python"]),
+  })
+  .strict();
+export type ToolVersionCommand = z.infer<typeof ToolVersionCommandSchema>;
+
+export const NodeScriptCommandSchema = z
+  .object({
+    kind: z.literal("node-script"),
+    projectId: z.string(),
+    path: z.string(),
+    args: z.array(z.string()).max(64).default([]),
+    cwd: z.string().default("."),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+  })
+  .strict();
+export type NodeScriptCommand = z.infer<typeof NodeScriptCommandSchema>;
+
+export const PythonScriptCommandSchema = z
+  .object({
+    kind: z.literal("python-script"),
+    projectId: z.string(),
+    path: z.string(),
+    args: z.array(z.string()).max(64).default([]),
+    cwd: z.string().default("."),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+  })
+  .strict();
+export type PythonScriptCommand = z.infer<typeof PythonScriptCommandSchema>;
+
+export const PackageScriptCommandSchema = z
+  .object({
+    kind: z.literal("package-script"),
+    projectId: z.string(),
+    manager: z.enum(["npm", "pnpm"]),
+    script: z.string(),
+    args: z.array(z.string()).max(64).default([]),
+    cwd: z.string().default("."),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+  })
+  .strict();
+export type PackageScriptCommand = z.infer<typeof PackageScriptCommandSchema>;
+
+export const CommandSpecSchema = z.discriminatedUnion("kind", [
+  ToolVersionCommandSchema,
+  NodeScriptCommandSchema,
+  PythonScriptCommandSchema,
+  PackageScriptCommandSchema,
+]);
+export type CommandSpec = z.infer<typeof CommandSpecSchema>;
+
+// 18. command.classify
+export const CommandClassifyParamsSchema = CommandSpecSchema;
+export type CommandClassifyParams = z.infer<typeof CommandClassifyParamsSchema>;
+
+export const CommandClassifyResultSchema = z
+  .object({
+    risk: CommandRiskLevelSchema,
+    reasons: z.array(z.string()),
+    executesProjectCode: z.boolean(),
+    mayModifyFiles: z.boolean(),
+    mayAccessNetwork: z.boolean(),
+    allowed: z.boolean(),
+    reason: z.string().optional(),
+  })
+  .strict();
+export type CommandClassifyResult = z.infer<typeof CommandClassifyResultSchema>;
+
+// 19. command.run
+export const CommandRunParamsSchema = CommandSpecSchema;
+export type CommandRunParams = z.infer<typeof CommandRunParamsSchema>;
+
+export const CommandRunResultSchema = z
+  .object({
+    projectId: z.string(),
+    risk: z.enum(["SAFE", "CAUTION"]),
+    exitCode: z.number().int(),
+    signal: z.string().nullable(),
+    durationMs: z.number().int().nonnegative(),
+    stdout: z.string(),
+    stderr: z.string(),
+    timedOut: z.boolean(),
+  })
+  .strict();
+export type CommandRunResult = z.infer<typeof CommandRunResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -505,6 +604,14 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.GitLog]: {
     params: GitLogParams;
     result: GitLogResult;
+  };
+  [RunnerRpcMethods.CommandClassify]: {
+    params: CommandClassifyParams;
+    result: CommandClassifyResult;
+  };
+  [RunnerRpcMethods.CommandRun]: {
+    params: CommandRunParams;
+    result: CommandRunResult;
   };
 }
 
@@ -579,5 +686,13 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.GitLog]: {
     params: GitLogParamsSchema,
     result: GitLogResultSchema,
+  },
+  [RunnerRpcMethods.CommandClassify]: {
+    params: CommandClassifyParamsSchema,
+    result: CommandClassifyResultSchema,
+  },
+  [RunnerRpcMethods.CommandRun]: {
+    params: CommandRunParamsSchema,
+    result: CommandRunResultSchema,
   },
 } as const;

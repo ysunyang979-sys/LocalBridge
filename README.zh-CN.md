@@ -306,9 +306,69 @@ LocalBridge Phase 7 通过 Server ↔ Runner 强类型 RPC，为已授权项目�
 - **物理路径零泄露**：统一脱敏错误信息与 Diff 输出中的物理路径、盘符与操作系统用户目录。
 
 > [!IMPORTANT]
-> **Phase 7 状态声明**：LocalBridge 当前处于 Phase 7（安全只读 Git 仓库检查与差异引擎）。严格受限的只读 Git 操作（`git.info`、`git.status`、`git.diff`、`git.log`）与事务式文件修改均已就绪。Shell 执行、Git 变更命令（`git.add`、`git.commit`、`git.checkout`、`git.push` 等）、构建/测试运行及 MCP 运行时端点在此阶段依然严格禁止。
+> **Phase 7 状态声明**：LocalBridge 已完成 Phase 7（安全只读 Git 仓库检查与差异引擎）。
 
-### 10. 管理 API 安全边界与本地访问说明
+### 10. 受控命令执行与命令风险引擎 (Phase 8)
+
+LocalBridge Phase 8 引入了强类型、风险分类、经用户授权的受控子进程执行能力（通过 Server ↔ Runner JSON-RPC 2.0 运行）。该机制彻底杜绝了任意 Raw Shell 执行，用严格受限沙箱进程执行引擎取而代之。
+
+#### 严禁执行的操作（零 Raw Shell）
+- **禁止 Raw Shell 执行**：严禁提供 `shell.run("任意字符串")`、`cmd.exe /c`、`powershell -Command`、`bash -c` 或 `sh -c`。
+- **禁止远端传入任意可执行文件**：远端调用方（AI 或 Server）无法指定任意系统命令或可执行程序路径（如 `{ "executable": "...", "args": [...] }`）。
+- **禁止破坏性/依赖变更包管理器命令**：如 `npm install`、`pnpm add`、`npm update` 以及包生命周期脚本（`preinstall`、`install`、`postinstall`、`prepare`、`prepack`、`postpack`）均被分类为 `DANGEROUS` 并无条件阻断。
+- **禁止内联代码动态求值参数**：如 `node -e`、`node --eval`、`python -c` 均被归类为 `DANGEROUS` 并无条件拦截。
+
+#### 项目执行权限模式 (executionMode)
+每个已授权项目具有独立的 `executionMode` 属性：
+- **`disabled`**（默认）：禁止执行任何形式的命令。
+- **`safe-only`**：仅允许执行无害的系统工具版本探测（`tool-version`）。禁止运行任何脚本或包管理器。
+- **`project-code`**：允许运行安全工具版本检查、项目内部脚本（`node-script`、`python-script`）以及在 `package.json` 中明确定义的包脚本（`package-script`）。**严格要求该项目处于 `accessMode: "read-write"` 模式**。
+
+#### 仅限本地管理员控制
+- 远端调用方（AI 或 Server）**绝无权限**修改 `executionMode`。
+- 权限模式仅能由本地用户在 Runner 主机上通过 CLI 设置：
+  ```bash
+  pnpm --filter @localbridge/runner project:set-execution <project-id> <disabled|safe-only|project-code>
+  ```
+- **自动降级保护**：当项目的 `accessMode` 被降级为 `read-only` 时，其 `executionMode` 会立即被自动降级为 `disabled`。
+
+#### 结构化命令规范 (CommandSpec)
+所有执行请求必须遵循类型化的结构化联合类型：
+1. **`tool-version`**：
+   - 检查 Runner 主机上安装的开发工具版本（`node`、`npm`、`pnpm`、`python`）。
+   - 仅附加 `--version` 参数执行。风险等级为 `SAFE`。
+2. **`node-script`**：
+   - 执行已在项目沙箱内经过验证的 `.js`、`.mjs` 或 `.cjs` 脚本。
+   - 验证脚本为普通文件（拒绝符号链接），且不在敏感目录内。风险等级为 `CAUTION`。
+3. **`python-script`**：
+   - 执行已在项目沙箱内经过验证的 `.py` 脚本。
+   - 验证脚本非符号链接且不在敏感路径。风险等级为 `CAUTION`。
+4. **`package-script`**：
+   - 执行 `package.json` 中显式定义的 scripts（`scripts[name]`），支持 `npm` 或 `pnpm`。
+   - 执行前必须校验脚本确实存在于配置中。风险等级为 `CAUTION`。
+
+#### 子进程隔离与环境变量安全加固
+- **直接进程派发 (Direct Spawning)**：通过 `child_process.spawn(executablePath, args, { shell: false })` 直接派发。在 Windows 平台上，`npm` 和 `pnpm` 直接通过 `node.exe` 配合入口 JS 脚本派发，彻底避开 `cmd.exe`，免受 Node 24 `.cmd` 派发漏洞（CVE-2024-27980）影响。
+- **环境变量最小白名单**：子进程不继承父进程环境变量。仅透传最小安全系统变量（Windows: `PATH`, `SystemRoot`, `WINDIR`, `TEMP`, `TMP`, `COMSPEC`；POSIX: `PATH`, `LANG`, `LC_ALL`, `TMPDIR`）。
+- **父级凭据彻底剔除**：强制剔除所有 API 密钥与凭据（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`AWS_*`、`GITHUB_TOKEN`、Runner 鉴权令牌等）。
+- **用户家目录独立沙箱**：将 `HOME`、`USERPROFILE`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME`、`XDG_CACHE_HOME` 以及 `NPM_CONFIG_USERCONFIG` 统一重定向到 Runner 内部独立的 `<runnerStateDir>/execution-home/` 隔离目录。
+- **Python 环境隔离**：设置 `PYTHONNOUSERSITE=1`，防止 Python 脚本载入全局用户 site-packages。
+
+#### 资源上限与进程树终止
+- **输出体积分级限制**：标准输出限额 256 KiB，标准错误限额 256 KiB，合并总输出上限 512 KiB。超出立即杀死整个进程树，并抛出 `COMMAND_OUTPUT_TOO_LARGE`。
+- **执行超时保护**：默认 60 秒（有效区间 1s~300s）。超时立即强制终止整个子进程树，并抛出 `COMMAND_TIMEOUT`。
+- **进程树级终止 (Process Tree Kill)**：在 Windows 上调用 `taskkill.exe /PID <pid> /T /F`，确保孙子进程（如 npm 派生的 node 进程）同步终止；在 POSIX 上向进程组发送 SIGKILL。
+- **输出脱敏处理**：清洗所有 ANSI 转义序列、CSI 控制字符与 OSC 超链接，同时完整保留 UTF-8 编码、中文字符及 Emoji。将物理路径自动替换为 `<project-root>`、`<runner-state>` 与 `<user-home>` 占位符。
+- **Server 端零输出持久化**：Server 仅在 SQLite 审计表中记录执行元数据（执行耗时、退出码、参数等），绝不持久化 stdout/stderr 内容。
+
+#### 信任边界免责声明
+> [!WARNING]
+> **项目代码信任边界声明**：在 `project-code` 模式下运行的命令具有 Runner 进程宿主操作系统的同等用户权限。LocalBridge 提供了极其严苛的参数校验、路径限制、环境净化、缓冲区上限与超时终止机制，但并不提供操作系统内核级容器沙箱或虚拟机级物理隔离。用户必须仅对完全信任的代码与依赖项启用 `project-code` 模式。
+
+> [!IMPORTANT]
+> **Phase 8 状态声明**：LocalBridge 已完成 Phase 8。受控风险评估命令执行（`command.classify`、`command.run`）、安全只读 Git 检查与事务式文件修改均已全面就绪。后台长期任务、MCP 运行时端点及桌面 GUI 仍将在后续阶段实现。
+
+### 11. 管理 API 安全边界与本地访问说明
 
 - **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。

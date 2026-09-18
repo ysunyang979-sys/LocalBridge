@@ -304,9 +304,69 @@ LocalBridge Phase 7 introduces safe, strictly read-only Git inspection and unifi
 - **Zero Physical Path Leakage**: Host physical paths, drive letters, and user home paths are sanitized from all outputs and error messages.
 
 > [!IMPORTANT]
-> **Phase 7 Status Notice**: LocalBridge is currently at Phase 7. Strictly read-only Git inspection (`git.info`, `git.status`, `git.diff`, `git.log`) and transactional file modifications are operational. Shell execution, Git mutating operations (`git.add`, `git.commit`, `git.checkout`, `git.push`, etc.), background jobs, and MCP runtime endpoints remain strictly prohibited.
+> **Phase 7 Status Notice**: LocalBridge completed Phase 7 (Read-Only Git Inspection).
 
-### 10. Management API Security Boundary
+### 10. Controlled Command Execution & Command Risk Engine (Phase 8)
+
+LocalBridge Phase 8 introduces controlled, strongly-typed, risk-classified, user-authorized process execution over Server ↔ Runner JSON-RPC 2.0. It completely replaces raw, arbitrary shell execution with a strictly sandboxed process execution engine.
+
+#### Strictly Prohibited Operations (Zero Raw Shell)
+- **NO Raw Shell Execution**: LocalBridge prohibits `shell.run("arbitrary string")`, `cmd.exe /c`, `powershell -Command`, `bash -c`, or `sh -c`.
+- **NO Remote Freeform Executables**: Remote callers (AI/Server) cannot request arbitrary binaries or freeform command lines (`{ "executable": "...", "args": [...] }`).
+- **NO Dependency Mutating Commands**: Commands like `npm install`, `pnpm add`, `npm update`, and package lifecycle scripts (`preinstall`, `install`, `postinstall`, `prepare`, `prepack`, `postpack`) are classified as `DANGEROUS` and blocked.
+- **NO Inline Code Evaluation**: Evaluation flags like `node -e`, `node --eval`, and `python -c` are classified as `DANGEROUS` and blocked.
+
+#### Project Execution Permission Modes
+Each authorized project has an independent `executionMode` attribute:
+- **`disabled`** (Default): No command execution of any kind is permitted.
+- **`safe-only`**: Only non-modifying system tool version checks (`tool-version`) are permitted. Scripts and package managers cannot be executed.
+- **`project-code`**: Permitted to run safe tool checks, project scripts (`node-script`, `python-script`), and defined `package.json` scripts (`package-script`). Strictly requires `accessMode: "read-write"`.
+
+#### Local Administrative Control Only
+- Remote callers (AI or Server) **CANNOT** modify `executionMode`.
+- Mode changes can only be performed locally by the user on the Runner machine via CLI:
+  ```bash
+  pnpm --filter @localbridge/runner project:set-execution <project-id> <disabled|safe-only|project-code>
+  ```
+- **Automatic Downgrade**: If a project's `accessMode` is set to `read-only`, `executionMode` is immediately and automatically downgraded to `disabled`.
+
+#### Structured Command Specifications
+Commands must be submitted using a structured, discriminated `CommandSpec`:
+1. **`tool-version`**:
+   - Inspects host tool versions (`node`, `npm`, `pnpm`, `python`).
+   - Executes with `--version`. Classified as `SAFE`.
+2. **`node-script`**:
+   - Executes a verified `.js`, `.mjs`, or `.cjs` file within the project sandbox.
+   - Checks that script is a regular file (symlinks blocked) and outside sensitive locations. Classified as `CAUTION`.
+3. **`python-script`**:
+   - Executes a verified `.py` file within the project sandbox.
+   - Regular file checks and sensitive location masking enforced. Classified as `CAUTION`.
+4. **`package-script`**:
+   - Executes a script defined in the project's `package.json` (`scripts[name]`) using `npm` or `pnpm`.
+   - Verifies the script exists before execution. Classified as `CAUTION`.
+
+#### Subprocess Hardening & Environment Isolation
+- **Direct Process Spawning**: Child processes are spawned directly via `child_process.spawn(executablePath, args, { shell: false })`. On Windows, JS tools (`npm`, `pnpm`) are executed directly via `node.exe` with JS entrypoints to bypass `cmd.exe` and avoid Node 24 `.cmd` invocation vulnerabilities.
+- **Environment Allowlist**: Subprocesses do not inherit parent process environment variables. Only a minimal system allowlist is passed (`PATH`, `SystemRoot`, `WINDIR`, `TEMP`, `TMP`, `COMSPEC` on Windows; `PATH`, `LANG`, `LC_ALL`, `TMPDIR` on POSIX).
+- **Secrets Stripping**: Parent secrets (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AWS_*`, `GITHUB_TOKEN`, runner tokens, etc.) are stripped.
+- **Isolated User Directories**: `HOME`, `USERPROFILE`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, and `NPM_CONFIG_USERCONFIG` are isolated to `<runnerStateDir>/execution-home/`.
+- **Python Hardening**: `PYTHONNOUSERSITE=1` is set to prevent loading scripts from global user site packages.
+
+#### Resource Bounds & Process Tree Termination
+- **Output Bounds**: Standard output is capped at 256 KiB, standard error at 256 KiB, and combined output at 512 KiB. If exceeded, the entire process tree is terminated immediately, throwing `COMMAND_OUTPUT_TOO_LARGE`.
+- **Execution Timeouts**: Default 60 seconds (clamped to 1s..300s). On timeout, the entire process tree is terminated immediately, throwing `COMMAND_TIMEOUT`.
+- **Process Tree Kill**: Windows uses `taskkill.exe /PID <pid> /T /F` to guarantee termination of grandchild processes; POSIX uses process group signals.
+- **Output Sanitization**: Strips ANSI escape sequences, CSI control codes, and OSC hyperlinks while preserving UTF-8, Chinese characters, and emojis. Redacts physical host filesystem paths to `<project-root>`, `<runner-state>`, and `<user-home>`.
+- **Zero Server Output Persistence**: Server stores audit metadata (execution time, exit code, parameters) in SQLite, but never persists command stdout/stderr.
+
+#### Trust Boundary Notice
+> [!WARNING]
+> **Project Code Trust Boundary**: Commands running in `project-code` mode execute with the local OS user privileges of the Runner process. While LocalBridge enforces strict parameter validation, path containment, environment stripping, resource caps, and process tree termination, it does not provide OS-level containerization or hypervisor isolation. Users must only grant `project-code` execution to projects whose scripts and dependencies they trust.
+
+> [!IMPORTANT]
+> **Phase 8 Status Notice**: LocalBridge has completed Phase 8. Controlled, risk-classified command execution (`command.classify`, `command.run`), read-only Git inspection, and transactional filesystem operations are fully operational. Background jobs, MCP runtime endpoints, and GUI remain slated for future phases.
+
+### 11. Management API Security Boundary
 
 - **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
 - **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.

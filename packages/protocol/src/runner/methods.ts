@@ -17,6 +17,8 @@ export const RunnerRpcMethods = {
   GitStatus: "git.status",
   GitDiff: "git.diff",
   GitLog: "git.log",
+  CommandClassify: "command.classify",
+  CommandRun: "command.run",
 } as const;
 
 export type RunnerRpcMethod =
@@ -39,9 +41,10 @@ export const RunnerMethod = {
   GIT_STATUS: RunnerRpcMethods.GitStatus,
   GIT_DIFF: RunnerRpcMethods.GitDiff,
   GIT_LOG: RunnerRpcMethods.GitLog,
+  COMMAND_CLASSIFY: RunnerRpcMethods.CommandClassify,
+  COMMAND_RUN: RunnerRpcMethods.CommandRun,
   FILE_SEARCH: "file.search",
   TEXT_SEARCH: "text.search",
-  SHELL_RUN: "shell.run",
   JOB_START: "job.start",
   JOB_STATUS: "job.status",
   JOB_LOGS: "job.logs",

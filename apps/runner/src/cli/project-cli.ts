@@ -159,6 +159,39 @@ export function runProjectCli(argv: string[]): void {
       break;
     }
 
+    case "set-execution": {
+      const id = args[1];
+      const mode = args[2];
+      if (!id || !mode) {
+        console.error("Error: Project ID and execution mode are required. Usage: project:set-execution <id> <disabled|safe-only|project-code>");
+        process.exit(1);
+      }
+
+      if (mode !== "disabled" && mode !== "safe-only" && mode !== "project-code") {
+        console.error("Error: Invalid execution mode. Must be 'disabled', 'safe-only', or 'project-code'.");
+        process.exit(1);
+      }
+
+      const existing = registry.get(id);
+      if (!existing) {
+        console.error(`Project "${id}" not found.`);
+        process.exit(1);
+      }
+
+      const prevMode = existing.executionMode ?? "disabled";
+      try {
+        registry.setExecutionMode(id, mode as "disabled" | "safe-only" | "project-code");
+        console.log(`Project:\n${existing.name}\n`);
+        console.log(`Previous:\n${prevMode}\n`);
+        console.log(`New:\n${mode}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Failed to set execution mode: ${msg}`);
+        process.exit(1);
+      }
+      break;
+    }
+
     default:
       console.log("LocalBridge Project Management CLI\n");
       console.log("Commands:");
@@ -168,6 +201,7 @@ export function runProjectCli(argv: string[]): void {
       console.log("  enable <id>                         Enable an authorized project");
       console.log("  disable <id>                        Disable an authorized project");
       console.log("  set-access <id> <read-only|read-write> Set project access mode");
+      console.log("  set-execution <id> <disabled|safe-only|project-code> Set project execution mode");
       break;
   }
 }

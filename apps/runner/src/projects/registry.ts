@@ -47,7 +47,11 @@ export class ProjectRegistry {
     this.projects.clear();
     const state: ProjectStateFile = loadProjectsState(this.storagePath);
     for (const p of state.projects) {
-      this.projects.set(p.id, p);
+      this.projects.set(p.id, {
+        ...p,
+        accessMode: p.accessMode ?? "read-only",
+        executionMode: p.executionMode ?? "disabled",
+      });
     }
     this.logger?.debug(
       { count: this.projects.size, storagePath: this.storagePath },
@@ -112,6 +116,7 @@ export class ProjectRegistry {
       canonicalRoot,
       enabled: true,
       accessMode: options?.accessMode ?? "read-only",
+      executionMode: "disabled",
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -197,12 +202,67 @@ export class ProjectRegistry {
     }
 
     project.accessMode = accessMode;
+    // Security coupling: if accessMode is downgraded to read-only, project-code execution must be disabled
+    if (accessMode === "read-only" && project.executionMode === "project-code") {
+      project.executionMode = "disabled";
+      this.logger?.warn(
+        { event: "project_execution_mode_downgraded", projectId },
+        `Downgraded executionMode to "disabled" because accessMode was set to "read-only"`
+      );
+    }
     project.updatedAt = Date.now();
     this.save();
 
     this.logger?.info(
       { event: "project_access_mode_changed", projectId, accessMode },
       `Set access mode for project "${project.name}" (${projectId}) to "${accessMode}"`
+    );
+
+    return project;
+  }
+
+  /**
+   * Set project execution mode ("disabled", "safe-only", or "project-code").
+   * Only callable by local machine user via CLI.
+   */
+  setExecutionMode(
+    projectId: string,
+    executionMode: "disabled" | "safe-only" | "project-code"
+  ): RunnerProjectRecord {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+        `Project "${projectId}" not found`
+      );
+    }
+
+    if (
+      executionMode !== "disabled" &&
+      executionMode !== "safe-only" &&
+      executionMode !== "project-code"
+    ) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.INVALID_REQUEST,
+        `Invalid execution mode: "${executionMode}". Must be "disabled", "safe-only", or "project-code"`
+      );
+    }
+
+    // Safety rule: project-code strictly requires read-write access
+    if (executionMode === "project-code" && project.accessMode !== "read-write") {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_EXECUTION_REQUIRES_WRITE_ACCESS,
+        `Enabling executionMode "project-code" requires project accessMode to be "read-write"`
+      );
+    }
+
+    project.executionMode = executionMode;
+    project.updatedAt = Date.now();
+    this.save();
+
+    this.logger?.info(
+      { event: "project_execution_mode_changed", projectId, executionMode },
+      `Set execution mode for project "${project.name}" (${projectId}) to "${executionMode}"`
     );
 
     return project;
@@ -231,6 +291,7 @@ export class ProjectRegistry {
       name: p.name,
       enabled: p.enabled,
       accessMode: p.accessMode ?? "read-only",
+      executionMode: p.executionMode ?? "disabled",
     }));
   }
 
@@ -256,6 +317,7 @@ export class ProjectRegistry {
       enabled: project.enabled,
       healthy,
       accessMode: project.accessMode ?? "read-only",
+      executionMode: project.executionMode ?? "disabled",
     };
   }
 

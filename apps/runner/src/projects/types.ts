@@ -1,4 +1,4 @@
-import type { ProjectAccessMode } from "@localbridge/protocol";
+import type { ProjectAccessMode, ProjectExecutionMode } from "@localbridge/protocol";
 
 export interface RunnerProjectRecord {
   /**
@@ -30,6 +30,11 @@ export interface RunnerProjectRecord {
    * Access mode: "read-only" (default) or "read-write"
    */
   accessMode: ProjectAccessMode;
+
+  /**
+   * Execution mode: "disabled" (default), "safe-only", or "project-code"
+   */
+  executionMode: ProjectExecutionMode;
 
   /**
    * Timestamp in milliseconds when project was first authorized
