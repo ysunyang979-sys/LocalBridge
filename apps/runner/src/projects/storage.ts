@@ -18,7 +18,10 @@ export function loadProjectsState(filePath: string): ProjectStateFile {
     if (parsed && Array.isArray(parsed.projects)) {
       return {
         version: 1,
-        projects: parsed.projects,
+        projects: parsed.projects.map((p) => ({
+          ...p,
+          accessMode: p.accessMode === "read-write" ? "read-write" : "read-only",
+        })),
       };
     }
     return { version: 1, projects: [] };

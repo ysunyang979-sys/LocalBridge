@@ -207,36 +207,67 @@ pnpm --filter @localbridge/runner project:remove <project_id>
 
 ### 7. 安全只读文件系统与目录浏览 (Phase 5)
 
-LocalBridge Phase 5 通过 Server ↔ Runner 强类型 RPC，在用户授权的项目边界内提供了严格受限的只读文件系统探测与 UTF-8 文本切片浏览能力。
+LocalBridge Phase 5 通过 Server ↔ Runner 强类型 RPC，在用户授权的项目边界内提供了严格受限的只读文件系统探测与 UTF-8 文本切片浏览能力（`directory.list`、`file.stat`、`file.read`）。
 
-#### 只读 RPC 方法
-1. **`directory.list`**：
-   - 用户已授权项目目录的单层（Non-recursive）内容列出。
-   - **敏感凭证过滤**：自动过滤匹配敏感凭证策略的文件（`.env*`、`.git/*`、`id_rsa*`、`.npmrc`、`.pypirc` 等），条目绝不出现在的 `entries` 中，并置位 `sensitiveEntriesFiltered: true`。
-   - **确定性排序与不透明游标分页**：按文件名标准化升序排序；支持 `limit`（1~200，默认 100）与 base64url JSON 不透明游标（`nextCursor`）。
-   - **软链接可访问性识别**：自动探测符号链接目标，若目标指向项目外部或断开则标记 `accessible: false`。
+### 8. 安全文件修改与事务式写操作 (Phase 6)
 
-2. **`file.stat`**：
-   - 检查文件、目录或安全符号链接的元数据，不读取文件内容。
-   - 返回规范项目相对路径、条目名称、类型（`"file" | "directory" | "symlink"`）、字节大小（Size）与修改时间戳（`modifiedAt`）。
-   - 对敏感凭证文件立刻抛出 `SENSITIVE_FILE_BLOCKED`。
+LocalBridge Phase 6 通过 Server ↔ Runner JSON-RPC 2.0，为已授权项目引入具备冲突检测、原子操作、可审计与隔离备份的安全文件修改引擎。
 
-3. **`file.read`**：
-   - 使用显式只读模式（`"r"`）安全读取 UTF-8 文本文件切片。
-   - **行窗口切片分段**：基于 1 索引的 `startLine` 与 `maxLines`（单次最高 500 行），返回强类型 `{ line: number, text: string }` 行数组。
-   - **严格大小限制**：8 MiB 文件上限（`FILE_TOO_LARGE`）、128 KiB 单行长度上限（`FILE_LINE_TOO_LONG`）以及 128 KiB 单次读取文本截断（`truncated: true`）。
-   - **二进制与编码检测**：前 8 KiB 进行 NUL 字节空值探针（`BINARY_FILE`），并强制验证严格的 UTF-8 可解码性（`FILE_ENCODING_UNSUPPORTED`），自动剥离 UTF-8 BOM。
+#### 事务式修改 RPC 方法
+1. **`file.create`**：
+   - 在已授权项目的沙箱内创建新的 UTF-8 文本文件。
+   - **禁止隐式创建目录**：目标父目录必须真实存在，否则抛出 `PARENT_DIRECTORY_NOT_FOUND`（严禁静默执行 `mkdir -p`）。
+   - **非存在性强制核验**：若目标文件或符号链接已存在，立即抛出 `FILE_ALREADY_EXISTS`。
+   - **安全阈值**：严禁含有空字节（NUL byte）的二进制内容（`BINARY_FILE`），文件大小上限为 8 MiB（`FILE_TOO_LARGE`）。
+   - 返回 `{ operationId, projectId, path, newHash, bytes }`。
+
+2. **`file.write`**：
+   - 覆盖现有文件，强制要求传入当前文件 SHA-256 校验摘要（`expectedHash`）。
+   - **强冲突检测**：比较当前物理文件内容的 SHA-256 与 `expectedHash`，若发生偏离立即抛出 `FILE_CONFLICT` 并终止。
+   - **写入前自动化备份**：在覆盖前自动将原内容及元数据隔离归档至 Runner 状态目录（`metadata.json` 与 `content`）。
+   - **原子同级临时文件替换**：向同级路径写入 `.${basename}.localbridge-<id>.tmp`，执行 `fsync` 确保落盘，继承原文件权限属性，并通过原子 `fs.renameSync` 替换。写入失败自动清理临时文件。
+   - 返回 `{ operationId, projectId, path, oldHash, newHash, bytesBefore, bytesAfter, backupCreated: true }`。
+
+3. **`file.patch`**：
+   - 内存流式顺序 Search/Replace 补丁引擎，支持原子全量或全不回滚。
+   - **严格单匹配校验**：每个查找块在文本中必须且仅能匹配一次。若匹配 0 次抛出 `PATCH_NOT_FOUND`；若匹配超过 1 次抛出 `PATCH_AMBIGUOUS`。
+   - **补丁前冲突校验**：在计算补丁前校验 `expectedHash`。
+   - **自动化备份与原子写入**：修改前完成快照备份，通过原子临时文件安全替换。
+   - 返回 `{ operationId, projectId, path, oldHash, newHash, bytesBefore, bytesAfter, replacementsApplied }`。
+
+4. **`file.delete`**：
+   - 安全删除指定文件，强制校验 `expectedHash` 防范并发冲突。
+   - **隔离归档备份**：删除前将原内容与元数据移入 Runner 隔离备份区，支持完整的撤销与恢复。
+   - 返回 `{ operationId, projectId, path, oldHash, deleted: true, backupCreated: true }`。
+
+5. **`file.restore`**：
+   - 根据指定的 `operationId` 将文件精准恢复至修改或删除前的历史状态。
+   - **恢复防并发冲突**：若文件在对应操作后又被并发修改，立即抛出 `RESTORE_CONFLICT` 拒绝盲目回滚覆盖。
+   - 支持从隔离区将已删除的文件按原属性与权限恢复至磁盘。
+   - 返回 `{ operationId, projectId, path, restoredHash, bytesRestored }`。
+
+#### 项目访问权限模型 (Access Mode Boundary)
+- 所有项目的默认授权模式严格为 `accessMode: "read-only"`。
+- 远端 AI 客户端与 Server **严禁**擅自提升项目权限（不存在任何远端 `project.setAccess` RPC）。
+- 项目访问权限变更必须由用户在本地通过 Runner CLI 手动触发：
+  ```bash
+  pnpm --filter @localbridge/runner project:set-access <project-id> <read-only|read-write>
+  ```
+- 任何在只读模式项目上尝试的写操作（create / write / patch / delete / restore）均会被立即拒绝并抛出 `PROJECT_READ_ONLY`。
+
+#### 物理隔离备份子系统 (Isolated Backup Subsystem)
+- 备份统一存储在 Runner 本地守护进程的状态目录中（`<runnerStateDir>/backups/<projectId>/<operationId>/`），**绝不**写入用户项目代码树内部。
+- 保留策略：单项目最多保留 100 个历史备份且最大占用不超过 100 MiB，超出阈值自动执行先进先出（FIFO）淘汰。
 
 #### 核心安全与隐私承诺
-- **绝不实现任何写操作**：`file.write`、`file.create`、`file.patch`、`file.delete`、`directory.create`、`directory.delete` 均严禁实现并保持完全空缺。
-- **物理路径零泄露**：真实物理路径（`root`、`canonicalRoot`、`absolutePath`）绝不离开本地 Runner 守护进程，绝不在 RPC 载荷或服务端日志中暴露。
-- **服务端零文件持久化**：LocalBridge Server 仅作为无状态 RPC 路由器，绝不持久化任何文件内容或目录树数据。
-- **严禁命令或代码执行**：Shell、Git CLI 执行、构建测试命令及后台作业依然完全处于禁用状态。
+- **物理路径零泄露**：物理真实绝对路径（`root`、`canonicalRoot`、`absolutePath`）仅停留在 Runner 内存中，绝不出现在任何 RPC 返回中。
+- **服务端零文件持久化**：Server 仅作为无状态 RPC 协议转发器，绝不存储任何源代码内容、补丁片段或备份实体。
+- **操作安全边界**：严禁目录变更（`directory.create`、`directory.delete`）、严禁文件重命名或移动（`file.move`、`file.rename`）、严禁修改符号链接（`FILE_SYMLINK_WRITE_BLOCKED`），Shell 执行与 MCP 端点依然严格处于禁用状态。
 
 > [!IMPORTANT]
-> **Phase 5 状态声明**：LocalBridge 当前处于 Phase 5（安全只读文件系统与目录浏览）。仅提供授权项目内的只读操作（`directory.list`、`file.stat`、`file.read`）。任何文件写操作、文件删除、Shell 执行以及 MCP 运行时端点在此阶段依然严格禁止。
+> **Phase 6 状态声明**：LocalBridge 当前处于 Phase 6（安全文件修改与事务式写操作）。仅在被本地用户显式授予 `read-write` 权限的项目中激活安全、防冲突的文件写入与恢复。Shell 执行、Git 操作、构建/测试运行及 MCP 运行时端点在此阶段依然严格禁止。
 
-### 8. 管理 API 安全边界与本地访问说明
+### 9. 管理 API 安全边界与本地访问说明
 
 - **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。

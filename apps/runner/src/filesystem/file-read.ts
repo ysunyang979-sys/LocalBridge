@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import {
   LocalBridgeError,
   LocalBridgeErrorCode,
@@ -86,6 +87,7 @@ export function readTextFile(options: ReadTextFileOptions): FileReadResult {
         projectId,
         path: resolved.relativePath,
         encoding: "utf-8",
+        contentHash: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         startLine: requestedStart,
         endLine: 0,
         nextLine: null,
@@ -100,6 +102,16 @@ export function readTextFile(options: ReadTextFileOptions): FileReadResult {
     // 7. Read full file content
     const buffer = Buffer.alloc(stat.size);
     fs.readSync(fd, buffer, 0, stat.size, 0);
+
+    // Strengthened binary detection on full buffer
+    if (buffer.includes(0x00)) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.BINARY_FILE,
+        "Binary files are not supported"
+      );
+    }
+
+    const contentHash = `sha256:${crypto.createHash("sha256").update(buffer).digest("hex")}`;
 
     let text: string;
     try {
@@ -127,6 +139,7 @@ export function readTextFile(options: ReadTextFileOptions): FileReadResult {
         projectId,
         path: resolved.relativePath,
         encoding: "utf-8",
+        contentHash,
         startLine: requestedStart,
         endLine: totalLines,
         nextLine: null,
@@ -177,6 +190,7 @@ export function readTextFile(options: ReadTextFileOptions): FileReadResult {
       projectId,
       path: resolved.relativePath,
       encoding: "utf-8",
+      contentHash,
       startLine: requestedStart,
       endLine,
       nextLine,

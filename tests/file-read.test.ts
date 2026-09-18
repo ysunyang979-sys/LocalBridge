@@ -305,14 +305,13 @@ describe("file.read RPC & Filesystem Service", () => {
     );
   });
 
-  it("strictly enforces read-only: no write APIs exist on FilesystemService", () => {
+  it("strictly enforces boundaries: no directory mutation or arbitrary command APIs exist on FilesystemService", () => {
     const serviceAny = fsService as Record<string, unknown>;
-    expect(serviceAny.write).toBeUndefined();
-    expect(serviceAny.writeFile).toBeUndefined();
-    expect(serviceAny.create).toBeUndefined();
-    expect(serviceAny.delete).toBeUndefined();
-    expect(serviceAny.patch).toBeUndefined();
-    expect(serviceAny.rename).toBeUndefined();
     expect(serviceAny.mkdir).toBeUndefined();
+    expect(serviceAny.createDirectory).toBeUndefined();
+    expect(serviceAny.deleteDirectory).toBeUndefined();
+    expect(serviceAny.rename).toBeUndefined();
+    expect(serviceAny.move).toBeUndefined();
+    expect(serviceAny.shell).toBeUndefined();
   });
 });

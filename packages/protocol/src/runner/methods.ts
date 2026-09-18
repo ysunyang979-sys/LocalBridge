@@ -8,6 +8,11 @@ export const RunnerRpcMethods = {
   DirectoryList: "directory.list",
   FileStat: "file.stat",
   FileRead: "file.read",
+  FileCreate: "file.create",
+  FileWrite: "file.write",
+  FilePatch: "file.patch",
+  FileDelete: "file.delete",
+  FileRestore: "file.restore",
 } as const;
 
 export type RunnerRpcMethod =
@@ -21,10 +26,11 @@ export const RunnerMethod = {
   DIRECTORY_LIST: RunnerRpcMethods.DirectoryList,
   FILE_STAT: RunnerRpcMethods.FileStat,
   FILE_READ: RunnerRpcMethods.FileRead,
-  FILE_CREATE: "file.create",
-  FILE_WRITE: "file.write",
-  FILE_PATCH: "file.patch",
-  FILE_DELETE: "file.delete",
+  FILE_CREATE: RunnerRpcMethods.FileCreate,
+  FILE_WRITE: RunnerRpcMethods.FileWrite,
+  FILE_PATCH: RunnerRpcMethods.FilePatch,
+  FILE_DELETE: RunnerRpcMethods.FileDelete,
+  FILE_RESTORE: RunnerRpcMethods.FileRestore,
   FILE_SEARCH: "file.search",
   TEXT_SEARCH: "text.search",
   SHELL_RUN: "shell.run",

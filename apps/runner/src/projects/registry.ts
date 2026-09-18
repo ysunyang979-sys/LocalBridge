@@ -67,7 +67,7 @@ export class ProjectRegistry {
    * Authorize a new local directory.
    * Only runnable by local machine user via CLI.
    */
-  add(projectPath: string, options?: { name?: string }): RunnerProjectRecord {
+  add(projectPath: string, options?: { name?: string; accessMode?: "read-only" | "read-write" }): RunnerProjectRecord {
     const resolvedInput = path.resolve(projectPath);
 
     // 1. Must exist on disk
@@ -111,6 +111,7 @@ export class ProjectRegistry {
       root: resolvedInput,
       canonicalRoot,
       enabled: true,
+      accessMode: options?.accessMode ?? "read-only",
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -173,6 +174,41 @@ export class ProjectRegistry {
   }
 
   /**
+   * Set project access mode ("read-only" or "read-write").
+   * Only callable by local machine user via CLI.
+   */
+  setAccessMode(
+    projectId: string,
+    accessMode: "read-only" | "read-write"
+  ): RunnerProjectRecord {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+        `Project "${projectId}" not found`
+      );
+    }
+
+    if (accessMode !== "read-only" && accessMode !== "read-write") {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.INVALID_REQUEST,
+        `Invalid access mode: "${accessMode}". Must be "read-only" or "read-write"`
+      );
+    }
+
+    project.accessMode = accessMode;
+    project.updatedAt = Date.now();
+    this.save();
+
+    this.logger?.info(
+      { event: "project_access_mode_changed", projectId, accessMode },
+      `Set access mode for project "${project.name}" (${projectId}) to "${accessMode}"`
+    );
+
+    return project;
+  }
+
+  /**
    * Get internal project record (Runner-private, contains physical root).
    */
   get(projectId: string): RunnerProjectRecord | undefined {
@@ -194,6 +230,7 @@ export class ProjectRegistry {
       id: p.id,
       name: p.name,
       enabled: p.enabled,
+      accessMode: p.accessMode ?? "read-only",
     }));
   }
 
@@ -218,6 +255,7 @@ export class ProjectRegistry {
       name: project.name,
       enabled: project.enabled,
       healthy,
+      accessMode: project.accessMode ?? "read-only",
     };
   }
 

@@ -148,7 +148,7 @@ describe("directory.list RPC & Filesystem Service", () => {
     }
   });
 
-  it("rejects invalid or tampered pagination cursor with INVALID_CURSOR", async () => {
+  it("rejects invalid or malformed pagination cursor with INVALID_CURSOR", async () => {
     await expect(
       fsService.listDirectory({
         projectId,

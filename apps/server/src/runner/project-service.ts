@@ -16,20 +16,22 @@ export class ServerProjectService {
    * Strictly stores only ID, name, enabled status, and timestamps. Zero physical paths.
    */
   syncRunnerProjects(runnerId: string, projects: ProjectListItem[]): void {
+    if (!this.db.open) return;
     const now = Date.now();
     const upsertStmt = this.db.prepare(`
-      INSERT INTO projects (id, runner_id, name, enabled, first_seen_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (id, runner_id, name, enabled, access_mode, first_seen_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         runner_id = excluded.runner_id,
         name = excluded.name,
         enabled = excluded.enabled,
+        access_mode = excluded.access_mode,
         last_seen_at = excluded.last_seen_at
     `);
 
     const tx = this.db.transaction(() => {
       for (const p of projects) {
-        upsertStmt.run(p.id, runnerId, p.name, p.enabled ? 1 : 0, now, now);
+        upsertStmt.run(p.id, runnerId, p.name, p.enabled ? 1 : 0, p.accessMode ?? "read-only", now, now);
       }
     });
 
@@ -50,6 +52,7 @@ export class ServerProjectService {
    * A project is available only if its associated Runner is currently online and the project is enabled.
    */
   listProjects(): ProjectPublic[] {
+    if (!this.db.open) return [];
     const rows = this.db
       .prepare("SELECT * FROM projects ORDER BY first_seen_at ASC")
       .all() as ProjectRow[];
@@ -64,6 +67,7 @@ export class ServerProjectService {
         name: row.name,
         enabled: isEnabled,
         available: runnerOnline && isEnabled,
+        accessMode: row.access_mode === "read-write" ? "read-write" : "read-only",
       };
     });
   }
@@ -72,6 +76,7 @@ export class ServerProjectService {
    * Get public project details by ID with dynamic availability.
    */
   getProject(projectId: string): ProjectPublic | undefined {
+    if (!this.db.open) return undefined;
     const row = this.db
       .prepare("SELECT * FROM projects WHERE id = ?")
       .get(projectId) as ProjectRow | undefined;
@@ -89,6 +94,7 @@ export class ServerProjectService {
       name: row.name,
       enabled: isEnabled,
       available: runnerOnline && isEnabled,
+      accessMode: row.access_mode === "read-write" ? "read-write" : "read-only",
     };
   }
 }

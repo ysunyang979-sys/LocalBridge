@@ -205,36 +205,67 @@ Every relative path requested within a project undergoes rigorous validation:
 
 ### 7. Safe Read-Only Filesystem & Directory Browsing (Phase 5)
 
-LocalBridge Phase 5 introduces strictly read-only filesystem inspection and UTF-8 text browsing within user-authorized project boundaries via Server ↔ Runner typed RPC.
+LocalBridge Phase 5 introduces strictly read-only filesystem inspection and UTF-8 text browsing within user-authorized project boundaries via Server ↔ Runner typed RPC (`directory.list`, `file.stat`, `file.read`).
 
-#### Read-Only RPC Methods
-1. **`directory.list`**:
-   - Single-level directory listing within authorized project boundaries.
-   - **Sensitive File Omission**: Files matching credential policies (`.env*`, `.git/*`, `id_rsa*`, `.npmrc`, `.pypirc`, etc.) are completely omitted from results and flagged with `sensitiveEntriesFiltered: true`.
-   - **Deterministic Sorting & Opaque Pagination**: Sorted alphabetically by normalized filename. Supports `limit` (1–200, default 100) and base64url JSON opaque cursor (`nextCursor`).
-   - **Symlink Safety**: Detects symlink targets and sets `accessible: false` if pointing outside or broken.
+### 8. Safe Filesystem Modifications & Transactional Writes (Phase 6)
 
-2. **`file.stat`**:
-   - Inspects metadata for files, directories, or safe symlinks without reading contents.
-   - Returns sanitized project relative path, entry name, `type` (`"file" | "directory" | "symlink"`), byte size, and `modifiedAt` (UNIX timestamp ms).
-   - Rejects sensitive files immediately with `SENSITIVE_FILE_BLOCKED`.
+LocalBridge Phase 6 introduces auditable, transactional, conflict-detected file modification capabilities within user-authorized projects over Server ↔ Runner JSON-RPC 2.0.
 
-3. **`file.read`**:
-   - Safe UTF-8 text slice reader using explicit read-only file descriptors (`"r"` mode).
-   - **Line Window Slicing**: 1-indexed `startLine` and `maxLines` (capped at 500 lines per RPC) returning typed `{ line: number, text: string }` entries.
-   - **Strict Size Limits**: 8 MiB max file size (`FILE_TOO_LARGE`), 128 KiB single line limit (`FILE_LINE_TOO_LONG`), and 128 KiB total content truncation limit (`truncated: true`).
-   - **Binary & Encoding Detection**: Probes first 8 KiB for NUL bytes (`BINARY_FILE`) and enforces strict UTF-8 decodability (`FILE_ENCODING_UNSUPPORTED`). Strips UTF-8 BOM automatically.
+#### Transactional Write RPC Methods
+1. **`file.create`**:
+   - Creates a new UTF-8 text file within the authorized project sandbox.
+   - **No Implicit Directory Creation**: Parent directory must exist on disk; rejects with `PARENT_DIRECTORY_NOT_FOUND` (no automatic `mkdir -p`).
+   - **Non-Existence Verification**: Rejects with `FILE_ALREADY_EXISTS` if target file or symlink already exists.
+   - **Safety Limits**: Rejects binary files containing NUL bytes (`BINARY_FILE`) and files exceeding 8 MiB (`FILE_TOO_LARGE`).
+   - Returns `{ operationId, projectId, path, newHash, bytes }`.
+
+2. **`file.write`**:
+   - Overwrites an existing file with mandatory conflict detection via `expectedHash` (SHA-256).
+   - **Conflict Detection**: Compares current file SHA-256 against `expectedHash`. If mismatched, immediately aborts with `FILE_CONFLICT`.
+   - **Automated Backup**: Creates an immutable backup (`metadata.json` and raw `content`) before write.
+   - **Atomic Sibling Temporary File**: Writes to `.${basename}.localbridge-<id>.tmp`, executes `fsync`, preserves file permissions, and atomically renames over target. Cleans up temp file on failure.
+   - Returns `{ operationId, projectId, path, oldHash, newHash, bytesBefore, bytesAfter, backupCreated: true }`.
+
+3. **`file.patch`**:
+   - Sequential in-memory search/replace engine with transactional rollback.
+   - **Strict Match Counting**: Each replacement block must match exactly once. Zero matches throw `PATCH_NOT_FOUND`; multiple matches throw `PATCH_AMBIGUOUS`.
+   - **Conflict Check**: Validates `expectedHash` prior to applying replacements.
+   - **Automated Backup & Atomic Write**: Creates backup before persisting and applies changes atomically.
+   - Returns `{ operationId, projectId, path, oldHash, newHash, bytesBefore, bytesAfter, replacementsApplied }`.
+
+4. **`file.delete`**:
+   - Safely deletes an existing file with mandatory conflict detection (`expectedHash`).
+   - **Quarantine Backup**: Stores old content and metadata in quarantine backup before unlinking, enabling complete recovery.
+   - Returns `{ operationId, projectId, path, oldHash, deleted: true, backupCreated: true }`.
+
+5. **`file.restore`**:
+   - Restores a file to its state prior to a specific `operationId`.
+   - **Restore Conflict Prevention**: Rejects with `RESTORE_CONFLICT` if the file has been modified concurrently since that operation was performed.
+   - Restores deleted files from quarantine back to disk with original permissions.
+   - Returns `{ operationId, projectId, path, restoredHash, bytesRestored }`.
+
+#### Project Access Mode Boundary
+- Projects default strictly to `accessMode: "read-only"`.
+- Remote AI clients and LocalBridge Server **CANNOT** upgrade access modes (no remote `project.setAccess` RPC exists).
+- Access modes can only be changed locally by the user via the Runner CLI:
+  ```bash
+  pnpm --filter @localbridge/runner project:set-access <project-id> <read-only|read-write>
+  ```
+- Any write, patch, delete, or restore operation on a `read-only` project is immediately rejected with `PROJECT_READ_ONLY`.
+
+#### Isolated Backup Subsystem
+- Backups are stored strictly inside the Runner daemon's local state directory (`<runnerStateDir>/backups/<projectId>/<operationId>/`), **NEVER** in the user's project directory.
+- Retention policy: maximum 100 backups and 100 MiB per project, with automated FIFO eviction of oldest entries.
 
 #### Strict Security & Privacy Guarantees
-- **Zero Remote Write Operations**: `file.write`, `file.create`, `file.patch`, `file.delete`, `directory.create`, and `directory.delete` remain completely unimplemented and prohibited.
-- **Zero Physical Path Leakage**: Physical host paths (`root`, `canonicalRoot`, `absolutePath`) never leave the local Runner daemon and never appear in RPC payloads.
-- **Zero Server File Persistence**: LocalBridge Server acts as a stateless protocol router and never persists file contents or directory structures.
-- **Zero Shell or Code Execution**: Shell, Git CLI execution, build/test commands, and background jobs remain strictly disabled.
+- **Zero Physical Path Leakage**: Physical host paths (`root`, `canonicalRoot`, `absolutePath`) never leave the Runner daemon and never appear in RPC payloads.
+- **Zero Server File Persistence**: Server acts as a stateless protocol router and never stores file contents, patch texts, or backup data.
+- **Prohibited Operations**: Directory mutation (`directory.create`, `directory.delete`), file moves/renames (`file.move`, `file.rename`), symlink modifications (`FILE_SYMLINK_WRITE_BLOCKED`), shell execution, and MCP endpoints remain strictly blocked.
 
 > [!IMPORTANT]
-> **Phase 5 Status Notice**: LocalBridge is currently at Phase 5. Only read-only operations (`directory.list`, `file.stat`, `file.read`) are active within authorized project directories. All file write, file deletion, shell execution, and MCP runtime endpoints remain strictly prohibited until subsequent phases.
+> **Phase 6 Status Notice**: LocalBridge is currently at Phase 6. Safe, conflict-detected file modification operations (`file.create`, `file.write`, `file.patch`, `file.delete`, `file.restore`) are active exclusively on projects explicitly granted `read-write` access by the local user. Shell execution, Git operations, background jobs, and MCP runtime endpoints remain strictly prohibited.
 
-### 8. Management API Security Boundary
+### 9. Management API Security Boundary
 
 - **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
 - **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.

@@ -131,14 +131,43 @@ export function runProjectCli(argv: string[]): void {
       break;
     }
 
+    case "set-access": {
+      const id = args[1];
+      const mode = args[2];
+      if (!id || !mode) {
+        console.error("Error: Project ID and access mode are required. Usage: project:set-access <id> <read-only|read-write>");
+        process.exit(1);
+      }
+
+      if (mode !== "read-only" && mode !== "read-write") {
+        console.error("Error: Invalid access mode. Must be 'read-only' or 'read-write'.");
+        process.exit(1);
+      }
+
+      const existing = registry.get(id);
+      if (!existing) {
+        console.error(`Project "${id}" not found.`);
+        process.exit(1);
+      }
+
+      const prevMode = existing.accessMode ?? "read-only";
+      registry.setAccessMode(id, mode);
+
+      console.log(`Project:\n${existing.name}\n`);
+      console.log(`Previous:\n${prevMode}\n`);
+      console.log(`New:\n${mode}`);
+      break;
+    }
+
     default:
       console.log("LocalBridge Project Management CLI\n");
       console.log("Commands:");
-      console.log("  add <path> [--name <name>]   Authorize a new local project directory");
-      console.log("  list                         List all authorized projects");
-      console.log("  remove <id>                  Remove an authorized project");
-      console.log("  enable <id>                  Enable an authorized project");
-      console.log("  disable <id>                 Disable an authorized project");
+      console.log("  add <path> [--name <name>]          Authorize a new local project directory");
+      console.log("  list                                List all authorized projects");
+      console.log("  remove <id>                         Remove an authorized project");
+      console.log("  enable <id>                         Enable an authorized project");
+      console.log("  disable <id>                        Disable an authorized project");
+      console.log("  set-access <id> <read-only|read-write> Set project access mode");
       break;
   }
 }

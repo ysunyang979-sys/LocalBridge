@@ -57,6 +57,9 @@ export const SystemInfoResultSchema = z.object({
 });
 export type SystemInfoResult = z.infer<typeof SystemInfoResultSchema>;
 
+export const ProjectAccessModeSchema = z.enum(["read-only", "read-write"]);
+export type ProjectAccessMode = z.infer<typeof ProjectAccessModeSchema>;
+
 // 3. project.list
 export const ProjectListParamsSchema = z.object({}).strict();
 export type ProjectListParams = z.infer<typeof ProjectListParamsSchema>;
@@ -65,6 +68,7 @@ export const ProjectListItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   enabled: z.boolean(),
+  accessMode: ProjectAccessModeSchema.default("read-only"),
 });
 export type ProjectListItem = z.infer<typeof ProjectListItemSchema>;
 
@@ -82,6 +86,7 @@ export const ProjectInfoResultSchema = z.object({
   name: z.string(),
   enabled: z.boolean(),
   healthy: z.boolean(),
+  accessMode: ProjectAccessModeSchema.default("read-only"),
 });
 export type ProjectInfoResult = z.infer<typeof ProjectInfoResultSchema>;
 
@@ -178,6 +183,7 @@ export const FileReadResultSchema = z
     projectId: z.string(),
     path: z.string(),
     encoding: z.literal("utf-8"),
+    contentHash: z.string(),
     startLine: z.number().int().min(1),
     endLine: z.number().int().min(0),
     nextLine: z.number().int().min(1).nullable(),
@@ -186,6 +192,127 @@ export const FileReadResultSchema = z
   })
   .strict();
 export type FileReadResult = z.infer<typeof FileReadResultSchema>;
+
+// 9. file.create
+export const FileCreateParamsSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    content: z.string(),
+  })
+  .strict();
+export type FileCreateParams = z.infer<typeof FileCreateParamsSchema>;
+
+export const FileCreateResultSchema = z
+  .object({
+    operationId: z.string(),
+    projectId: z.string(),
+    path: z.string(),
+    newHash: z.string(),
+    bytes: z.number().int().nonnegative(),
+  })
+  .strict();
+export type FileCreateResult = z.infer<typeof FileCreateResultSchema>;
+
+// 10. file.write
+export const FileWriteParamsSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    expectedHash: z.string(),
+    content: z.string(),
+  })
+  .strict();
+export type FileWriteParams = z.infer<typeof FileWriteParamsSchema>;
+
+export const FileWriteResultSchema = z
+  .object({
+    operationId: z.string(),
+    projectId: z.string(),
+    path: z.string(),
+    oldHash: z.string(),
+    newHash: z.string(),
+    bytesBefore: z.number().int().nonnegative(),
+    bytesAfter: z.number().int().nonnegative(),
+    backupCreated: z.boolean(),
+  })
+  .strict();
+export type FileWriteResult = z.infer<typeof FileWriteResultSchema>;
+
+// 11. file.patch
+export const PatchReplacementSchema = z
+  .object({
+    search: z.string().min(1, "Search text cannot be empty"),
+    replace: z.string(),
+  })
+  .strict();
+export type PatchReplacement = z.infer<typeof PatchReplacementSchema>;
+
+export const FilePatchParamsSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    expectedHash: z.string(),
+    replacements: z.array(PatchReplacementSchema).min(1, "At least one replacement is required"),
+  })
+  .strict();
+export type FilePatchParams = z.infer<typeof FilePatchParamsSchema>;
+
+export const FilePatchResultSchema = z
+  .object({
+    operationId: z.string(),
+    projectId: z.string(),
+    path: z.string(),
+    oldHash: z.string(),
+    newHash: z.string(),
+    bytesBefore: z.number().int().nonnegative(),
+    bytesAfter: z.number().int().nonnegative(),
+    replacementsApplied: z.number().int().positive(),
+  })
+  .strict();
+export type FilePatchResult = z.infer<typeof FilePatchResultSchema>;
+
+// 12. file.delete
+export const FileDeleteParamsSchema = z
+  .object({
+    projectId: z.string(),
+    path: z.string(),
+    expectedHash: z.string(),
+  })
+  .strict();
+export type FileDeleteParams = z.infer<typeof FileDeleteParamsSchema>;
+
+export const FileDeleteResultSchema = z
+  .object({
+    operationId: z.string(),
+    projectId: z.string(),
+    path: z.string(),
+    oldHash: z.string(),
+    deleted: z.boolean(),
+    backupCreated: z.boolean(),
+  })
+  .strict();
+export type FileDeleteResult = z.infer<typeof FileDeleteResultSchema>;
+
+// 13. file.restore
+export const FileRestoreParamsSchema = z
+  .object({
+    projectId: z.string(),
+    operationId: z.string(),
+  })
+  .strict();
+export type FileRestoreParams = z.infer<typeof FileRestoreParamsSchema>;
+
+export const FileRestoreResultSchema = z
+  .object({
+    operationId: z.string(),
+    projectId: z.string(),
+    path: z.string(),
+    restoredHash: z.string(),
+    bytesRestored: z.number().int().nonnegative(),
+  })
+  .strict();
+export type FileRestoreResult = z.infer<typeof FileRestoreResultSchema>;
 
 // Typed RPC Map
 export interface RunnerRpcMap {
@@ -220,6 +347,26 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.FileRead]: {
     params: FileReadParams;
     result: FileReadResult;
+  };
+  [RunnerRpcMethods.FileCreate]: {
+    params: FileCreateParams;
+    result: FileCreateResult;
+  };
+  [RunnerRpcMethods.FileWrite]: {
+    params: FileWriteParams;
+    result: FileWriteResult;
+  };
+  [RunnerRpcMethods.FilePatch]: {
+    params: FilePatchParams;
+    result: FilePatchResult;
+  };
+  [RunnerRpcMethods.FileDelete]: {
+    params: FileDeleteParams;
+    result: FileDeleteResult;
+  };
+  [RunnerRpcMethods.FileRestore]: {
+    params: FileRestoreParams;
+    result: FileRestoreResult;
   };
 }
 
@@ -258,5 +405,25 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.FileRead]: {
     params: FileReadParamsSchema,
     result: FileReadResultSchema,
+  },
+  [RunnerRpcMethods.FileCreate]: {
+    params: FileCreateParamsSchema,
+    result: FileCreateResultSchema,
+  },
+  [RunnerRpcMethods.FileWrite]: {
+    params: FileWriteParamsSchema,
+    result: FileWriteResultSchema,
+  },
+  [RunnerRpcMethods.FilePatch]: {
+    params: FilePatchParamsSchema,
+    result: FilePatchResultSchema,
+  },
+  [RunnerRpcMethods.FileDelete]: {
+    params: FileDeleteParamsSchema,
+    result: FileDeleteResultSchema,
+  },
+  [RunnerRpcMethods.FileRestore]: {
+    params: FileRestoreParamsSchema,
+    result: FileRestoreResultSchema,
   },
 } as const;

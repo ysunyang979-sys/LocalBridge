@@ -1,3 +1,5 @@
+import type { ProjectAccessMode } from "@localbridge/protocol";
+
 export interface RunnerProjectRecord {
   /**
    * Stable project identifier in format: proj_<UUIDv4>
@@ -23,6 +25,11 @@ export interface RunnerProjectRecord {
    * Authorization toggle (true = active, false = disabled)
    */
   enabled: boolean;
+
+  /**
+   * Access mode: "read-only" (default) or "read-write"
+   */
+  accessMode: ProjectAccessMode;
 
   /**
    * Timestamp in milliseconds when project was first authorized

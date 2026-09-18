@@ -28,6 +28,7 @@ export interface ProjectRow {
   runner_id: string;
   name: string;
   enabled: number; // 0 or 1
+  access_mode: string; // 'read-only' or 'read-write'
   first_seen_at: number;
   last_seen_at: number;
 }

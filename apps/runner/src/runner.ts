@@ -25,10 +25,16 @@ import { createProjectValidateHandler } from "./rpc/handlers/project-validate.js
 import { createDirectoryListHandler } from "./rpc/handlers/directory-list.js";
 import { createFileStatHandler } from "./rpc/handlers/file-stat.js";
 import { createFileReadHandler } from "./rpc/handlers/file-read.js";
+import { createFileCreateHandler } from "./rpc/handlers/file-create.js";
+import { createFileWriteHandler } from "./rpc/handlers/file-write.js";
+import { createFilePatchHandler } from "./rpc/handlers/file-patch.js";
+import { createFileDeleteHandler } from "./rpc/handlers/file-delete.js";
+import { createFileRestoreHandler } from "./rpc/handlers/file-restore.js";
 import { ProjectRegistry } from "./projects/index.js";
 import { FilesystemService } from "./filesystem/index.js";
+import { BackupService } from "./backup/index.js";
 
-export const RUNNER_VERSION = "0.5.0";
+export const RUNNER_VERSION = "0.6.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -43,6 +49,7 @@ export class LocalBridgeRunner {
   readonly config: RunnerDaemonConfig;
   readonly rpcRouter: RpcRouter;
   readonly projectRegistry: ProjectRegistry;
+  readonly backupService: BackupService;
   readonly filesystemService: FilesystemService;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
@@ -66,6 +73,13 @@ export class LocalBridgeRunner {
 
     this.projectRegistry = new ProjectRegistry(projectsPath, this.logger);
 
+    const backupDir =
+      config.statePath
+        ? path.join(path.dirname(config.statePath), "backups")
+        : path.join(os.homedir(), ".localbridge", "backups");
+
+    this.backupService = new BackupService(backupDir, this.logger);
+
     this.reconnectController = new ReconnectController({
       enabled: config.reconnect.enabled,
       initialDelayMs: config.reconnect.initialDelayMs,
@@ -85,6 +99,7 @@ export class LocalBridgeRunner {
 
     this.filesystemService = new FilesystemService(
       this.projectRegistry,
+      this.backupService,
       this.logger
     );
 
@@ -139,6 +154,31 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.FileRead,
       createFileReadHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FileCreate,
+      createFileCreateHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FileWrite,
+      createFileWriteHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FilePatch,
+      createFilePatchHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FileDelete,
+      createFileDeleteHandler(this.filesystemService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FileRestore,
+      createFileRestoreHandler(this.filesystemService)
     );
   }
 

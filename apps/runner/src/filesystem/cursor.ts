@@ -14,7 +14,7 @@ export function encodeCursor(offset: number): string {
 
 /**
  * Decode opaque base64url cursor into offset.
- * Throws INVALID_CURSOR if token is malformed, invalid base64url, or tampered with.
+ * Throws INVALID_CURSOR if token is malformed or invalid base64url payload.
  */
 export function decodeCursor(cursor?: string | null): number {
   if (!cursor) {
