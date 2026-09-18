@@ -61,7 +61,7 @@ localbridge/
 
 ---
 
-## 快速上手 (Phase 1 基线)
+## 快速上手 (Phase 2)
 
 ### 环境要求
 - **Node.js**: `>= 24.0.0`
@@ -76,22 +76,70 @@ pnpm install
 # TypeScript 类型检查
 pnpm typecheck
 
-# 编译所有 packages 与 server
+# 编译所有 packages、server 与 runner
 pnpm build
 
-# 运行全套自动化测试
+# 运行全套自动化测试 (Vitest)
 pnpm test
 ```
 
-### 启动开发服务器
+### 1. 启动 LocalBridge 服务端
+
+启动 LocalBridge Server 守护进程：
 
 ```bash
 pnpm --filter @localbridge/server dev
 ```
 
-服务默认监听 `http://127.0.0.1:18080`：
-- `GET /api/health` -> `{"status": "ok"}`
-- `GET /api/status` -> `{"server": "LocalBridge Server", "version": "0.1.0", "runners_connected": 0, "mcp_active": false}`
+服务默认监听 `http://127.0.0.1:18080`。
+
+### 2. 生成 Runner 认证令牌 (Token)
+
+生成经密码学认证的 Runner Token（仅显示一次，数据库仅存储 SHA-256 哈希）：
+
+```bash
+pnpm --filter @localbridge/server token:create runner "My PC"
+```
+
+查看或撤销 Token：
+```bash
+# 查看所有已注册令牌
+pnpm --filter @localbridge/server token:list
+
+# 撤销指定令牌
+pnpm --filter @localbridge/server token:revoke <token_id>
+```
+
+### 3. 启动 LocalBridge Runner 守护进程
+
+**Linux / macOS (Bash):**
+```bash
+LOCALBRIDGE_RUNNER_TOKEN=lbr_xxxxxxxxxxxxxxxxx \
+pnpm --filter @localbridge/runner dev
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:LOCALBRIDGE_RUNNER_TOKEN="lbr_xxxxxxxxxxxxxxxxx"
+pnpm --filter @localbridge/runner dev
+```
+
+或通过命令行参数直接传递：
+```bash
+pnpm --filter @localbridge/runner dev --token lbr_xxxxxxxxxxxxxxxxx --name "My PC"
+```
+
+### 4. 验证连接状态
+
+查询 Server 状态及已连接的 Runner 客户端：
+
+```bash
+# 查询服务端状态（已连接时 runners_connected = 1）
+curl http://127.0.0.1:18080/api/status
+
+# 列出当前在线的 Runner
+curl http://127.0.0.1:18080/api/runners
+```
 
 ---
 

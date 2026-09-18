@@ -9,19 +9,22 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "build": "pnpm -r --filter=./packages/* run build && pnpm --filter=@localbridge/server run build",
+    "build": "pnpm -r --filter=./packages/* run build && pnpm --filter=@localbridge/server run build && pnpm --filter=@localbridge/runner run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev:server": "pnpm --filter @localbridge/server dev",
+    "dev:runner": "pnpm --filter @localbridge/runner dev",
     "clean": "pnpm -r run clean"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
+    "@types/ws": "^8.5.14",
     "tsup": "^8.3.6",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
-    "vitest": "^3.0.6"
+    "vitest": "^3.0.6",
+    "ws": "^8.18.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

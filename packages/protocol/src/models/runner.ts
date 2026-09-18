@@ -46,3 +46,17 @@ export const RunnerStatus = {
   BUSY: "busy",
 } as const;
 export type RunnerStatus = (typeof RunnerStatus)[keyof typeof RunnerStatus];
+
+export const RunnerPublicSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.nativeEnum(RunnerStatus),
+  platform: z.string(),
+  arch: z.string(),
+  version: z.string(),
+  capabilities: RunnerCapabilitiesSchema,
+  connectedAt: z.number().optional(),
+  lastSeenAt: z.number().optional(),
+});
+export type RunnerPublic = z.infer<typeof RunnerPublicSchema>;
+

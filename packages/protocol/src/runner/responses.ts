@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const RunnerHelloResponseSchema = z.object({
+  accepted: z.literal(true),
+  serverVersion: z.string(),
+  protocolVersion: z.string(),
+  heartbeatIntervalMs: z.number().int().positive(),
+});
+export type RunnerHelloResponse = z.infer<typeof RunnerHelloResponseSchema>;
+
 export const FileReadResponseSchema = z.object({
   path: z.string(),
   content: z.string(),

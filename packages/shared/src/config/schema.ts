@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const ServerConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
-  port: z.number().int().min(1024).max(65535).default(18080),
+  port: z.number().int().min(0).max(65535).default(18080),
   dbPath: z.string().default("localbridge.db"),
   corsOrigin: z.union([z.string(), z.boolean()]).default(true),
 });

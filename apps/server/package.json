@@ -1,6 +1,6 @@
 {
   "name": "@localbridge/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -8,19 +8,25 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsup src/index.ts --format esm --clean && node -e \"const fs=require('fs'); if (fs.existsSync('src/db/migrations')) fs.cpSync('src/db/migrations', 'dist/migrations', { recursive: true })\"",
     "start": "node dist/index.js",
+    "token:create": "tsx src/cli/token.ts create",
+    "token:list": "tsx src/cli/token.ts list",
+    "token:revoke": "tsx src/cli/token.ts revoke",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
+    "@fastify/websocket": "^11.3.0",
     "@localbridge/protocol": "workspace:*",
     "@localbridge/security": "workspace:*",
     "@localbridge/shared": "workspace:*",
     "better-sqlite3": "^11.8.1",
-    "fastify": "^5.2.1"
+    "fastify": "^5.2.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/ws": "^8.5.14",
     "rimraf": "^6.0.1",
     "tsup": "^8.3.6",
     "tsx": "^4.19.3",

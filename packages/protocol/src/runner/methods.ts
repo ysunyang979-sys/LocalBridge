@@ -1,4 +1,5 @@
 export const RunnerMethod = {
+  RUNNER_HELLO: "runner.hello",
   SYSTEM_INFO: "system.info",
   PROJECT_VALIDATE: "project.validate",
   DIRECTORY_LIST: "directory.list",

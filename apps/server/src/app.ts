@@ -4,24 +4,38 @@ import Fastify, {
   type FastifyRequest,
 } from "fastify";
 import cors from "@fastify/cors";
+import websocket from "@fastify/websocket";
 import { createLogger, type AppConfig } from "@localbridge/shared";
 import { LocalBridgeError, LocalBridgeErrorCode } from "@localbridge/protocol";
 import { initDatabase, type DatabaseConnection } from "./db/index.js";
+import { TokenService } from "./db/token-service.js";
+import { RunnerRegistry } from "./runner/registry.js";
 import { healthRoutes } from "./routes/health.js";
 import { statusRoutes } from "./routes/status.js";
+import { runnerWsRoute } from "./routes/runner-ws.js";
+import { runnersRoutes } from "./routes/runners.js";
 
 export interface BuildAppOptions {
   config: AppConfig;
   db?: DatabaseConnection;
+  tokenService?: TokenService;
+  runnerRegistry?: RunnerRegistry;
   migrationsDir?: string;
   enableLogging?: boolean;
 }
 
 export type AppInstance = ReturnType<typeof Fastify>;
 
+export interface BuiltAppResult {
+  app: AppInstance;
+  db: DatabaseConnection;
+  tokenService: TokenService;
+  runnerRegistry: RunnerRegistry;
+}
+
 export async function buildApp(
   options: BuildAppOptions
-): Promise<{ app: AppInstance; db: DatabaseConnection }> {
+): Promise<BuiltAppResult> {
   const { config, migrationsDir, enableLogging = true } = options;
 
   const logger = createLogger({
@@ -38,9 +52,17 @@ export async function buildApp(
     origin: config.server.corsOrigin,
   });
 
+  // WebSocket support
+  await app.register(websocket);
+
   // SQLite database
   const db =
     options.db ?? initDatabase(config.server.dbPath, migrationsDir);
+
+  // Services
+  const tokenService = options.tokenService ?? new TokenService(db.db);
+  const runnerRegistry =
+    options.runnerRegistry ?? new RunnerRegistry(logger);
 
   // Global error handler
   app.setErrorHandler(
@@ -58,26 +80,41 @@ export async function buildApp(
         });
       }
 
-    app.log.error(error);
-    return reply.status(500).send({
-      code: LocalBridgeErrorCode.INTERNAL_ERROR,
-      message: "An internal server error occurred",
-    });
-  });
+      app.log.error(error);
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "An internal server error occurred",
+      });
+    }
+  );
 
-  // Register API routes
+  // Register REST API routes
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "0.1.0",
-    getRunnersConnected: () => 0,
+    version: "0.2.0",
+    getRunnersConnected: () => runnerRegistry.count(),
     isMcpActive: () => false,
+  });
+  await app.register(runnersRoutes, {
+    prefix: "/api",
+    runnerRegistry,
+  });
+
+  // Register WebSocket route for runner connections
+  await app.register(runnerWsRoute, {
+    tokenService,
+    runnerRegistry,
+    db: db.db,
+    serverVersion: "0.2.0",
+    heartbeatIntervalMs: 15000,
   });
 
   // On close hook
   app.addHook("onClose", async () => {
+    runnerRegistry.closeAll();
     db.close();
   });
 
-  return { app, db };
+  return { app, db, tokenService, runnerRegistry };
 }

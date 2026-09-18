@@ -1,4 +1,15 @@
 import { z } from "zod";
+import { RunnerCapabilitiesSchema, RunnerSystemInfoSchema } from "../models/runner.js";
+
+export const RunnerHelloRequestSchema = z.object({
+  protocolVersion: z.string().min(1),
+  runnerId: z.string().min(1),
+  runnerVersion: z.string().min(1),
+  name: z.string().min(1),
+  system: RunnerSystemInfoSchema,
+  capabilities: RunnerCapabilitiesSchema,
+});
+export type RunnerHelloRequestParams = z.infer<typeof RunnerHelloRequestSchema>;
 
 export const FileReadRequestSchema = z.object({
   projectId: z.string().min(1),

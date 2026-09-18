@@ -61,7 +61,7 @@ localbridge/
 
 ---
 
-## Getting Started (Phase 1 Foundation)
+## Getting Started (Phase 2)
 
 ### Prerequisites
 - **Node.js**: `>= 24.0.0`
@@ -73,25 +73,73 @@ localbridge/
 # Install dependencies across monorepo
 pnpm install
 
-# Typecheck all packages
+# Typecheck all packages and apps
 pnpm typecheck
 
-# Build all packages and server
+# Build all packages, server and runner
 pnpm build
 
-# Run automated tests
+# Run automated tests (Vitest)
 pnpm test
 ```
 
-### Running Server in Development
+### 1. Running the Server
+
+Start the LocalBridge Server daemon:
 
 ```bash
 pnpm --filter @localbridge/server dev
 ```
 
-The server listens on `http://127.0.0.1:18080` by default. You can test the endpoints:
-- `GET /api/health` -> `{"status": "ok"}`
-- `GET /api/status` -> `{"server": "LocalBridge Server", "version": "0.1.0", "runners_connected": 0, "mcp_active": false}`
+The server starts at `http://127.0.0.1:18080`.
+
+### 2. Creating a Runner Token
+
+Generate an authenticated runner token (returned once, stored as a SHA-256 hash):
+
+```bash
+pnpm --filter @localbridge/server token:create runner "My PC"
+```
+
+To view or revoke tokens:
+```bash
+# List all registered tokens
+pnpm --filter @localbridge/server token:list
+
+# Revoke a token
+pnpm --filter @localbridge/server token:revoke <token_id>
+```
+
+### 3. Running the Runner
+
+**Linux / macOS (Bash):**
+```bash
+LOCALBRIDGE_RUNNER_TOKEN=lbr_xxxxxxxxxxxxxxxxx \
+pnpm --filter @localbridge/runner dev
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:LOCALBRIDGE_RUNNER_TOKEN="lbr_xxxxxxxxxxxxxxxxx"
+pnpm --filter @localbridge/runner dev
+```
+
+Or pass via command-line argument:
+```bash
+pnpm --filter @localbridge/runner dev --token lbr_xxxxxxxxxxxxxxxxx --name "My PC"
+```
+
+### 4. Checking Runner Status
+
+Probe server status and connected runner daemon:
+
+```bash
+# Server status (runners_connected = 1 when connected)
+curl http://127.0.0.1:18080/api/status
+
+# List connected runners
+curl http://127.0.0.1:18080/api/runners
+```
 
 ---
 
