@@ -587,7 +587,12 @@ fn desktop_get_mcp_status(
 fn desktop_list_runners(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
 ) -> Result<serde_json::Value, String> {
-    desktop_management_call(state, "GET".into(), "/api/runners".into(), None)
+    let val = desktop_management_call(state, "GET".into(), "/api/runners".into(), None)?;
+    if val.is_array() {
+        Ok(serde_json::json!({ "runners": val }))
+    } else {
+        Ok(val)
+    }
 }
 
 fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorState>>) {

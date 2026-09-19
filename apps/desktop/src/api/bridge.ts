@@ -114,10 +114,20 @@ class ApiBridge {
 
   // Runners
   async listRunners(): Promise<{ runners: RunnerInfo[] }> {
+    let raw: any;
     if (isTauri()) {
-      return invoke<{ runners: RunnerInfo[] }>("desktop_list_runners");
+      raw = await invoke<any>("desktop_list_runners");
+    } else {
+      raw = await this.fetchJson<any>("/api/runners");
     }
-    return this.fetchJson<{ runners: RunnerInfo[] }>("/api/runners");
+
+    if (Array.isArray(raw)) {
+      return { runners: raw };
+    }
+    if (raw && Array.isArray(raw.runners)) {
+      return { runners: raw.runners };
+    }
+    return { runners: [] };
   }
 
   // Projects

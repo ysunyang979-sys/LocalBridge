@@ -59,7 +59,7 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
             <div className="text-slate-400">Connected Runners</div>
             <div className="font-mono text-slate-200 mt-0.5">
-              {serverStatus?.runners_connected || 0}
+              {runners.length}
             </div>
           </div>
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
@@ -79,13 +79,25 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({
         </div>
 
         {runners.length === 0 ? (
-          <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+          <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-xl space-y-3">
             <XCircle className="w-8 h-8 text-amber-500 mx-auto" />
-            <div className="text-slate-300 font-semibold text-xs">
-              No Local Runner Connected
+            <div className="text-slate-300 font-semibold text-sm">
+              Local Runner is offline
             </div>
-            <p className="text-slate-500 text-xs">
-              Run <code className="text-indigo-300">pnpm --filter @localbridge/runner start</code> or ensure the daemon is running locally.
+            <p className="text-slate-400 text-xs max-w-md mx-auto">
+              The background runner daemon is not connected. LocalBridge Supervisor manages the embedded runner automatically.
+            </p>
+            <div className="pt-2 flex justify-center">
+              <button
+                onClick={onRefresh}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition flex items-center gap-1.5"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Retry Connection</span>
+              </button>
+            </div>
+            <p className="text-slate-500 text-[11px]">
+              If the problem persists, restart LocalBridge to relaunch the runner daemon.
             </p>
           </div>
         ) : (

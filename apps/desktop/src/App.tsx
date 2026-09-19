@@ -73,7 +73,15 @@ export const App: React.FC = () => {
       if (projRes.status === "fulfilled") setProjects(projRes.value.projects || []);
       if (appRes.status === "fulfilled") setApprovals(appRes.value.approvals || []);
       if (jobsRes.status === "fulfilled") setJobs(jobsRes.value.jobs || []);
-      if (runRes.status === "fulfilled") setRunners(runRes.value.runners || []);
+      if (runRes.status === "fulfilled") {
+        const val = runRes.value as any;
+        const list = Array.isArray(val)
+          ? val
+          : Array.isArray(val?.runners)
+            ? val.runners
+            : [];
+        setRunners(list);
+      }
       if (tokRes.status === "fulfilled") setTokens(tokRes.value.tokens || []);
       if (audRes.status === "fulfilled") setAuditEvents(audRes.value.events || []);
     } catch {
@@ -154,6 +162,7 @@ export const App: React.FC = () => {
         activeJobsCount={activeJobsCount}
         serverStatus={serverStatus}
         mcpStatus={mcpStatus}
+        runnersCount={runners.length}
       />
 
       {/* Main Container */}

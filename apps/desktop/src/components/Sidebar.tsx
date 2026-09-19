@@ -31,6 +31,7 @@ interface SidebarProps {
   activeJobsCount: number;
   serverStatus: ServerStatus | null;
   mcpStatus: McpStatus | null;
+  runnersCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -40,7 +41,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeJobsCount,
   serverStatus,
   mcpStatus,
+  runnersCount,
 }) => {
+  const effectiveRunnersCount =
+    runnersCount !== undefined
+      ? runnersCount
+      : serverStatus?.runners_connected || 0;
   const navItems = [
     { id: "overview" as NavPage, label: "Overview", icon: LayoutDashboard },
     { id: "projects" as NavPage, label: "Projects", icon: FolderLock },
@@ -139,12 +145,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="flex items-center gap-1.5">
             <span
               className={`w-2 h-2 rounded-full ${
-                (serverStatus?.runners_connected || 0) > 0
+                effectiveRunnersCount > 0
                   ? "bg-emerald-500"
                   : "bg-amber-500"
               }`}
             />
-            {serverStatus?.runners_connected || 0} Connected
+            {effectiveRunnersCount} Connected
           </span>
         </div>
         <div className="flex items-center justify-between text-slate-300">
