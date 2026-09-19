@@ -62,9 +62,9 @@ describe("Server REST API", () => {
     const json = JSON.parse(response.body);
     expect(json).toEqual({
       server: "LocalBridge Server",
-      version: "0.9.0",
+      version: "0.10.0",
       runners_connected: 0,
-      mcp_active: false,
+      mcp_active: true,
     });
   });
 

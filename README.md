@@ -412,9 +412,47 @@ LocalBridge Phase 9 introduces a robust, asynchronous background job execution s
 > **Background Job Trust Boundary**: Background jobs execute with local OS user privileges. LocalBridge provides strict sandboxing, path validation, environment variable stripping, resource limits, and process tree termination, but does not provide hardware virtualization or OS container isolation. Grant `project-code` permission only to trusted repositories.
 
 > [!IMPORTANT]
-> **Phase 9 Status Notice**: LocalBridge has completed Phase 9. Asynchronous background build and test jobs (`job.*`, `build.start`, `test.start`), controlled command execution, read-only Git inspection, and transactional filesystem modifications are fully operational. MCP runtime endpoints (Phase 10) and Desktop GUI (Phase 11) remain for upcoming phases.
+> **Phase 10 Status Notice**: LocalBridge has completed Phase 10. The MCP 2026-07-28 Streamable HTTP Server (`POST /mcp`), 23 safe typed tools, cross-token isolation, DNS rebinding hardening, and official MCP SDK client integration are fully operational.
 
-### 12. Management API Security Boundary
+### 12. MCP 2026-07-28 Server & AI Client Integration (Phase 10)
+
+LocalBridge Phase 10 exposes 23 safe, typed, user-authorized tools to external AI assistants (such as ChatGPT, Claude, and Codex) through the official Model Context Protocol (MCP) specification version `"2026-07-28"` over Streamable HTTP (`POST /mcp`).
+
+#### Protocol Compliance & Stateless Transport
+- **Endpoint**: `POST /mcp`
+- **Protocol Version**: Strictly `"2026-07-28"`. Verified via optional `MCP-Protocol-Version: 2026-07-28` header or body parameters.
+- **Stateless Architecture**: Zero session state, no session tokens or `Mcp-Session-Id` requirements. Every request is independently authenticated and processed through an ephemeral, isolated MCP transport instance.
+- **Header Auditing**:
+  - `Authorization: Bearer lb_...`: Mandatory MCP bearer token.
+  - `Mcp-Method`: If provided, strictly validated against the request body method (e.g. `tools/list`, `tools/call`).
+  - `Mcp-Name`: If provided on `tools/call`, strictly validated against `params.name`.
+- **Diagnostics**: Loopback-only `GET /api/mcp/status` returns metadata (`{ mcpActive: true, version: "0.10.0", protocolVersion: "2026-07-28", toolsCount: 23 }`).
+
+#### The 23 Safe Official MCP Tools
+LocalBridge exposes exactly 23 audited tools across 5 domains:
+
+| Category | Tools | Description |
+|---|---|---|
+| **Project Discovery** | `localbridge_project_list`<br>`localbridge_project_info` | List authorized projects and query details (access mode, execution mode). |
+| **Filesystem Read** | `localbridge_directory_list`<br>`localbridge_file_stat`<br>`localbridge_file_read` | Inspect directory trees, file metadata, and bounded line ranges with content hashing. |
+| **Filesystem Write** | `localbridge_file_create`<br>`localbridge_file_write`<br>`localbridge_file_patch`<br>`localbridge_file_delete`<br>`localbridge_file_restore` | Atomic, hash-locked transactional edits with automatic backups. |
+| **Git Inspection** | `localbridge_git_info`<br>`localbridge_git_status`<br>`localbridge_git_diff`<br>`localbridge_git_log` | Safe, read-only Git status, unified diffs, and commit history. |
+| **Command & Jobs** | `localbridge_command_classify`<br>`localbridge_command_run`<br>`localbridge_job_start`<br>`localbridge_job_status`<br>`localbridge_job_logs`<br>`localbridge_job_cancel`<br>`localbridge_job_list`<br>`localbridge_build_start`<br>`localbridge_test_start` | Structured script execution and background build/test jobs with process tree isolation. |
+
+#### Prohibited Tools & Attack Surface Reduction
+The MCP interface strictly excludes:
+- No raw shell or generic command execution (`shell_run`, `cmd_run`, `exec`, `bash`, `powershell`).
+- No administrative configuration or token management (`token_create`, `token_revoke`, `project_authorize`).
+- No direct runner connection or generic internal RPC methods (`system.ping`, `rpc.call`, `runner.request`).
+- Zero physical host path leakage: all outputs and errors report project-relative paths or virtual placeholders (`<project-root>`).
+
+#### Security Hardening & Isolation
+- **Cross-Token Isolation**: Runner daemon tokens (`lbr_...`) are rejected on `/mcp` with 401 `INVALID_TOKEN_TYPE`; MCP client tokens (`lb_...`) are rejected on `/runner/ws` with 403 `INVALID_TOKEN_TYPE`.
+- **DNS Rebinding Protection**: Validates the `Host` header against an allowlist of local interfaces (`localhost`, `127.0.0.1`, `[::1]`, configured bind host). Unrecognized hosts are rejected with 403 `HOST_NOT_ALLOWED`.
+- **Payload Bounds**: Enforces a strict 1 MiB (`1,048,576 bytes`) request body limit, rejecting oversized requests with 413 `Payload Too Large`.
+- **Rate & Concurrency Limits**: Token-based bucket limiting enforcing at most 60 requests per minute and a maximum of 10 concurrent requests per token.
+
+### 13. Management API Security Boundary
 
 - **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
 - **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.

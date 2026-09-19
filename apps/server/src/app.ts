@@ -21,6 +21,7 @@ import { statusRoutes } from "./routes/status.js";
 import { runnerWsRoute } from "./routes/runner-ws.js";
 import { runnersRoutes } from "./routes/runners.js";
 import { projectsRoutes } from "./routes/projects.js";
+import { mcpRoutes, McpContext, McpRateLimiter } from "./mcp/index.js";
 
 export interface BuildAppOptions {
   config: AppConfig;
@@ -29,6 +30,8 @@ export interface BuildAppOptions {
   runnerRegistry?: RunnerRegistry;
   rpcService?: RunnerRpcService;
   projectService?: ServerProjectService;
+  mcpContext?: McpContext;
+  rateLimiter?: McpRateLimiter;
   migrationsDir?: string;
   enableLogging?: boolean;
 }
@@ -42,6 +45,8 @@ export interface BuiltAppResult {
   runnerRegistry: RunnerRegistry;
   rpcService: RunnerRpcService;
   projectService: ServerProjectService;
+  mcpContext: McpContext;
+  rateLimiter: McpRateLimiter;
 }
 
 export async function buildApp(
@@ -83,6 +88,15 @@ export async function buildApp(
     options.rpcService ?? new RunnerRpcService(runnerRegistry);
   const projectService =
     options.projectService ?? new ServerProjectService(db.db, runnerRegistry);
+  const mcpContext =
+    options.mcpContext ??
+    new McpContext({
+      projectService,
+      runnerRegistry,
+      rpcService,
+      logger,
+    });
+  const rateLimiter = options.rateLimiter ?? new McpRateLimiter();
 
   // Global error handler
   app.setErrorHandler(
@@ -113,6 +127,13 @@ export async function buildApp(
         });
       }
 
+      if (fastifyErr.statusCode) {
+        return reply.status(fastifyErr.statusCode).send({
+          code: fastifyErr.code ?? LocalBridgeErrorCode.INVALID_REQUEST,
+          message: fastifyErr.message,
+        });
+      }
+
       app.log.error(error);
       return reply.status(500).send({
         code: LocalBridgeErrorCode.INTERNAL_ERROR,
@@ -125,9 +146,9 @@ export async function buildApp(
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "0.9.0",
+    version: "0.10.0",
     getRunnersConnected: () => runnerRegistry.count(),
-    isMcpActive: () => false,
+    isMcpActive: () => true,
   });
   await app.register(runnersRoutes, {
     prefix: "/api",
@@ -145,8 +166,22 @@ export async function buildApp(
     runnerRegistry,
     projectService,
     db: db.db,
-    serverVersion: "0.9.0",
+    serverVersion: "0.10.0",
     heartbeatIntervalMs: 15000,
+  });
+
+  // Register MCP 2026-07-28 Server Routes
+  await app.register(mcpRoutes, {
+    tokenService,
+    mcpContext,
+    rateLimiter,
+    allowedHosts: [
+      "localhost",
+      "127.0.0.1",
+      "[::1]",
+      "::1",
+      config.server.host,
+    ],
   });
 
   // On close hook
@@ -155,5 +190,14 @@ export async function buildApp(
     db.close();
   });
 
-  return { app, db, tokenService, runnerRegistry, rpcService, projectService };
+  return {
+    app,
+    db,
+    tokenService,
+    runnerRegistry,
+    rpcService,
+    projectService,
+    mcpContext,
+    rateLimiter,
+  };
 }

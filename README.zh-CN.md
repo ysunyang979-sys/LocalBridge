@@ -414,9 +414,47 @@ LocalBridge Phase 9 引入了面向长时间运行的构建、测试及项目脚
 > **后台任务信任边界声明**：后台任务具有 Runner 进程宿主操作系统的同等用户权限。LocalBridge 提供了极其严苛的参数校验、路径限制、环境净化、缓冲区上限与超时终止机制，但并不提供操作系统内核级容器沙箱或虚拟机级物理隔离。用户必须仅对完全信任的代码与依赖项启用 `project-code` 模式。
 
 > [!IMPORTANT]
-> **Phase 9 状态声明**：LocalBridge 已完成 Phase 9。异步后台构建与测试任务（`job.*`、`build.start`、`test.start`）、受控命令执行、安全只读 Git 检查与事务式文件修改均已全面就绪。MCP 运行时端点（Phase 10）及桌面 GUI（Phase 11）将在后续阶段实现。
+> **Phase 10 状态声明**：LocalBridge 已完成 Phase 10。MCP 2026-07-28 流式 HTTP 服务端（`POST /mcp`）、23 个安全类型化工具、跨 Token 隔离防护、DNS 重绑定防御以及官方 MCP SDK 客户端集成均已全面就绪。
 
-### 12. 管理 API 安全边界与本地访问说明
+### 12. MCP 2026-07-28 服务端与 AI 客户端集成 (Phase 10)
+
+LocalBridge Phase 10 通过官方 Model Context Protocol (MCP) 规范版本 `"2026-07-28"`（基于 Streamable HTTP `POST /mcp`），向外部 AI 助手（如 ChatGPT、Claude、Codex 等）提供 23 个安全、类型化且仅限用户授权范围的工具能力。
+
+#### 协议合规性与无状态传输
+- **接入端点**：`POST /mcp`
+- **协议版本**：严格锁定为 `"2026-07-28"`。可通过请求头 `MCP-Protocol-Version: 2026-07-28` 或消息体自动协定版本。
+- **纯无状态架构 (Stateless)**：零会话存储，不依赖 `Mcp-Session-Id`。每个 HTTP POST 请求均独立完成鉴权并由一次性隔离的 MCP Server/Transport 实例处理，请求结束后立即清理。
+- **请求头审计**：
+  - `Authorization: Bearer lb_...`：必需的 MCP 客户端 Bearer 令牌。
+  - `Mcp-Method`：若提供，必须严格与请求体中的 JSON-RPC 方法（如 `tools/list`、`tools/call`）匹配。
+  - `Mcp-Name`：若在 `tools/call` 请求中提供，必须严格与 `params.name` 保持一致。
+- **诊断端点**：仅允许本地环回访问的 `GET /api/mcp/status` 返回 MCP 运行状态元数据（`{ mcpActive: true, version: "0.10.0", protocolVersion: "2026-07-28", toolsCount: 23 }`）。
+
+#### 23 个安全官方 MCP 工具列表
+LocalBridge 严格向 MCP 暴露且仅暴露 23 个审计工具：
+
+| 领域分类 | 工具名称 | 职责描述 |
+|---|---|---|
+| **项目发现** | `localbridge_project_list`<br>`localbridge_project_info` | 查询所有已授权项目的 ID 与元数据（访问权限、执行权限）。 |
+| **文件只读** | `localbridge_directory_list`<br>`localbridge_file_stat`<br>`localbridge_file_read` | 目录树浏览、元数据查询与带内容哈希校验的行级读取。 |
+| **文件事务写入** | `localbridge_file_create`<br>`localbridge_file_write`<br>`localbridge_file_patch`<br>`localbridge_file_delete`<br>`localbridge_file_restore` | 乐观哈希锁控制的原子式文件创建、覆盖、补丁、删除与历史备份回滚。 |
+| **Git 检查** | `localbridge_git_info`<br>`localbridge_git_status`<br>`localbridge_git_diff`<br>`localbridge_git_log` | 安全沙箱内的只读 Git 工作区状态、统一差分与提交日志。 |
+| **命令与任务** | `localbridge_command_classify`<br>`localbridge_command_run`<br>`localbridge_job_start`<br>`localbridge_job_status`<br>`localbridge_job_logs`<br>`localbridge_job_cancel`<br>`localbridge_job_list`<br>`localbridge_build_start`<br>`localbridge_test_start` | 受控脚本运行、构建/测试任务启动、状态监控与分页日志拉取。 |
+
+#### 禁止暴露的工具与攻击面收敛
+MCP 端点严格排除了以下高危能力：
+- 严禁任何原生 Shell 或自由命令执行工具（`shell_run`、`cmd_run`、`exec`、`bash` 等）。
+- 严禁任何配置管理或 Token 签发撤销工具（`token_create`、`token_revoke`、`project_authorize` 等）。
+- 严禁直接内部 RPC 通道或内部状态探测工具（`system.ping`、`rpc.call`、`runner.request` 等）。
+- 物理主机路径零泄漏：所有返回结果与错误信息均使用虚拟项目相对路径或 `<project-root>` 占位符。
+
+#### 安全加固与隔离保障
+- **跨 Token 隔离 (Cross-Token Isolation)**：Runner 令牌（`lbr_` 前缀）访问 `/mcp` 端点将直接以 401 `INVALID_TOKEN_TYPE` 拦截；MCP 客户端令牌（`lb_` 前缀）访问 `/runner/ws` 将以 403 `INVALID_TOKEN_TYPE` 拒绝。
+- **DNS 重绑定防御 (DNS Rebinding Protection)**：校验 `Host` 请求头是否属于本地环回白名单（`localhost`、`127.0.0.1`、`[::1]` 及配置的监听 IP）。非法主机头直接返回 403 `HOST_NOT_ALLOWED`。
+- **请求体积限制**：严格限制单个 MCP 请求体不超过 1 MiB（1,048,576 字节），超限返回 413 `Payload Too Large`。
+- **速率与并发限制**：基于令牌桶机制限制单令牌每分钟最多 60 次请求，最大并发度为 10。
+
+### 13. 管理 API 安全边界与本地访问说明
 
 - **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。

@@ -359,9 +359,11 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
 
           // Update runner status in database
           try {
-            db.prepare(
-              "UPDATE runners SET status = 'offline', last_seen_at = ? WHERE id = ?"
-            ).run(Date.now(), activeRunnerId);
+            if (db.open) {
+              db.prepare(
+                "UPDATE runners SET status = 'offline', last_seen_at = ? WHERE id = ?"
+              ).run(Date.now(), activeRunnerId);
+            }
           } catch {
             // Ignore during shutdown
           }

@@ -50,7 +50,40 @@ export interface ValidateTokenResult {
 }
 
 export class TokenService {
-  constructor(private readonly db: Database.Database) {}
+  private readonly stmtInsertToken: Database.Statement;
+  private readonly stmtValidateRunner: Database.Statement;
+  private readonly stmtValidateMcp: Database.Statement;
+  private readonly stmtUpdateLastUsed: Database.Statement;
+  private readonly stmtListTokens: Database.Statement;
+  private readonly stmtRevokeToken: Database.Statement;
+
+  constructor(private readonly db: Database.Database) {
+    this.stmtInsertToken = this.db.prepare(
+      `INSERT INTO tokens (id, type, token_hash, name, scopes, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    this.stmtValidateRunner = this.db.prepare(
+      `SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at
+       FROM tokens
+       WHERE token_hash = ? AND type = 'runner'`
+    );
+    this.stmtValidateMcp = this.db.prepare(
+      `SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at
+       FROM tokens
+       WHERE token_hash = ? AND type = 'mcp'`
+    );
+    this.stmtUpdateLastUsed = this.db.prepare(
+      "UPDATE tokens SET last_used_at = ? WHERE id = ?"
+    );
+    this.stmtListTokens = this.db.prepare(
+      `SELECT id, type, name, scopes, created_at, last_used_at, expires_at, revoked_at
+       FROM tokens
+       ORDER BY created_at DESC`
+    );
+    this.stmtRevokeToken = this.db.prepare(
+      "UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL"
+    );
+  }
 
   /**
    * Create a new cryptographically secure token.
@@ -65,12 +98,15 @@ export class TokenService {
     const scopesJson = JSON.stringify(params.scopes ?? []);
     const expiresAt = params.expiresAt ?? null;
 
-    this.db
-      .prepare(
-        `INSERT INTO tokens (id, type, token_hash, name, scopes, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(id, params.type, tokenHash, params.name, scopesJson, createdAt, expiresAt);
+    this.stmtInsertToken.run(
+      id,
+      params.type,
+      tokenHash,
+      params.name,
+      scopesJson,
+      createdAt,
+      expiresAt
+    );
 
     return {
       id,
@@ -102,13 +138,7 @@ export class TokenService {
 
     const tokenHash = hashToken(rawToken);
 
-    const row = this.db
-      .prepare(
-        `SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at
-         FROM tokens
-         WHERE token_hash = ? AND type = 'runner'`
-      )
-      .get(tokenHash) as TokenRow | undefined;
+    const row = this.stmtValidateRunner.get(tokenHash) as TokenRow | undefined;
 
     if (!row) {
       return { valid: false, reason: "TOKEN_NOT_FOUND" };
@@ -128,9 +158,52 @@ export class TokenService {
     }
 
     // Update last_used_at timestamp
-    this.db
-      .prepare("UPDATE tokens SET last_used_at = ? WHERE id = ?")
-      .run(Date.now(), row.id);
+    this.stmtUpdateLastUsed.run(Date.now(), row.id);
+
+    return { valid: true, tokenRecord: row };
+  }
+
+  /**
+   * Validate an MCP token strictly.
+   * Rejects runner tokens, revoked tokens, expired tokens, and unknown tokens.
+   */
+  validateMcpToken(rawToken: string): ValidateTokenResult {
+    if (!rawToken || typeof rawToken !== "string") {
+      return { valid: false, reason: "MISSING_TOKEN" };
+    }
+
+    // Explicitly reject Runner tokens (lbr_ prefix)
+    if (rawToken.startsWith(RUNNER_TOKEN_PREFIX)) {
+      return { valid: false, reason: "INVALID_TOKEN_TYPE" };
+    }
+
+    if (!rawToken.startsWith(MCP_TOKEN_PREFIX)) {
+      return { valid: false, reason: "INVALID_TOKEN_TYPE" };
+    }
+
+    const tokenHash = hashToken(rawToken);
+
+    const row = this.stmtValidateMcp.get(tokenHash) as TokenRow | undefined;
+
+    if (!row) {
+      return { valid: false, reason: "TOKEN_NOT_FOUND" };
+    }
+
+    // Verify constant-time comparison
+    if (!verifyToken(rawToken, row.token_hash)) {
+      return { valid: false, reason: "TOKEN_NOT_FOUND" };
+    }
+
+    if (row.revoked_at !== null) {
+      return { valid: false, reason: "TOKEN_REVOKED" };
+    }
+
+    if (row.expires_at !== null && row.expires_at <= Date.now()) {
+      return { valid: false, reason: "TOKEN_EXPIRED" };
+    }
+
+    // Update last_used_at timestamp
+    this.stmtUpdateLastUsed.run(Date.now(), row.id);
 
     return { valid: true, tokenRecord: row };
   }
@@ -139,13 +212,7 @@ export class TokenService {
    * List all tokens for management without exposing token hashes.
    */
   listTokens(): PublicTokenInfo[] {
-    const rows = this.db
-      .prepare(
-        `SELECT id, type, name, scopes, created_at, last_used_at, expires_at, revoked_at
-         FROM tokens
-         ORDER BY created_at DESC`
-      )
-      .all() as TokenRow[];
+    const rows = this.stmtListTokens.all() as TokenRow[];
 
     return rows.map((row) => {
       let scopes: string[] = [];
@@ -172,10 +239,7 @@ export class TokenService {
    * Revoke a token by ID.
    */
   revokeToken(id: string): boolean {
-    const result = this.db
-      .prepare("UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL")
-      .run(Date.now(), id);
-
+    const result = this.stmtRevokeToken.run(Date.now(), id);
     return result.changes > 0;
   }
 }

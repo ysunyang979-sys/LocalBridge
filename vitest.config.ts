@@ -10,7 +10,6 @@ export default defineConfig({
     poolOptions: {
       forks: {
         singleFork: true,
-        execArgv: ["--expose-gc"],
       },
     },
     include: ["tests/**/*.test.ts", "packages/**/*.test.ts", "apps/**/*.test.ts"],

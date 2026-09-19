@@ -64,7 +64,7 @@ describe("Runner Daemon & Server End-to-End Integration", () => {
       version: string;
     };
     expect(initialStatus.runners_connected).toBe(0);
-    expect(initialStatus.version).toBe("0.9.0");
+    expect(initialStatus.version).toBe("0.10.0");
 
     // 2. Instantiate and start Runner daemon
     const silentLogger = createLogger({ level: "silent" });
@@ -103,7 +103,7 @@ describe("Runner Daemon & Server End-to-End Integration", () => {
       mcp_active: boolean;
     };
     expect(connectedStatus.runners_connected).toBe(1);
-    expect(connectedStatus.mcp_active).toBe(false);
+    expect(connectedStatus.mcp_active).toBe(true);
 
     // 4. Probe GET /api/runners -> contains the runner
     const runnersListRes = await serverInstance.app.inject({

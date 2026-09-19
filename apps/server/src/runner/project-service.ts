@@ -5,20 +5,16 @@ import type { RunnerRegistry } from "./registry.js";
 import type { Logger } from "@localbridge/shared";
 
 export class ServerProjectService {
+  private readonly stmtUpsertProject: Database.Statement;
+  private readonly stmtListProjects: Database.Statement;
+  private readonly stmtGetProject: Database.Statement;
+
   constructor(
     private readonly db: Database.Database,
     private readonly runnerRegistry: RunnerRegistry,
     private readonly logger?: Logger
-  ) {}
-
-  /**
-   * Synchronize public project metadata reported by a connected Runner.
-   * Strictly stores only ID, name, enabled status, and timestamps. Zero physical paths.
-   */
-  syncRunnerProjects(runnerId: string, projects: ProjectListItem[]): void {
-    if (!this.db.open) return;
-    const now = Date.now();
-    const upsertStmt = this.db.prepare(`
+  ) {
+    this.stmtUpsertProject = this.db.prepare(`
       INSERT INTO projects (id, runner_id, name, enabled, access_mode, first_seen_at, last_seen_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
@@ -28,10 +24,33 @@ export class ServerProjectService {
         access_mode = excluded.access_mode,
         last_seen_at = excluded.last_seen_at
     `);
+    this.stmtListProjects = this.db.prepare(
+      "SELECT * FROM projects ORDER BY first_seen_at ASC"
+    );
+    this.stmtGetProject = this.db.prepare(
+      "SELECT * FROM projects WHERE id = ?"
+    );
+  }
+
+  /**
+   * Synchronize public project metadata reported by a connected Runner.
+   * Strictly stores only ID, name, enabled status, and timestamps. Zero physical paths.
+   */
+  syncRunnerProjects(runnerId: string, projects: ProjectListItem[]): void {
+    if (!this.db.open) return;
+    const now = Date.now();
 
     const tx = this.db.transaction(() => {
       for (const p of projects) {
-        upsertStmt.run(p.id, runnerId, p.name, p.enabled ? 1 : 0, p.accessMode ?? "read-only", now, now);
+        this.stmtUpsertProject.run(
+          p.id,
+          runnerId,
+          p.name,
+          p.enabled ? 1 : 0,
+          p.accessMode ?? "read-only",
+          now,
+          now
+        );
       }
     });
 
@@ -53,9 +72,7 @@ export class ServerProjectService {
    */
   listProjects(): ProjectPublic[] {
     if (!this.db.open) return [];
-    const rows = this.db
-      .prepare("SELECT * FROM projects ORDER BY first_seen_at ASC")
-      .all() as ProjectRow[];
+    const rows = this.stmtListProjects.all() as ProjectRow[];
 
     return rows.map((row) => {
       const runnerOnline = this.runnerRegistry.get(row.runner_id) !== undefined;
@@ -77,9 +94,7 @@ export class ServerProjectService {
    */
   getProject(projectId: string): ProjectPublic | undefined {
     if (!this.db.open) return undefined;
-    const row = this.db
-      .prepare("SELECT * FROM projects WHERE id = ?")
-      .get(projectId) as ProjectRow | undefined;
+    const row = this.stmtGetProject.get(projectId) as ProjectRow | undefined;
 
     if (!row) {
       return undefined;
