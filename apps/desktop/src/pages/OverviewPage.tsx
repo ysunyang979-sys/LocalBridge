@@ -1,4 +1,3 @@
-import React from "react";
 import {
   FolderLock,
   ShieldAlert,
@@ -10,14 +9,17 @@ import {
   CheckCircle2,
   Clock,
   ArrowRight,
+  Globe,
 } from "lucide-react";
 import type { ServerStatus, McpStatus, Project, Approval, Job } from "../types.js";
 import type { NavPage } from "../components/Sidebar.js";
+import type { TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 
 interface OverviewPageProps {
   serverStatus: ServerStatus | null;
   mcpStatus: McpStatus | null;
+  tunnelStatus: TunnelStatusDto | null;
   projects: Project[];
   approvals: Approval[];
   jobs: Job[];
@@ -31,6 +33,7 @@ interface OverviewPageProps {
 export const OverviewPage: React.FC<OverviewPageProps> = ({
   serverStatus,
   mcpStatus,
+  tunnelStatus,
   projects,
   approvals,
   jobs,
@@ -70,7 +73,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
       )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Card 1: Server */}
         <div className="p-5 bg-theme-card border border-theme-card rounded-xl space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
@@ -117,7 +120,52 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
               </span>
             </div>
             <div className="text-xs text-theme-muted mt-1">
-              {mcpStatus?.toolsCount || 23} safe tools &bull; MCP {mcpStatus?.protocolVersion || "2026-07-28"}
+              {mcpStatus?.toolsCount || 24} safe tools &bull; MCP {mcpStatus?.protocolVersion || "2026-07-28"}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Secure MCP Tunnel */}
+        <div
+          onClick={() => onNavigate("settings")}
+          className="p-5 bg-theme-card border border-theme-card hover:border-indigo-500/50 rounded-xl space-y-3 cursor-pointer transition shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-theme-muted font-medium uppercase tracking-wider">
+              {t.overview.secureTunnelCard}
+            </span>
+            <Globe className="w-4 h-4 text-sky-500" />
+          </div>
+          <div>
+            <div className="text-xl font-bold flex items-center gap-2">
+              <span
+                className={`w-3 h-3 rounded-full shrink-0 ${
+                  tunnelStatus?.status === "Connected"
+                    ? "bg-emerald-500"
+                    : tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Reconnecting"
+                      ? "bg-amber-500"
+                      : tunnelStatus?.status === "AuthenticationError" || tunnelStatus?.status === "Error"
+                        ? "bg-red-500"
+                        : "bg-slate-400"
+                }`}
+              />
+              <span className="text-base font-bold truncate text-theme-primary">
+                {tunnelStatus?.status === "Connected"
+                  ? t.overview.chatGptReady
+                  : tunnelStatus?.status === "Reconnecting"
+                    ? t.tunnel.statusReconnecting
+                    : tunnelStatus?.status === "Connecting"
+                      ? t.tunnel.statusConnecting
+                      : tunnelStatus?.status === "AuthenticationError"
+                        ? t.tunnel.statusAuthError
+                        : tunnelStatus?.status === "Stopped"
+                          ? t.tunnel.statusStopped
+                          : t.tunnel.statusNotConfigured}
+              </span>
+            </div>
+            <div className="text-xs text-theme-muted mt-1 truncate">
+              {tunnelStatus?.tunnel_id ? `ID: ${tunnelStatus.tunnel_id}` : t.overview.chatGptCard} &bull;{" "}
+              {tunnelStatus?.status === "Connected" ? t.common.active : t.common.paused}
             </div>
           </div>
         </div>

@@ -57,7 +57,7 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
       paused: mcpContext.isPaused(),
       version: "1.1.0",
       protocolVersion: MCP_PROTOCOL_VERSION,
-      toolsCount: 23,
+      toolsCount: 24,
     });
   });
 

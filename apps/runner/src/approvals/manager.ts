@@ -196,13 +196,14 @@ export class ApprovalManager {
     const results: ApprovalRequest[] = [];
     for (const req of this.approvals.values()) {
       this.checkExpiry(req);
+      const currentStatus = this.consumedIds.has(req.id) ? "consumed" : req.status;
       if (filter?.projectId && req.projectId !== filter.projectId) {
         continue;
       }
-      if (filter?.status && req.status !== filter.status) {
+      if (filter?.status && currentStatus !== filter.status) {
         continue;
       }
-      results.push({ ...req });
+      results.push({ ...req, status: currentStatus });
     }
 
     return results.sort((a, b) => b.createdAt - a.createdAt);
@@ -215,7 +216,8 @@ export class ApprovalManager {
     const req = this.approvals.get(approvalId);
     if (!req) return undefined;
     this.checkExpiry(req);
-    return { ...req };
+    const status = this.consumedIds.has(approvalId) ? "consumed" : req.status;
+    return { ...req, status };
   }
 
   /**

@@ -6,6 +6,7 @@ import { registerFilesystemTools } from "./tools/filesystem.js";
 import { registerGitTools } from "./tools/git.js";
 import { registerCommandTools } from "./tools/command.js";
 import { registerJobTools } from "./tools/jobs.js";
+import { registerApprovalTools } from "./tools/approvals.js";
 
 export interface McpServerOptions {
   name?: string;
@@ -29,12 +30,13 @@ export function createLocalBridgeMcpServer(
   // Set negotiated protocol version to 2026-07-28 so the wire codec resolves server/discover and other 2026-era methods
   (server.server as any)._negotiatedProtocolVersion = MCP_PROTOCOL_VERSION;
 
-  // Register all 23 official tools
+  // Register all tools (projects, filesystem, git, command, jobs, approvals)
   registerProjectTools(server, context);
   registerFilesystemTools(server, context);
   registerGitTools(server, context);
   registerCommandTools(server, context);
   registerJobTools(server, context);
+  registerApprovalTools(server, context);
 
   return server;
 }

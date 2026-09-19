@@ -18,6 +18,7 @@ const resourcesDir = path.resolve(rootDir, "apps/desktop/src-tauri/resources");
 const runtimeDir = path.join(resourcesDir, "runtime");
 const serverDir = path.join(resourcesDir, "server");
 const runnerDir = path.join(resourcesDir, "runner");
+const tunnelDir = path.join(resourcesDir, "tunnel");
 
 function findPnpmPackage(packageName: string, preferredVersion?: string): string {
   const pnpmDir = path.resolve(rootDir, "node_modules/.pnpm");
@@ -193,6 +194,13 @@ async function main() {
     "utf-8"
   );
   console.log(`-> Bundled runner to ${runnerOut}`);
+
+  // 4b. Prepare Tunnel Runtime
+  const externalTunnelSource = path.resolve(rootDir, "../tunnel-client-runtime-cloudflared-v0.0.14-windows-amd64");
+  if (!fs.existsSync(path.join(tunnelDir, "tunnel-client-runtime-cloudflared.exe")) && fs.existsSync(externalTunnelSource)) {
+    console.log(`Copying tunnel runtime from ${externalTunnelSource} to ${tunnelDir}...`);
+    fs.cpSync(externalTunnelSource, tunnelDir, { recursive: true });
+  }
 
   // 5. Verification Test
   console.log("\nVerifying bundled runtime integrity using bundled node.exe...");

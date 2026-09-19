@@ -384,6 +384,104 @@ class ApiBridge {
     }
     return null;
   }
+
+  // Secure MCP Tunnel
+  async getTunnelStatus(): Promise<TunnelStatusDto> {
+    if (isTauri()) {
+      return invoke<TunnelStatusDto>("desktop_tunnel_get_status");
+    }
+    return {
+      configured: false,
+      status: "NotConfigured",
+      has_api_key: false,
+      has_mcp_token: false,
+      auto_reconnect: true,
+      health_port: 8080,
+      reconnect_attempts: 0,
+    };
+  }
+
+  async saveTunnelConfig(params: {
+    tunnel_id: string;
+    runtime_api_key?: string;
+    mcp_token?: string;
+    auto_reconnect?: boolean;
+    health_port?: number;
+    connect_now?: boolean;
+  }): Promise<TunnelStatusDto> {
+    if (isTauri()) {
+      return invoke<TunnelStatusDto>("desktop_tunnel_save_config", params);
+    }
+    throw new Error("Tunnel configuration requires desktop app");
+  }
+
+  async autoCreateTunnelToken(scopes?: string[]): Promise<{ success: boolean; message: string }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; message: string }>("desktop_tunnel_auto_create_token", {
+        scopes: scopes ?? null,
+      });
+    }
+    throw new Error("Auto creating tunnel token requires desktop app");
+  }
+
+  async startTunnel(): Promise<TunnelStatusDto> {
+    if (isTauri()) {
+      return invoke<TunnelStatusDto>("desktop_tunnel_start");
+    }
+    throw new Error("Tunnel control requires desktop app");
+  }
+
+  async stopTunnel(): Promise<TunnelStatusDto> {
+    if (isTauri()) {
+      return invoke<TunnelStatusDto>("desktop_tunnel_stop");
+    }
+    throw new Error("Tunnel control requires desktop app");
+  }
+
+  async clearTunnelConfig(): Promise<TunnelStatusDto> {
+    if (isTauri()) {
+      return invoke<TunnelStatusDto>("desktop_tunnel_clear_config");
+    }
+    throw new Error("Tunnel control requires desktop app");
+  }
+
+  async testTunnelConnection(): Promise<{ mcpServerOnline: boolean; mcpServerUrl: string; hasMcpToken: boolean }> {
+    if (isTauri()) {
+      return invoke<{ mcpServerOnline: boolean; mcpServerUrl: string; hasMcpToken: boolean }>(
+        "desktop_tunnel_test_connection"
+      );
+    }
+    return {
+      mcpServerOnline: false,
+      mcpServerUrl: "http://127.0.0.1:18080/mcp",
+      hasMcpToken: false,
+    };
+  }
+}
+
+export interface TunnelStatusDto {
+  configured: boolean;
+  status:
+    | "NotConfigured"
+    | "Stopped"
+    | "Starting"
+    | "Connecting"
+    | "Connected"
+    | "Reconnecting"
+    | "AuthenticationError"
+    | "LocalMcpUnavailable"
+    | "HealthPortConflict"
+    | "RuntimeMissing"
+    | "Error"
+    | "NeedsAttention"
+    | string;
+  tunnel_id?: string | null;
+  has_api_key: boolean;
+  has_mcp_token: boolean;
+  auto_reconnect: boolean;
+  health_port: number;
+  error_message?: string | null;
+  reconnect_attempts: number;
 }
 
 export const bridge = new ApiBridge();

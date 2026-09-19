@@ -832,7 +832,7 @@ export type ProjectDisableResult = z.infer<typeof ProjectDisableResultSchema>;
 export const ApprovalRiskSchema = z.enum(["CAUTION", "DANGEROUS"]);
 export type ApprovalRisk = z.infer<typeof ApprovalRiskSchema>;
 
-export const ApprovalStatusSchema = z.enum(["pending", "approved", "denied", "expired"]);
+export const ApprovalStatusSchema = z.enum(["pending", "approved", "denied", "expired", "consumed"]);
 export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
 
 export const ApprovalRequestSchema = z

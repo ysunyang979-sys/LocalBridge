@@ -14,7 +14,7 @@ import { AuthorizeProjectModal } from "./components/modals/AuthorizeProjectModal
 import { CreateTokenModal } from "./components/modals/CreateTokenModal.js";
 import { EmergencyStopModal } from "./components/modals/EmergencyStopModal.js";
 import { ResolveApprovalModal } from "./components/modals/ResolveApprovalModal.js";
-import { bridge } from "./api/bridge.js";
+import { bridge, type TunnelStatusDto } from "./api/bridge.js";
 import { useTranslation } from "./i18n/useTranslation.js";
 import type {
   ServerStatus,
@@ -36,6 +36,7 @@ export const App: React.FC = () => {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  const [tunnelStatus, setTunnelStatus] = useState<TunnelStatusDto | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -67,6 +68,7 @@ export const App: React.FC = () => {
         tokRes,
         audRes,
         healthRes,
+        tunnelRes,
       ] = await Promise.allSettled([
         bridge.getStatus(),
         bridge.getMcpStatus(),
@@ -77,6 +79,7 @@ export const App: React.FC = () => {
         bridge.listTokens(),
         bridge.listAudit(),
         bridge.getDesktopHealth(),
+        bridge.getTunnelStatus(),
       ]);
 
       if (generation !== refreshGeneration.current) return;
@@ -115,10 +118,13 @@ export const App: React.FC = () => {
       else setTokens([]);
       if (audRes.status === "fulfilled") setAuditEvents(audRes.value.events || []);
       else setAuditEvents([]);
+      if (tunnelRes.status === "fulfilled") setTunnelStatus(tunnelRes.value);
+      else setTunnelStatus(null);
     } catch {
       if (generation === refreshGeneration.current) {
         setServerStatus(null);
         setMcpStatus(null);
+        setTunnelStatus(null);
         setProjects([]);
         setApprovals([]);
         setJobs([]);
@@ -234,6 +240,7 @@ export const App: React.FC = () => {
             <OverviewPage
               serverStatus={serverStatus}
               mcpStatus={mcpStatus}
+              tunnelStatus={tunnelStatus}
               projects={projects}
               approvals={approvals}
               jobs={jobs}
@@ -286,7 +293,10 @@ export const App: React.FC = () => {
           )}
 
           {currentPage === "settings" && (
-            <SettingsPage onRefresh={loadData} />
+            <SettingsPage
+              tunnelStatus={tunnelStatus}
+              onRefresh={loadData}
+            />
           )}
         </main>
       </div>

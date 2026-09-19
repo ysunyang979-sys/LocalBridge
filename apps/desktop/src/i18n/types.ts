@@ -88,6 +88,10 @@ export interface I18nDictionary {
     recentJobs: string;
     noPendingApprovals: string;
     noActiveJobs: string;
+    secureTunnelCard: string;
+    chatGptCard: string;
+    chatGptReady: string;
+    chatGptNotReady: string;
   };
   projects: {
     title: string;
@@ -241,6 +245,51 @@ export interface I18nDictionary {
     appName: string;
     versionLabel: string;
     architectureLabel: string;
+  };
+  tunnel: {
+    title: string;
+    subtitle: string;
+    cardTitle: string;
+    cardDesc: string;
+    chatGptReady: string;
+    chatGptNotReady: string;
+    statusLabel: string;
+    tunnelIdLabel: string;
+    tunnelIdPlaceholder: string;
+    runtimeApiKeyLabel: string;
+    runtimeApiKeyPlaceholder: string;
+    mcpTokenLabel: string;
+    mcpTokenPlaceholder: string;
+    autoCreateTokenBtn: string;
+    autoCreateTokenSuccess: string;
+    tokenScopesLabel: string;
+    scopeRead: string;
+    scopeWrite: string;
+    scopeExecute: string;
+    autoReconnectLabel: string;
+    saveAndConnectBtn: string;
+    testConnectionBtn: string;
+    connectBtn: string;
+    disconnectBtn: string;
+    replaceBtn: string;
+    removeBtn: string;
+    configuredSuccess: string;
+    statusNotConfigured: string;
+    statusStopped: string;
+    statusStarting: string;
+    statusConnecting: string;
+    statusConnected: string;
+    statusReconnecting: string;
+    statusAuthError: string;
+    statusMcpUnavailable: string;
+    statusPortConflict: string;
+    statusMissingRuntime: string;
+    statusError: string;
+    statusNeedsAttention: string;
+    keyConfigured: string;
+    tokenConfigured: string;
+    testSuccess: string;
+    testFailed: string;
   };
   modals: {
     authorize: {

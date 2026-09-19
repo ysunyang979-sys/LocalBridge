@@ -14,6 +14,7 @@ export const MCP_TOOL_SCOPE: Readonly<Record<string, McpScope>> = Object.freeze(
   localbridge_job_status: "read",
   localbridge_job_logs: "read",
   localbridge_job_list: "read",
+  localbridge_approval_status: "read",
   localbridge_file_create: "write",
   localbridge_file_write: "write",
   localbridge_file_patch: "write",

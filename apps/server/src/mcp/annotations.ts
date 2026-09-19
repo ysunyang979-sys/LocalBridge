@@ -15,6 +15,7 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   localbridge_job_status: { readOnlyHint: true },
   localbridge_job_logs: { readOnlyHint: true },
   localbridge_job_list: { readOnlyHint: true },
+  localbridge_approval_status: { readOnlyHint: true },
 
   // Modifying / Action tools
   localbridge_file_create: { readOnlyHint: false, idempotentHint: false },

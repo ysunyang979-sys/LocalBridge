@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 
 #[cfg(target_os = "windows")]
@@ -16,8 +18,10 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+pub mod tunnel;
+
 #[cfg(target_os = "windows")]
-mod job_object {
+pub mod job_object {
     use std::os::windows::io::AsRawHandle;
     use std::process::Child;
 
@@ -143,6 +147,7 @@ fn terminate_owned_process_tree(child: &mut Child) {
 struct SupervisorState {
     server_process: Option<Child>,
     runner_process: Option<Child>,
+    tunnel_supervisor: tunnel::TunnelSupervisor,
     bundled_node: Option<PathBuf>,
     server_entry: Option<PathBuf>,
     runner_entry: Option<PathBuf>,
@@ -157,6 +162,7 @@ struct SupervisorState {
 
 impl SupervisorState {
     fn shutdown(&mut self) {
+        self.tunnel_supervisor.shutdown();
         let port = if self.server_port == 0 { 18080 } else { self.server_port };
         let token = get_management_token(self);
         if !token.is_empty() {
@@ -668,6 +674,9 @@ fn desktop_emergency_stop(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     reason: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    if let Ok(mut s) = state.lock() {
+        s.tunnel_supervisor.stop();
+    }
     let payload = serde_json::json!({
         "reason": reason.unwrap_or_else(|| "Emergency stop initiated from Desktop".into()),
     });
@@ -714,6 +723,263 @@ fn desktop_list_runners(
     } else {
         Ok(val)
     }
+}
+
+fn spawn_tunnel_internal(
+    app: &tauri::AppHandle,
+    state: Arc<Mutex<SupervisorState>>,
+) -> Result<(), String> {
+    let tunnel_exe = match resolve_resource_file(app, "tunnel/tunnel-client-runtime-cloudflared.exe") {
+        Some(p) => p,
+        None => {
+            if let Ok(mut s) = state.lock() {
+                s.tunnel_supervisor.status = tunnel::TunnelStatus::RuntimeMissing;
+                s.tunnel_supervisor.error_message = Some("Bundled tunnel runtime not found in application resources".into());
+            }
+            return Err("Bundled tunnel runtime not found in application resources".into());
+        }
+    };
+
+    let (cfg, server_port) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        let cfg = match &s.tunnel_supervisor.config {
+            Some(c) => c.clone(),
+            None => {
+                return Err("Tunnel is not configured. Please configure Tunnel ID and Runtime API Key first.".into());
+            }
+        };
+        let port = if s.server_port > 0 { s.server_port } else { 18080 };
+        (cfg, port)
+    };
+
+    if cfg.tunnel_id.trim().is_empty() || cfg.runtime_api_key.trim().is_empty() || cfg.mcp_token.trim().is_empty() {
+        if let Ok(mut s) = state.lock() {
+            s.tunnel_supervisor.status = tunnel::TunnelStatus::NotConfigured;
+            s.tunnel_supervisor.error_message = Some("Tunnel ID, Runtime API Key, and LocalBridge MCP Token are required.".into());
+        }
+        return Err("Tunnel configuration is incomplete".into());
+    }
+
+    if is_port_open(cfg.health_port) && !tunnel::TunnelSupervisor::check_readyz(cfg.health_port) {
+        let msg = format!("Health port {} is already in use by another application.", cfg.health_port);
+        if let Ok(mut s) = state.lock() {
+            s.tunnel_supervisor.status = tunnel::TunnelStatus::HealthPortConflict;
+            s.tunnel_supervisor.error_message = Some(msg.clone());
+        }
+        return Err(msg);
+    }
+
+    {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        s.tunnel_supervisor.stop();
+    }
+
+    let mut cmd = Command::new(&tunnel_exe);
+    cmd.args(["run", "--log.level=info", "--log.format=struct-text"]);
+    if let Some(parent) = tunnel_exe.parent() {
+        cmd.current_dir(parent);
+    }
+    cmd.env("CONTROL_PLANE_API_KEY", &cfg.runtime_api_key);
+    cmd.env("CONTROL_PLANE_TUNNEL_ID", &cfg.tunnel_id);
+    cmd.env("MCP_SERVER_URL", format!("http://127.0.0.1:{}/mcp", server_port));
+    cmd.env("LOCALBRIDGE_MCP_AUTH", format!("Bearer {}", cfg.mcp_token));
+    cmd.env("MCP_EXTRA_HEADERS", "Authorization: env:LOCALBRIDGE_MCP_AUTH");
+    cmd.env("HEALTH_LISTEN_ADDR", format!("127.0.0.1:{}", cfg.health_port));
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!("Failed to spawn tunnel client: {}", e);
+            if let Ok(mut s) = state.lock() {
+                s.tunnel_supervisor.status = tunnel::TunnelStatus::Error;
+                s.tunnel_supervisor.error_message = Some(msg.clone());
+            }
+            return Err(msg);
+        }
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        if let Some(ref job) = s.job_object {
+            job.assign_child(&child);
+        }
+    }
+
+    {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        s.tunnel_supervisor.process = Some(child);
+        s.tunnel_supervisor.status = tunnel::TunnelStatus::Connecting;
+        s.tunnel_supervisor.error_message = None;
+        s.tunnel_supervisor.should_run = true;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn desktop_tunnel_get_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<tunnel::TunnelStatusDto, String> {
+    let s = state.lock().map_err(|e| e.to_string())?;
+    Ok(s.tunnel_supervisor.get_status_dto())
+}
+
+#[tauri::command]
+fn desktop_tunnel_save_config(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    app_handle: tauri::AppHandle,
+    tunnel_id: String,
+    runtime_api_key: Option<String>,
+    mcp_token: Option<String>,
+    auto_reconnect: Option<bool>,
+    health_port: Option<u16>,
+    connect_now: Option<bool>,
+) -> Result<tunnel::TunnelStatusDto, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone().ok_or("Data directory unavailable")?
+    };
+
+    let existing_cfg = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.tunnel_supervisor.config.clone()
+    };
+
+    let final_api_key = match runtime_api_key {
+        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
+        _ => existing_cfg.as_ref().map(|c| c.runtime_api_key.clone()).unwrap_or_default(),
+    };
+
+    let final_mcp_token = match mcp_token {
+        Some(t) if !t.trim().is_empty() => t.trim().to_string(),
+        _ => existing_cfg.as_ref().map(|c| c.mcp_token.clone()).unwrap_or_default(),
+    };
+
+    let cfg = tunnel::TunnelConfig {
+        tunnel_id: tunnel_id.trim().to_string(),
+        runtime_api_key: final_api_key,
+        mcp_token: final_mcp_token,
+        auto_reconnect: auto_reconnect.unwrap_or(true),
+        health_port: health_port.unwrap_or(8080),
+    };
+
+    {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        s.tunnel_supervisor.set_config(cfg, &data_dir)?;
+    }
+
+    if connect_now.unwrap_or(false) {
+        let _ = spawn_tunnel_internal(&app_handle, state.inner().clone());
+    }
+
+    let s = state.lock().map_err(|e| e.to_string())?;
+    Ok(s.tunnel_supervisor.get_status_dto())
+}
+
+#[tauri::command]
+fn desktop_tunnel_auto_create_token(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    scopes: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let token_scopes = scopes.unwrap_or_else(|| vec!["read".into(), "write".into()]);
+    let (port, mgmt_token, data_dir) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        let port = if s.server_port > 0 { s.server_port } else { 18080 };
+        let mgmt_token = get_management_token(&s);
+        let data_dir = s.data_dir.clone().ok_or("Data directory unavailable")?;
+        (port, mgmt_token, data_dir)
+    };
+
+    let payload = serde_json::json!({
+        "name": "ChatGPT Tunnel",
+        "type": "mcp",
+        "scopes": token_scopes
+    });
+
+    let resp = loopback_management_request(port, &mgmt_token, "POST", "/api/tokens", Some(&payload))?;
+    let lb_token = resp.get("token")
+        .and_then(|t| t.get("token"))
+        .and_then(|t| t.as_str())
+        .ok_or("Server response did not contain token secret")?;
+
+    if let Ok(mut s) = state.lock() {
+        let mut cfg = s.tunnel_supervisor.config.clone().unwrap_or(tunnel::TunnelConfig {
+            tunnel_id: String::new(),
+            runtime_api_key: String::new(),
+            mcp_token: lb_token.to_string(),
+            auto_reconnect: true,
+            health_port: 8080,
+        });
+        cfg.mcp_token = lb_token.to_string();
+        s.tunnel_supervisor.set_config(cfg, &data_dir)?;
+    }
+
+    Ok(serde_json::json!({ "success": true, "message": "Tunnel MCP token created and securely stored" }))
+}
+
+#[tauri::command]
+fn desktop_tunnel_start(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    app_handle: tauri::AppHandle,
+) -> Result<tunnel::TunnelStatusDto, String> {
+    spawn_tunnel_internal(&app_handle, state.inner().clone())?;
+    let s = state.lock().map_err(|e| e.to_string())?;
+    Ok(s.tunnel_supervisor.get_status_dto())
+}
+
+#[tauri::command]
+fn desktop_tunnel_stop(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<tunnel::TunnelStatusDto, String> {
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    s.tunnel_supervisor.stop();
+    Ok(s.tunnel_supervisor.get_status_dto())
+}
+
+#[tauri::command]
+fn desktop_tunnel_clear_config(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<tunnel::TunnelStatusDto, String> {
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone().ok_or("Data directory unavailable")?
+    };
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    s.tunnel_supervisor.clear_config(&data_dir)?;
+    Ok(s.tunnel_supervisor.get_status_dto())
+}
+
+#[tauri::command]
+fn desktop_tunnel_test_connection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    let (server_port, has_token) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        let port = if s.server_port > 0 { s.server_port } else { 18080 };
+        let has_tok = s.tunnel_supervisor.config.as_ref().map(|c| !c.mcp_token.is_empty()).unwrap_or(false);
+        (port, has_tok)
+    };
+
+    let mcp_url = format!("http://127.0.0.1:{}/mcp", server_port);
+    let mut mcp_online = false;
+    if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", server_port)) {
+        use std::io::{Read, Write};
+        let req = format!("GET /mcp HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n", server_port);
+        let _ = stream.write_all(req.as_bytes());
+        let mut resp = String::new();
+        let _ = stream.read_to_string(&mut resp);
+        mcp_online = resp.contains("HTTP/1.1 200") || resp.contains("HTTP/1.1 405") || resp.contains("HTTP/1.1 400");
+    }
+
+    Ok(serde_json::json!({
+        "mcpServerOnline": mcp_online,
+        "mcpServerUrl": mcp_url,
+        "hasMcpToken": has_token,
+    }))
 }
 
 fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorState>>) {
@@ -918,6 +1184,84 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         }
         state.runner_process = Some(runner_child);
     }
+
+    // 8. Initialize Tunnel Supervisor
+    {
+        if let Ok(mut state) = supervisor.lock() {
+            let data_dir = state.data_dir.clone();
+            if let Some(ref dir) = data_dir {
+                state.tunnel_supervisor.init_from_disk(dir);
+            }
+            let auto_start = state.tunnel_supervisor.config.as_ref().map(|c| c.auto_reconnect && !c.tunnel_id.is_empty()).unwrap_or(false);
+            if auto_start {
+                drop(state);
+                let _ = spawn_tunnel_internal(app, supervisor.clone());
+            }
+        }
+    }
+
+    // 9. Tunnel health and auto-reconnect monitoring loop
+    let sup_monitor = supervisor.clone();
+    let app_monitor = app.clone();
+    std::thread::spawn(move || {
+        let backoffs = [1, 2, 5, 10, 30, 60];
+        loop {
+            std::thread::sleep(Duration::from_millis(1500));
+
+            let (should_run, health_port, is_running, auto_reconnect, reconnect_attempts) = {
+                let Ok(mut s) = sup_monitor.lock() else { continue; };
+                let should_run = s.tunnel_supervisor.should_run;
+                let health_port = s.tunnel_supervisor.config.as_ref().map(|c| c.health_port).unwrap_or(8080);
+                let auto_reconnect = s.tunnel_supervisor.config.as_ref().map(|c| c.auto_reconnect).unwrap_or(true);
+                let reconnect_attempts = s.tunnel_supervisor.reconnect_attempts;
+                let is_running = s.tunnel_supervisor.is_active();
+                (should_run, health_port, is_running, auto_reconnect, reconnect_attempts)
+            };
+
+            if !should_run {
+                continue;
+            }
+
+            if is_running {
+                let is_ready = tunnel::TunnelSupervisor::check_readyz(health_port);
+                if is_ready {
+                    if let Ok(mut s) = sup_monitor.lock() {
+                        s.tunnel_supervisor.status = tunnel::TunnelStatus::Connected;
+                        s.tunnel_supervisor.reconnect_attempts = 0;
+                        s.tunnel_supervisor.error_message = None;
+                    }
+                }
+            } else {
+                let attempt = reconnect_attempts;
+                let backoff_secs = backoffs[attempt.min(backoffs.len() as u32 - 1) as usize];
+
+                if let Ok(mut s) = sup_monitor.lock() {
+                    if auto_reconnect && s.tunnel_supervisor.status != tunnel::TunnelStatus::AuthenticationError {
+                        s.tunnel_supervisor.status = tunnel::TunnelStatus::Reconnecting;
+                        s.tunnel_supervisor.reconnect_attempts += 1;
+                        s.tunnel_supervisor.error_message = Some(format!(
+                            "Tunnel disconnected. Reconnecting in {}s (attempt {})...",
+                            backoff_secs, attempt + 1
+                        ));
+                    } else {
+                        s.tunnel_supervisor.status = tunnel::TunnelStatus::NeedsAttention;
+                        s.tunnel_supervisor.should_run = false;
+                        continue;
+                    }
+                }
+
+                std::thread::sleep(Duration::from_secs(backoff_secs));
+
+                let can_retry = {
+                    let Ok(s) = sup_monitor.lock() else { continue; };
+                    s.tunnel_supervisor.should_run
+                };
+                if can_retry {
+                    let _ = spawn_tunnel_internal(&app_monitor, sup_monitor.clone());
+                }
+            }
+        }
+    });
 }
 
 fn main() {
@@ -958,9 +1302,60 @@ fn main() {
             desktop_get_status,
             desktop_get_mcp_status,
             desktop_list_runners,
-            desktop_set_server_url
+            desktop_set_server_url,
+            desktop_tunnel_get_status,
+            desktop_tunnel_save_config,
+            desktop_tunnel_auto_create_token,
+            desktop_tunnel_start,
+            desktop_tunnel_stop,
+            desktop_tunnel_clear_config,
+            desktop_tunnel_test_connection
         ])
         .setup(move |app| {
+            let open_i = MenuItem::with_id(app, "open", "Open LocalBridge", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit LocalBridge", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(Image::from_bytes(include_bytes!("../icons/32x32.png"))?)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "open" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.unminimize();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.show();
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            if let Some(window) = app.get_webview_window("main") {
+                let win_clone = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win_clone.hide();
+                    }
+                });
+            }
             // Explicitly set the window and taskbar icon for the main window
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(icon) = Image::from_bytes(include_bytes!("../icons/icon.png")) {
