@@ -1002,7 +1002,19 @@ export const ProjectSetTrustPolicyParamsSchema = z
     protectedFilesPolicy: ProtectedFilesPolicySchema.optional(),
     customRules: ProjectCustomRulesSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => {
+      if (data.trustLevel === "custom") {
+        return !!data.customRules && Object.keys(data.customRules).length > 0;
+      }
+      return true;
+    },
+    {
+      message: "Custom trust level requires customRules matrix",
+      path: ["customRules"],
+    }
+  );
 export type ProjectSetTrustPolicyParams = z.infer<typeof ProjectSetTrustPolicyParamsSchema>;
 
 export const ProjectSetTrustPolicyResultSchema = z
@@ -1017,7 +1029,7 @@ export type ProjectSetTrustPolicyResult = z.infer<typeof ProjectSetTrustPolicyRe
 export const ProjectSessionTrustParamsSchema = z
   .object({
     projectId: z.string(),
-    action: z.enum(["grant", "revoke"]),
+    action: z.enum(["grant", "revoke", "status"]).default("status"),
     operations: z.array(z.string()).optional(),
   })
   .strict();

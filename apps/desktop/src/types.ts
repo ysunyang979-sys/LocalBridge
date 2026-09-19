@@ -116,7 +116,7 @@ export type ProjectTrustLevel =
   | "custom";
 
 export type FileActionPolicy = "allow" | "ask" | "deny";
-export type CommandActionPolicy = "allow" | "controlled" | "ask" | "deny";
+export type CommandActionPolicy = "ask" | "controlled" | "deny";
 export type ProtectedFilesPolicy = "always-ask" | "deny" | "follow-policy";
 
 export interface ProjectCustomRules {
@@ -139,15 +139,17 @@ export interface ProjectCustomRules {
     restore?: FileActionPolicy;
   };
   commands?: {
-    build?: CommandActionPolicy;
-    test?: CommandActionPolicy;
-    controlledCommand?: CommandActionPolicy;
+    build?: FileActionPolicy;
+    test?: FileActionPolicy;
+    packageScript?: FileActionPolicy;
+    packageInstall?: FileActionPolicy;
+    controlledCommand?: FileActionPolicy;
   };
 }
 
 export interface ProjectTrustPolicy {
   trustLevel: ProjectTrustLevel;
-  filePolicy: "standard" | "allow-all" | "ask-all" | "read-only";
+  filePolicy?: FileActionPolicy;
   commandPolicy: CommandActionPolicy;
   protectedFilesPolicy: ProtectedFilesPolicy;
   customRules?: ProjectCustomRules;

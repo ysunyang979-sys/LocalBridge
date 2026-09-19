@@ -176,6 +176,7 @@ export interface I18nDictionary {
     clearAllSessionsBtn: string;
     clearAllSessionsConfirm: string;
     policySaved: string;
+    saveErrorInvalidCombination: string;
     resetSuccess: string;
     clearSuccess: string;
   };

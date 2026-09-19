@@ -176,6 +176,7 @@ export const enUS: I18nDictionary = {
     clearAllSessionsBtn: "Clear All Active Session Trusts",
     clearAllSessionsConfirm: "Are you sure you want to revoke all active in-memory session trust grants?",
     policySaved: "Trust policy saved successfully",
+    saveErrorInvalidCombination: "Unable to save trust policy: the selected policy combination is invalid or incompatible with the current Runner protocol.",
     resetSuccess: "All projects have been reset to Standard default trust policy",
     clearSuccess: "All session trusts cleared successfully",
   },

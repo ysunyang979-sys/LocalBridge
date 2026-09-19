@@ -32,8 +32,8 @@ import type {
   ProjectTrustPolicy,
   ProjectTrustLevel,
   FileActionPolicy,
-  CommandActionPolicy,
   ProtectedFilesPolicy,
+  ProjectCustomRules,
 } from "../types.js";
 
 interface SettingsPageProps {
@@ -66,12 +66,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
+  const defaultCustomRules: ProjectCustomRules = {
+    files: {
+      read: "allow",
+      create: "allow",
+      write: "allow",
+      patch: "allow",
+      delete: "ask",
+      rename: "ask",
+    },
+    commands: {
+      build: "ask",
+      test: "ask",
+      controlledCommand: "ask",
+    },
+  };
+
   // Projects & Trust Policy State
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [trustPolicy, setTrustPolicy] = useState<ProjectTrustPolicy>({
     trustLevel: "standard",
-    filePolicy: "standard",
+    filePolicy: "ask",
     commandPolicy: "ask",
     protectedFilesPolicy: "always-ask",
   });
@@ -80,6 +96,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   const [showFullTrustModal, setShowFullTrustModal] = useState(false);
   const [policyBusy, setPolicyBusy] = useState(false);
   const [policySavedMsg, setPolicySavedMsg] = useState<string | null>(null);
+  const [policyErrorMsg, setPolicyErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     bridge.listProjects().then((res) => {
@@ -105,7 +122,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     }).catch(() => {
       setTrustPolicy({
         trustLevel: "standard",
-        filePolicy: "standard",
+        filePolicy: "ask",
         commandPolicy: "ask",
         protectedFilesPolicy: "always-ask",
       });
@@ -131,7 +148,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTrustPolicy((prev) => ({
       ...prev,
       trustLevel: level,
-      filePolicy: level === "session-trusted" ? "allow-all" : "standard",
+      filePolicy: level === "session-trusted" ? "allow" : "ask",
+      customRules: level === "custom" ? (prev.customRules || defaultCustomRules) : prev.customRules,
     }));
   };
 
@@ -139,7 +157,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTrustPolicy((prev) => ({
       ...prev,
       trustLevel: "full-project-trust",
-      filePolicy: "allow-all",
+      filePolicy: "allow",
     }));
     setShowFullTrustModal(false);
   };
@@ -148,13 +166,40 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     if (!selectedProjectId) return;
     setPolicyBusy(true);
     setPolicySavedMsg(null);
+    setPolicyErrorMsg(null);
     try {
-      await bridge.setProjectTrustPolicy(selectedProjectId, trustPolicy);
+      const payload: ProjectTrustPolicy = {
+        trustLevel: trustPolicy.trustLevel,
+        filePolicy:
+          trustPolicy.trustLevel === "full-project-trust" ||
+          trustPolicy.trustLevel === "session-trusted"
+            ? "allow"
+            : "ask",
+        commandPolicy: trustPolicy.commandPolicy ?? "ask",
+        protectedFilesPolicy: trustPolicy.protectedFilesPolicy ?? "always-ask",
+        customRules:
+          trustPolicy.trustLevel === "custom"
+            ? (trustPolicy.customRules ?? defaultCustomRules)
+            : undefined,
+      };
+
+      await bridge.setProjectTrustPolicy(selectedProjectId, payload);
       setPolicySavedMsg(t.trust.policySaved);
       setTimeout(() => setPolicySavedMsg(null), 3000);
       onRefresh();
     } catch (err: any) {
-      alert(err.message || String(err));
+      console.error("Failed to save project trust policy:", err);
+      const errMsg = err?.message || String(err);
+      if (
+        errMsg.includes("Invalid parameters") ||
+        errMsg.includes("INVALID_REQUEST") ||
+        errMsg.includes("invalid-parameter")
+      ) {
+        setPolicyErrorMsg(t.trust.saveErrorInvalidCombination);
+      } else {
+        setPolicyErrorMsg(errMsg);
+      }
+      setTimeout(() => setPolicyErrorMsg(null), 6000);
     } finally {
       setPolicyBusy(false);
     }
@@ -1121,11 +1166,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                             <span className="font-mono text-theme-primary">{cmd}</span>
                             <select
                               value={
-                                trustPolicy.customRules?.commands?.[cmd] ??
-                                (cmd === "controlledCommand" ? "controlled" : "ask")
+                                trustPolicy.customRules?.commands?.[cmd] ?? "ask"
                               }
                               onChange={(e) => {
-                                const val = e.target.value as CommandActionPolicy;
+                                const val = e.target.value as FileActionPolicy;
                                 setTrustPolicy((prev) => ({
                                   ...prev,
                                   customRules: {
@@ -1140,7 +1184,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                               className="bg-theme-input border border-theme-input rounded px-1.5 py-0.5 text-[10px] text-theme-primary"
                             >
                               <option value="allow">{t.trust.commandAllow}</option>
-                              <option value="controlled">{t.trust.commandControlled}</option>
                               <option value="ask">{t.trust.commandAsk}</option>
                               <option value="deny">{t.trust.commandDeny}</option>
                             </select>
@@ -1175,17 +1218,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   </select>
                 </div>
 
-                {/* Save Policy Button */}
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    type="button"
-                    disabled={policyBusy}
-                    onClick={handleSavePolicy}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition shadow-sm"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>{t.common.save}</span>
-                  </button>
+                {/* Save Policy Button & Status */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={policyBusy}
+                      onClick={handleSavePolicy}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition shadow-sm"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{t.common.save}</span>
+                    </button>
+                  </div>
+                  {policySavedMsg && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-500 text-xs font-medium flex items-center gap-2">
+                      <Check className="w-4 h-4 shrink-0" />
+                      <span>{policySavedMsg}</span>
+                    </div>
+                  )}
+                  {policyErrorMsg && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-500 text-xs font-medium flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>{policyErrorMsg}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

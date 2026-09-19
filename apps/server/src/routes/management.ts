@@ -476,31 +476,44 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         });
       }
 
-      const dbPolicy = projectService.getTrustPolicy(id);
-      if (dbPolicy) {
-        return reply.status(200).send({ projectId: id, trustPolicy: dbPolicy });
-      }
-
       const targetRunnerId =
         request.query.runnerId || project.runnerId || getActiveRunnerId();
+
+      let isSessionActive = false;
       try {
-        const info = await rpcService.request(
+        const sessionRes = await rpcService.request(
           targetRunnerId,
-          RunnerRpcMethods.ProjectInfo,
-          { projectId: id }
+          RunnerRpcMethods.ProjectSessionTrust,
+          { projectId: id, action: "status" }
         );
-        return reply.status(200).send({ projectId: id, trustPolicy: (info as any).trustPolicy });
+        isSessionActive = !!sessionRes?.active;
       } catch {
+        // runner might be offline
+      }
+
+      const dbPolicy = projectService.getTrustPolicy(id);
+      const basePolicy = dbPolicy ?? {
+        trustLevel: "standard" as const,
+        filePolicy: "ask" as const,
+        commandPolicy: "ask" as const,
+        protectedFilesPolicy: "always-ask" as const,
+        policyVersion: 1,
+        canonicalRoot: "",
+        updatedAt: Date.now(),
+      };
+
+      if (isSessionActive) {
         return reply.status(200).send({
           projectId: id,
           trustPolicy: {
-            trustLevel: "standard",
-            filePolicy: "standard",
-            commandPolicy: "ask",
-            protectedFilesPolicy: "always-ask",
+            ...basePolicy,
+            trustLevel: "session-trusted",
+            filePolicy: "allow",
           },
         });
       }
+
+      return reply.status(200).send({ projectId: id, trustPolicy: basePolicy });
     }
   );
 
@@ -523,20 +536,43 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     const project = projectService.getProject(id);
     const targetRunnerId = runnerId || project?.runnerId || getActiveRunnerId();
 
+    const normalizedFilePolicy =
+      trustPolicy.filePolicy === "allow" ||
+      trustPolicy.filePolicy === "ask" ||
+      trustPolicy.filePolicy === "deny"
+        ? trustPolicy.filePolicy
+        : trustPolicy.trustLevel === "full-project-trust" ||
+            trustPolicy.trustLevel === "session-trusted"
+          ? "allow"
+          : "ask";
+
     const result = await rpcService.request(
       targetRunnerId,
       RunnerRpcMethods.ProjectSetTrustPolicy,
       {
         projectId: id,
         trustLevel: trustPolicy.trustLevel,
-        filePolicy: trustPolicy.filePolicy,
-        commandPolicy: trustPolicy.commandPolicy,
-        protectedFilesPolicy: trustPolicy.protectedFilesPolicy,
-        customRules: trustPolicy.customRules,
+        filePolicy: normalizedFilePolicy,
+        commandPolicy: trustPolicy.commandPolicy ?? "ask",
+        protectedFilesPolicy: trustPolicy.protectedFilesPolicy ?? "always-ask",
+        customRules:
+          trustPolicy.trustLevel === "custom" ? trustPolicy.customRules : undefined,
       }
     );
 
-    projectService.setTrustPolicy(id, result.policy);
+    // Only persist non-session-trusted policies to SQLite
+    if (result.policy.trustLevel !== "session-trusted") {
+      projectService.setTrustPolicy(id, result.policy);
+    } else {
+      const currentDbPolicy = projectService.getTrustPolicy(id);
+      if (currentDbPolicy && currentDbPolicy.trustLevel !== "standard") {
+        projectService.setTrustPolicy(id, {
+          ...currentDbPolicy,
+          trustLevel: "standard",
+          filePolicy: "ask",
+        });
+      }
+    }
     return reply.status(200).send({ projectId: id, trustPolicy: result.policy });
   });
 

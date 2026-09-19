@@ -420,17 +420,24 @@ export class ProjectRegistry extends EventEmitter {
         `Project "${projectId}" not found`
       );
     }
-    if (project.trustPolicy) {
-      return project.trustPolicy;
-    }
-    return {
+    const isSession = this.isSessionTrusted(projectId);
+    const basePolicy: ProjectTrustPolicy = project.trustPolicy ?? {
       trustLevel: "standard",
+      filePolicy: "ask",
       canonicalRoot: project.canonicalRoot,
       policyVersion: 1,
       commandPolicy: "ask",
       protectedFilesPolicy: "always-ask",
       updatedAt: project.updatedAt,
     };
+    if (isSession) {
+      return {
+        ...basePolicy,
+        trustLevel: "session-trusted",
+        filePolicy: "allow",
+      };
+    }
+    return basePolicy;
   }
 
   /**
@@ -497,6 +504,35 @@ export class ProjectRegistry extends EventEmitter {
     }
 
     const currentVersion = project.trustPolicy?.policyVersion ?? 0;
+
+    if (policy.trustLevel === "session-trusted") {
+      this.grantSessionTrust(projectId);
+      const persistentPolicy: ProjectTrustPolicy = {
+        trustLevel: "standard",
+        filePolicy: "ask",
+        canonicalRoot: project.canonicalRoot,
+        policyVersion: currentVersion + 1,
+        commandPolicy: policy.commandPolicy ?? project.trustPolicy?.commandPolicy ?? "ask",
+        protectedFilesPolicy:
+          policy.protectedFilesPolicy ?? project.trustPolicy?.protectedFilesPolicy ?? "always-ask",
+        customRules: policy.customRules ?? project.trustPolicy?.customRules,
+        updatedAt: Date.now(),
+      };
+
+      project.trustPolicy = persistentPolicy;
+      project.updatedAt = Date.now();
+      this.save();
+
+      const activePolicy: ProjectTrustPolicy = {
+        ...persistentPolicy,
+        trustLevel: "session-trusted",
+        filePolicy: "allow",
+      };
+      this.emit("trustPolicyChanged", { projectId, policy: activePolicy });
+      return { projectId, policy: activePolicy };
+    }
+
+    this.revokeSessionTrust(projectId);
     const newPolicy: ProjectTrustPolicy = {
       trustLevel: policy.trustLevel,
       filePolicy:

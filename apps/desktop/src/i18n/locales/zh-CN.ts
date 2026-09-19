@@ -176,6 +176,7 @@ export const zhCN: I18nDictionary = {
     clearAllSessionsBtn: "清理所有活动会话信任",
     clearAllSessionsConfirm: "确定要清理当前所有已授予的会话信任吗？",
     policySaved: "信任策略已成功保存",
+    saveErrorInvalidCombination: "保存信任策略失败：选择的策略组合不合法或与当前 Runner 协议不兼容。",
     resetSuccess: "已重置所有项目的信任策略为标准默认",
     clearSuccess: "已清理所有会话信任",
   },

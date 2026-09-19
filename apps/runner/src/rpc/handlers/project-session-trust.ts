@@ -15,12 +15,18 @@ export function createProjectSessionTrustHandler(registry: ProjectRegistry) {
         active: true,
         operations: registry.getSessionTrustOperations(params.projectId),
       };
-    } else {
+    } else if (params.action === "revoke") {
       registry.revokeSessionTrust(params.projectId);
       return {
         projectId: params.projectId,
         active: false,
         operations: [],
+      };
+    } else {
+      return {
+        projectId: params.projectId,
+        active: registry.isSessionTrusted(params.projectId),
+        operations: registry.getSessionTrustOperations(params.projectId),
       };
     }
   };
