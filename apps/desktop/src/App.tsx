@@ -229,9 +229,31 @@ export const App: React.FC = () => {
         />
 
         {startupError && (
-          <div className="bg-red-500/10 border-b border-red-500/30 px-6 py-3 flex items-center gap-3 text-red-500 text-xs">
-            <OctagonAlert className="w-4 h-4 text-red-500 shrink-0" />
-            <span className="font-medium">{startupError}</span>
+          <div className="m-6 p-6 bg-red-500/10 border border-red-500/30 rounded-xl space-y-3">
+            <div className="flex items-center gap-3 text-red-500">
+              <OctagonAlert className="w-6 h-6 shrink-0" />
+              <div>
+                <div className="font-semibold text-sm">
+                  LocalBridge Core Server failed to start / 核心服务启动失败
+                </div>
+                <div className="text-xs text-red-400 font-mono mt-1">
+                  Reason: {startupError}
+                </div>
+              </div>
+            </div>
+            <div className="text-xs text-theme-muted space-y-1 pl-9">
+              <div>&bull; Verify bundled runtime resources are intact.</div>
+              <div>&bull; Ensure port 18080 is not occupied by another process.</div>
+            </div>
+            <div className="pl-9 pt-1">
+              <button
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition"
+              >
+                {isRefreshing ? t.common.refreshing : t.common.refresh}
+              </button>
+            </div>
           </div>
         )}
 

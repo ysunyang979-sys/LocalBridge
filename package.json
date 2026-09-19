@@ -1,6 +1,6 @@
 {
   "name": "localbridge-monorepo",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Secure Model Context Protocol (MCP) Bridge for Local Development",
   "packageManager": "pnpm@10.14.0",

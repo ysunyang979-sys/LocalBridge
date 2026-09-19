@@ -288,8 +288,11 @@ export const zhCN: I18nDictionary = {
     statusNeedsAttention: "需要关注",
     keyConfigured: "●●●●●●●● (已通过 DPAPI 安全存储)",
     tokenConfigured: "●●●●●●●● (已通过 DPAPI 安全存储)",
-    testSuccess: "本地 MCP 接口响应正常，隧道前置就绪！",
-    testFailed: "健康检查未通过，请检查本地 Server 是否正常运行。",
+    testSuccess: "本地 MCP 就绪探针检测成功！",
+    testFailed: "就绪探针检测失败，请确认本地服务已启动。",
+    errorConfigFailed: "无法保存隧道配置。请检查配置参数后重试。",
+    errorAuthFailed: "隧道凭据验证失败，请确认 Runtime API Key 是否正确。",
+    errorPortConflict: "健康检查端口已被占用，请在设置中更换端口。",
   },
   modals: {
     authorize: {

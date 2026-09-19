@@ -318,7 +318,7 @@ impl TunnelSupervisor {
     pub fn check_readyz(port: u16) -> bool {
         let url = format!("http://127.0.0.1:{}/readyz", port);
         if let Ok(resp) = ureq_get(&url) {
-            resp.contains("ready")
+            resp.contains("200 OK") || resp.contains("ready") || resp.contains("ok") || resp.contains("OK")
         } else {
             false
         }

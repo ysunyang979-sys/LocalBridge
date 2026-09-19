@@ -778,6 +778,10 @@ fn spawn_tunnel_internal(
     cmd.args(["run", "--log.level=info", "--log.format=struct-text"]);
     if let Some(parent) = tunnel_exe.parent() {
         cmd.current_dir(parent);
+        let cf_path = parent.join("cloudflared.exe");
+        if cf_path.exists() {
+            cmd.env("CLOUDFLARED_PATH", cf_path);
+        }
     }
     cmd.env("CONTROL_PLANE_API_KEY", &cfg.runtime_api_key);
     cmd.env("CONTROL_PLANE_TUNNEL_ID", &cfg.tunnel_id);

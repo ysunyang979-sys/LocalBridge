@@ -290,6 +290,9 @@ export interface I18nDictionary {
     tokenConfigured: string;
     testSuccess: string;
     testFailed: string;
+    errorConfigFailed: string;
+    errorAuthFailed: string;
+    errorPortConflict: string;
   };
   modals: {
     authorize: {

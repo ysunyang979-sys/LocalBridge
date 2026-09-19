@@ -401,16 +401,29 @@ class ApiBridge {
     };
   }
 
-  async saveTunnelConfig(params: {
-    tunnel_id: string;
-    runtime_api_key?: string;
-    mcp_token?: string;
-    auto_reconnect?: boolean;
-    health_port?: number;
-    connect_now?: boolean;
-  }): Promise<TunnelStatusDto> {
+  /**
+   * Typed Secure MCP Tunnel API wrapper
+   */
+  readonly tunnel: DesktopTunnelApi = {
+    getStatus: () => this.getTunnelStatus(),
+    saveConfig: (input: TunnelSaveConfigInput) => this.saveTunnelConfig(input),
+    autoCreateToken: (scopes?: string[]) => this.autoCreateTunnelToken(scopes),
+    start: () => this.startTunnel(),
+    stop: () => this.stopTunnel(),
+    clearConfig: () => this.clearTunnelConfig(),
+    testConnection: () => this.testTunnelConnection(),
+  };
+
+  async saveTunnelConfig(params: TunnelSaveConfigInput): Promise<TunnelStatusDto> {
     if (isTauri()) {
-      return invoke<TunnelStatusDto>("desktop_tunnel_save_config", params);
+      return invoke<TunnelStatusDto>("desktop_tunnel_save_config", {
+        tunnelId: params.tunnelId,
+        runtimeApiKey: params.runtimeApiKey ?? null,
+        mcpToken: params.mcpToken ?? null,
+        autoReconnect: params.autoReconnect ?? null,
+        healthPort: params.healthPort ?? null,
+        connectNow: params.connectNow ?? null,
+      });
     }
     throw new Error("Tunnel configuration requires desktop app");
   }
@@ -457,6 +470,25 @@ class ApiBridge {
       hasMcpToken: false,
     };
   }
+}
+
+export interface TunnelSaveConfigInput {
+  tunnelId: string;
+  runtimeApiKey?: string;
+  mcpToken?: string;
+  autoReconnect?: boolean;
+  healthPort?: number;
+  connectNow?: boolean;
+}
+
+export interface DesktopTunnelApi {
+  getStatus(): Promise<TunnelStatusDto>;
+  saveConfig(input: TunnelSaveConfigInput): Promise<TunnelStatusDto>;
+  autoCreateToken(scopes?: string[]): Promise<{ success: boolean; message: string }>;
+  start(): Promise<TunnelStatusDto>;
+  stop(): Promise<TunnelStatusDto>;
+  clearConfig(): Promise<TunnelStatusDto>;
+  testConnection(): Promise<{ mcpServerOnline: boolean; mcpServerUrl: string; hasMcpToken: boolean }>;
 }
 
 export interface TunnelStatusDto {

@@ -87,7 +87,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
               {serverStatus ? t.common.online : t.common.loading}
             </div>
             <div className="text-xs text-theme-muted mt-1">
-              v{serverStatus?.version || "1.1.0"} &bull; {t.status.loopbackAddr}
+              v{serverStatus?.version || "1.2.0-P0"} &bull; {t.status.loopbackAddr}
             </div>
           </div>
         </div>

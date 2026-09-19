@@ -78,22 +78,38 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     onRefresh();
   };
 
+  // Helper for user-friendly, secret-safe error mapping
+  const formatTunnelError = (err: unknown): string => {
+    const raw = err instanceof Error ? err.message : String(err);
+    if (raw.includes("missing required key") || raw.includes("invalid args")) {
+      return `${t.tunnel.errorConfigFailed} (IPC_ARGUMENT_ERROR)`;
+    }
+    if (raw.includes("401") || raw.includes("403") || raw.includes("Unauthorized") || raw.includes("Authentication")) {
+      return `${t.tunnel.errorAuthFailed} (TUNNEL_AUTH_FAILED)`;
+    }
+    if (raw.includes("Health port") || raw.includes("already in use") || raw.includes("conflict")) {
+      return `${t.tunnel.errorPortConflict} (HEALTH_PORT_CONFLICT)`;
+    }
+    // Redact any raw token strings from error messages
+    return raw
+      .replace(/lb_[a-f0-9]{32,64}/gi, "lb_***")
+      .replace(/lbr_[a-f0-9]{32,64}/gi, "lbr_***")
+      .replace(/lm_[a-f0-9]{32,64}/gi, "lm_***");
+  };
+
   // Tunnel Actions
   const handleSaveTunnel = async (andStart: boolean) => {
     setTunnelBusy(true);
     setTunnelSuccessMsg(null);
     setTunnelErrorMsg(null);
     try {
-      await bridge.saveTunnelConfig({
-        tunnel_id: tunnelId.trim(),
-        runtime_api_key: runtimeApiKey.trim() || undefined,
-        mcp_token: mcpToken.trim() || undefined,
-        auto_reconnect: autoReconnect,
+      await bridge.tunnel.saveConfig({
+        tunnelId: tunnelId.trim(),
+        runtimeApiKey: runtimeApiKey.trim() || undefined,
+        mcpToken: mcpToken.trim() || undefined,
+        autoReconnect,
+        connectNow: andStart,
       });
-
-      if (andStart) {
-        await bridge.startTunnel();
-      }
 
       setTunnelSuccessMsg(t.tunnel.configuredSuccess);
       setIsEditingKey(false);
@@ -102,8 +118,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       setMcpToken("");
       setTimeout(() => setTunnelSuccessMsg(null), 3000);
       onRefresh();
-    } catch (err: any) {
-      setTunnelErrorMsg(err?.message || String(err));
+    } catch (err: unknown) {
+      setTunnelErrorMsg(formatTunnelError(err));
     } finally {
       setTunnelBusy(false);
     }
@@ -114,13 +130,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTunnelSuccessMsg(null);
     setTunnelErrorMsg(null);
     try {
-      await bridge.autoCreateTunnelToken(tokenScopes);
+      await bridge.tunnel.autoCreateToken(tokenScopes);
       setTunnelSuccessMsg(t.tunnel.autoCreateTokenSuccess);
       setIsEditingToken(false);
       setTimeout(() => setTunnelSuccessMsg(null), 3000);
       onRefresh();
-    } catch (err: any) {
-      setTunnelErrorMsg(err?.message || String(err));
+    } catch (err: unknown) {
+      setTunnelErrorMsg(formatTunnelError(err));
     } finally {
       setTunnelBusy(false);
     }
@@ -130,10 +146,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTunnelBusy(true);
     setTunnelErrorMsg(null);
     try {
-      await bridge.startTunnel();
+      await bridge.tunnel.start();
       onRefresh();
-    } catch (err: any) {
-      setTunnelErrorMsg(err?.message || String(err));
+    } catch (err: unknown) {
+      setTunnelErrorMsg(formatTunnelError(err));
     } finally {
       setTunnelBusy(false);
     }
@@ -143,10 +159,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTunnelBusy(true);
     setTunnelErrorMsg(null);
     try {
-      await bridge.stopTunnel();
+      await bridge.tunnel.stop();
       onRefresh();
-    } catch (err: any) {
-      setTunnelErrorMsg(err?.message || String(err));
+    } catch (err: unknown) {
+      setTunnelErrorMsg(formatTunnelError(err));
     } finally {
       setTunnelBusy(false);
     }
@@ -157,15 +173,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTunnelBusy(true);
     setTunnelErrorMsg(null);
     try {
-      await bridge.clearTunnelConfig();
+      await bridge.tunnel.clearConfig();
       setTunnelId("");
       setRuntimeApiKey("");
       setMcpToken("");
       setIsEditingKey(true);
       setIsEditingToken(true);
       onRefresh();
-    } catch (err: any) {
-      setTunnelErrorMsg(err?.message || String(err));
+    } catch (err: unknown) {
+      setTunnelErrorMsg(formatTunnelError(err));
     } finally {
       setTunnelBusy(false);
     }
@@ -656,7 +672,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               />
               <div>
                 <div className="font-bold text-sm text-theme-primary">{t.settings.appName}</div>
-                <div className="text-theme-muted">{t.settings.versionLabel} 1.1.0</div>
+                <div className="text-theme-muted">{t.settings.versionLabel} 1.2.0 P0 Pre-release &bull; Build d9510b4</div>
               </div>
             </div>
 

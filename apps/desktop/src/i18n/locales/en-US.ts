@@ -290,6 +290,9 @@ export const enUS: I18nDictionary = {
     tokenConfigured: "●●●●●●●● (DPAPI Encrypted)",
     testSuccess: "Local MCP readiness probe passed successfully!",
     testFailed: "Readiness probe failed. Verify local server is running.",
+    errorConfigFailed: "Failed to save tunnel configuration. Please check the inputs and retry.",
+    errorAuthFailed: "Tunnel credential validation failed. Please check your Runtime API Key.",
+    errorPortConflict: "Health check port is already in use. Please select a different port in settings.",
   },
   modals: {
     authorize: {
