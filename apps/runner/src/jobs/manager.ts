@@ -286,7 +286,7 @@ export class JobManager {
     }
 
     // 6. Command spec preparation
-    let targetTool: "node" | "npm" | "pnpm" | "python";
+    let targetTool: "node" | "npm" | "pnpm" | "python" = "node";
     let commandArgs: string[] = [];
 
     switch (command.kind) {
@@ -425,12 +425,32 @@ export class JobManager {
           );
         }
 
-        targetTool = command.manager;
-        commandArgs = [
-          "run",
-          command.script,
-          ...(command.args && command.args.length > 0 ? ["--", ...command.args] : []),
-        ];
+        const scriptValue = typeof scripts[command.script] === "string" ? (scripts[command.script] as string).trim() : "";
+        let useDirectNode = false;
+
+        const managerAvailable = await this.executableRegistry.hasExecutable(command.manager);
+        if (!managerAvailable && scriptValue.startsWith("node ")) {
+          const parts = scriptValue.slice(5).trim().split(/\s+/);
+          const entryFile = parts[0];
+          if (entryFile) {
+            const resolvedPath = resolveProjectPath(project.canonicalRoot, entryFile, {
+              mustExist: true,
+              allowSensitive: false,
+            });
+            targetTool = "node";
+            commandArgs = [resolvedPath.canonicalPath, ...parts.slice(1), ...(command.args ?? [])];
+            useDirectNode = true;
+          }
+        }
+
+        if (!useDirectNode) {
+          targetTool = command.manager;
+          commandArgs = [
+            "run",
+            command.script,
+            ...(command.args && command.args.length > 0 ? ["--", ...command.args] : []),
+          ];
+        }
         break;
       }
 

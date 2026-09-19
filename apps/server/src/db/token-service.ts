@@ -121,6 +121,30 @@ export class TokenService {
   }
 
   /**
+   * Ensure a specific runner token exists in the database.
+   * If not already present and active, hashes and inserts it.
+   */
+  ensureRunnerToken(token: string, name = "Desktop Embedded Runner"): string {
+    const tokenHash = hashToken(token);
+    const existing = this.stmtValidateRunner.get(tokenHash) as TokenRow | undefined;
+    if (existing && !existing.revoked_at) {
+      return existing.id;
+    }
+    const id = `tok_${crypto.randomUUID()}`;
+    const createdAt = Date.now();
+    this.stmtInsertToken.run(
+      id,
+      "runner",
+      tokenHash,
+      name,
+      JSON.stringify([]),
+      createdAt,
+      null
+    );
+    return id;
+  }
+
+  /**
    * Validate a runner token strictly.
    * Rejects MCP tokens, revoked tokens, expired tokens, and unknown tokens.
    */

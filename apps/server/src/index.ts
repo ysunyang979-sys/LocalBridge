@@ -3,7 +3,14 @@ import { buildApp } from "./app.js";
 
 async function main() {
   const config = loadConfig();
-  const { app, db } = await buildApp({ config });
+  const { app, db, tokenService } = await buildApp({ config });
+
+  // Handle bootstrap runner token if passed by Desktop Supervisor
+  const bootstrapRunnerToken = process.env.LOCALBRIDGE_BOOTSTRAP_RUNNER_TOKEN;
+  if (bootstrapRunnerToken && bootstrapRunnerToken.startsWith("lbr_")) {
+    const tokenId = tokenService.ensureRunnerToken(bootstrapRunnerToken, "Desktop Embedded Runner");
+    app.log.info({ tokenId }, "Ensured Desktop Embedded Runner token in database");
+  }
 
   // Graceful shutdown handling
   const shutdown = async (signal: string) => {

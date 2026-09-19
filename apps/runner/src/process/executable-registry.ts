@@ -29,6 +29,18 @@ export class ExecutableRegistry {
   }
 
   /**
+   * Check whether an executable is available without throwing.
+   */
+  async hasExecutable(tool: "node" | "npm" | "pnpm" | "python"): Promise<boolean> {
+    try {
+      await this.getExecutable(tool);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Clear cached resolved executables (useful for testing or dynamic environment changes).
    */
   clearCache(): void {
@@ -39,7 +51,11 @@ export class ExecutableRegistry {
     const isWindows = process.platform === "win32";
 
     if (tool === "node") {
-      const nodeExe = this.findBinaryOnPath("node", isWindows ? [".exe"] : []);
+      let nodeExe = this.findBinaryOnPath("node", isWindows ? [".exe"] : []);
+      // If node is not on system PATH, fall back to current bundled runtime
+      if (!nodeExe && process.execPath && fs.existsSync(process.execPath)) {
+        nodeExe = process.execPath;
+      }
       if (!nodeExe) {
         throw new LocalBridgeError(
           LocalBridgeErrorCode.COMMAND_TOOL_NOT_AVAILABLE,

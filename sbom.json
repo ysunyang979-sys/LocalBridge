@@ -180,6 +180,21 @@
       "scope": "required",
       "licenses": [{ "license": { "id": "MIT" } }],
       "purl": "pkg:cargo/serde_json@1.0.151"
+    },
+    {
+      "type": "application",
+      "name": "node",
+      "version": "24.21.0",
+      "description": "Bundled portable Node.js JavaScript runtime for Windows x64",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32"
+        }
+      ],
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "purl": "pkg:generic/node@24.21.0?arch=x64&os=win32"
     }
   ],
   "dependencies": [
@@ -210,7 +225,8 @@
         "pkg:cargo/tauri@2.11.5",
         "pkg:cargo/tauri-plugin-dialog@2.7.3",
         "pkg:cargo/serde@1.0.229",
-        "pkg:cargo/serde_json@1.0.151"
+        "pkg:cargo/serde_json@1.0.151",
+        "pkg:generic/node@24.21.0?arch=x64&os=win32"
       ]
     }
   ]

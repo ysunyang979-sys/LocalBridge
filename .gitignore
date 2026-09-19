@@ -3,6 +3,7 @@ dist/
 build/
 target/
 **/target/
+apps/desktop/src-tauri/resources/
 
 *.log
 npm-debug.log*
