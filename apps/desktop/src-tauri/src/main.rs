@@ -625,6 +625,89 @@ fn desktop_resolve_approval(
 }
 
 #[tauri::command]
+fn desktop_bulk_resolve_approvals(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    approval_ids: Vec<String>,
+    action: String,
+    resolved_by: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "approvalIds": approval_ids,
+        "action": action,
+    });
+    if let Some(r) = resolved_by {
+        payload["resolvedBy"] = serde_json::Value::String(r);
+    }
+    desktop_management_call(state, "POST".into(), "/api/management/approvals/bulk-resolve".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_get_project_trust_policy(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), format!("/api/management/projects/{}/trust-policy", project_id), None)
+}
+
+#[tauri::command]
+fn desktop_set_project_trust_policy(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+    trust_policy: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "trustPolicy": trust_policy });
+    desktop_management_call(state, "POST".into(), format!("/api/management/projects/{}/trust-policy", project_id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_grant_session_trust(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "action": "grant" });
+    desktop_management_call(state, "POST".into(), format!("/api/management/projects/{}/session-trust", project_id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_revoke_session_trust(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "DELETE".into(), format!("/api/management/projects/{}/session-trust", project_id), None)
+}
+
+#[tauri::command]
+fn desktop_reset_trust_defaults(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), "/api/management/trust/reset-defaults".into(), None)
+}
+
+#[tauri::command]
+fn desktop_clear_session_trusts(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), "/api/management/trust/clear-sessions".into(), None)
+}
+
+#[tauri::command]
+fn desktop_get_operator_name(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/management/settings/operator".into(), None)
+}
+
+#[tauri::command]
+fn desktop_set_operator_name(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    display_name: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "displayName": display_name });
+    desktop_management_call(state, "POST".into(), "/api/management/settings/operator".into(), Some(payload))
+}
+
+
+#[tauri::command]
 fn desktop_list_jobs(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     project_id: Option<String>,
@@ -1313,7 +1396,16 @@ fn main() {
             desktop_tunnel_start,
             desktop_tunnel_stop,
             desktop_tunnel_clear_config,
-            desktop_tunnel_test_connection
+            desktop_tunnel_test_connection,
+            desktop_bulk_resolve_approvals,
+            desktop_get_project_trust_policy,
+            desktop_set_project_trust_policy,
+            desktop_grant_session_trust,
+            desktop_revoke_session_trust,
+            desktop_reset_trust_defaults,
+            desktop_clear_session_trusts,
+            desktop_get_operator_name,
+            desktop_set_operator_name
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open LocalBridge", true, None::<&str>)?;

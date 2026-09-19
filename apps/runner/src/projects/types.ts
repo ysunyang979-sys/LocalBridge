@@ -37,6 +37,11 @@ export interface RunnerProjectRecord {
   executionMode: ProjectExecutionMode;
 
   /**
+   * Project Trust Policy (Standard, Session Trusted, Full Trust, Custom)
+   */
+  trustPolicy?: import("@localbridge/protocol").ProjectTrustPolicy;
+
+  /**
    * Timestamp in milliseconds when project was first authorized
    */
   createdAt: number;

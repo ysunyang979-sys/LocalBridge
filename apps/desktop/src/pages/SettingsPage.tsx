@@ -18,10 +18,23 @@ import {
   AlertCircle,
   ChevronDown,
   Activity,
+  Shield,
+  User,
+  Sliders,
+  Zap,
+  X,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import { useTheme, type ThemeMode } from "../theme/ThemeContext.js";
+import type {
+  Project,
+  ProjectTrustPolicy,
+  ProjectTrustLevel,
+  FileActionPolicy,
+  CommandActionPolicy,
+  ProtectedFilesPolicy,
+} from "../types.js";
 
 interface SettingsPageProps {
   tunnelStatus: TunnelStatusDto | null;
@@ -52,6 +65,134 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     message: string;
   } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+
+  // Projects & Trust Policy State
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [trustPolicy, setTrustPolicy] = useState<ProjectTrustPolicy>({
+    trustLevel: "standard",
+    filePolicy: "standard",
+    commandPolicy: "ask",
+    protectedFilesPolicy: "always-ask",
+  });
+  const [operatorDisplayName, setOperatorDisplayName] = useState<string>("本机用户");
+  const [operatorSaved, setOperatorSaved] = useState(false);
+  const [showFullTrustModal, setShowFullTrustModal] = useState(false);
+  const [policyBusy, setPolicyBusy] = useState(false);
+  const [policySavedMsg, setPolicySavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    bridge.listProjects().then((res) => {
+      setProjects(res.projects);
+      if (res.projects.length > 0 && !selectedProjectId) {
+        setSelectedProjectId(res.projects[0].id);
+      }
+    }).catch(() => {});
+
+    bridge.getOperatorDisplayName().then((res) => {
+      if (res.displayName) {
+        setOperatorDisplayName(res.displayName);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    bridge.getProjectTrustPolicy(selectedProjectId).then((res) => {
+      if (res.trustPolicy) {
+        setTrustPolicy(res.trustPolicy);
+      }
+    }).catch(() => {
+      setTrustPolicy({
+        trustLevel: "standard",
+        filePolicy: "standard",
+        commandPolicy: "ask",
+        protectedFilesPolicy: "always-ask",
+      });
+    });
+  }, [selectedProjectId]);
+
+  const handleSaveOperator = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await bridge.setOperatorDisplayName(operatorDisplayName);
+      setOperatorSaved(true);
+      setTimeout(() => setOperatorSaved(false), 2000);
+    } catch (err: any) {
+      alert(err.message || String(err));
+    }
+  };
+
+  const handleSelectTrustLevel = (level: ProjectTrustLevel) => {
+    if (level === "full-project-trust") {
+      setShowFullTrustModal(true);
+      return;
+    }
+    setTrustPolicy((prev) => ({
+      ...prev,
+      trustLevel: level,
+      filePolicy: level === "session-trusted" ? "allow-all" : "standard",
+    }));
+  };
+
+  const confirmFullProjectTrust = () => {
+    setTrustPolicy((prev) => ({
+      ...prev,
+      trustLevel: "full-project-trust",
+      filePolicy: "allow-all",
+    }));
+    setShowFullTrustModal(false);
+  };
+
+  const handleSavePolicy = async () => {
+    if (!selectedProjectId) return;
+    setPolicyBusy(true);
+    setPolicySavedMsg(null);
+    try {
+      await bridge.setProjectTrustPolicy(selectedProjectId, trustPolicy);
+      setPolicySavedMsg(t.trust.policySaved);
+      setTimeout(() => setPolicySavedMsg(null), 3000);
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || String(err));
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
+
+  const handleResetAllDefaults = async () => {
+    if (!confirm(t.trust.resetAllDefaultsConfirm)) return;
+    setPolicyBusy(true);
+    try {
+      await bridge.resetTrustPoliciesToDefaults();
+      if (selectedProjectId) {
+        const res = await bridge.getProjectTrustPolicy(selectedProjectId);
+        if (res.trustPolicy) setTrustPolicy(res.trustPolicy);
+      }
+      setPolicySavedMsg(t.trust.resetSuccess);
+      setTimeout(() => setPolicySavedMsg(null), 3000);
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || String(err));
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
+
+  const handleClearAllSessions = async () => {
+    if (!confirm(t.trust.clearAllSessionsConfirm)) return;
+    setPolicyBusy(true);
+    try {
+      await bridge.clearAllSessionTrust();
+      setPolicySavedMsg(t.trust.clearSuccess);
+      setTimeout(() => setPolicySavedMsg(null), 3000);
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || String(err));
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
 
   // Diagnostic secret redaction helper
   const redactSecrets = (text: string | null | undefined): string => {
@@ -692,6 +833,386 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               </button>
             </div>
           </form>
+
+          {/* Local Operator Settings */}
+          <form
+            onSubmit={handleSaveOperator}
+            className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm"
+          >
+            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+              <User className="w-4 h-4 text-indigo-500" />
+              <span>{t.trust.operatorSettingsTitle}</span>
+            </div>
+            <p className="text-xs text-theme-muted">{t.trust.operatorSettingsDesc}</p>
+
+            <div>
+              <label className="block text-xs font-medium text-theme-secondary mb-1.5">
+                {t.trust.operatorDisplayNameLabel}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={operatorDisplayName}
+                  onChange={(e) => setOperatorDisplayName(e.target.value)}
+                  placeholder="本机用户"
+                  className="flex-1 bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-medium text-theme-primary focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shrink-0"
+                >
+                  {operatorSaved ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>{t.common.saved}</span>
+                    </>
+                  ) : (
+                    <span>{t.common.save}</span>
+                  )}
+                </button>
+              </div>
+              <p className="text-[11px] text-theme-muted mt-1">{t.trust.operatorDisplayNameHelp}</p>
+            </div>
+          </form>
+
+          {/* Trust & Approval Policy */}
+          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+                <Shield className="w-4 h-4 text-indigo-500" />
+                <span>{t.trust.title}</span>
+              </div>
+              {policySavedMsg && (
+                <span className="text-xs text-emerald-500 font-medium flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {policySavedMsg}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-theme-muted">{t.trust.subtitle}</p>
+
+            {/* Target Project Dropdown */}
+            <div>
+              <label className="block text-xs font-medium text-theme-secondary mb-1.5">
+                {t.trust.selectProject}
+              </label>
+              {projects.length === 0 ? (
+                <div className="p-3 bg-theme-card-muted rounded-lg text-xs text-theme-muted border border-theme-subtle">
+                  {t.projects.noProjectsDesc}
+                </div>
+              ) : (
+                <select
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                  className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs text-theme-primary focus:outline-none focus:border-indigo-500"
+                >
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.root || p.id})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {selectedProjectId && (
+              <div className="space-y-4 pt-2">
+                {/* Trust Level Cards */}
+                <div>
+                  <label className="block text-xs font-medium text-theme-secondary mb-2">
+                    {t.trust.currentTrustLevel}
+                  </label>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {/* Standard */}
+                    <div
+                      onClick={() => handleSelectTrustLevel("standard")}
+                      className={`p-3 rounded-lg border cursor-pointer transition flex items-start gap-3 ${
+                        trustPolicy.trustLevel === "standard"
+                          ? "bg-indigo-500/10 border-indigo-500"
+                          : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            trustPolicy.trustLevel === "standard"
+                              ? "border-indigo-500 bg-indigo-500"
+                              : "border-theme-muted"
+                          }`}
+                        >
+                          {trustPolicy.trustLevel === "standard" && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-xs text-theme-primary">
+                          {t.trust.levelStandard}
+                        </div>
+                        <div className="text-[11px] text-theme-muted mt-0.5">
+                          {t.trust.levelStandardDesc}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Session Trusted */}
+                    <div
+                      onClick={() => handleSelectTrustLevel("session-trusted")}
+                      className={`p-3 rounded-lg border cursor-pointer transition flex items-start gap-3 ${
+                        trustPolicy.trustLevel === "session-trusted"
+                          ? "bg-indigo-500/10 border-indigo-500"
+                          : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            trustPolicy.trustLevel === "session-trusted"
+                              ? "border-indigo-500 bg-indigo-500"
+                              : "border-theme-muted"
+                          }`}
+                        >
+                          {trustPolicy.trustLevel === "session-trusted" && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-xs text-theme-primary">
+                          {t.trust.levelSession}
+                        </div>
+                        <div className="text-[11px] text-theme-muted mt-0.5">
+                          {t.trust.levelSessionDesc}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Full Project Trust */}
+                    <div
+                      onClick={() => handleSelectTrustLevel("full-project-trust")}
+                      className={`p-3 rounded-lg border cursor-pointer transition flex items-start gap-3 ${
+                        trustPolicy.trustLevel === "full-project-trust"
+                          ? "bg-amber-500/10 border-amber-500"
+                          : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            trustPolicy.trustLevel === "full-project-trust"
+                              ? "border-amber-500 bg-amber-500"
+                              : "border-theme-muted"
+                          }`}
+                        >
+                          {trustPolicy.trustLevel === "full-project-trust" && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-xs text-theme-primary flex items-center gap-1.5">
+                          <span>{t.trust.levelFull}</span>
+                          <span className="badge badge-amber text-[10px]">Persistent</span>
+                        </div>
+                        <div className="text-[11px] text-theme-muted mt-0.5">
+                          {t.trust.levelFullDesc}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Custom */}
+                    <div
+                      onClick={() => handleSelectTrustLevel("custom")}
+                      className={`p-3 rounded-lg border cursor-pointer transition flex items-start gap-3 ${
+                        trustPolicy.trustLevel === "custom"
+                          ? "bg-indigo-500/10 border-indigo-500"
+                          : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            trustPolicy.trustLevel === "custom"
+                              ? "border-indigo-500 bg-indigo-500"
+                              : "border-theme-muted"
+                          }`}
+                        >
+                          {trustPolicy.trustLevel === "custom" && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-xs text-theme-primary">
+                          {t.trust.levelCustom}
+                        </div>
+                        <div className="text-[11px] text-theme-muted mt-0.5">
+                          {t.trust.levelCustomDesc}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Rules Matrix */}
+                {trustPolicy.trustLevel === "custom" && (
+                  <div className="p-3.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-3 text-xs">
+                    <div className="font-semibold text-theme-primary flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>{t.trust.levelCustom} Matrix</span>
+                    </div>
+
+                    {/* Files rules */}
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-medium text-theme-secondary">
+                        {t.trust.filePolicyTitle}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        {(["read", "create", "write", "patch", "delete", "rename"] as const).map(
+                          (action) => (
+                            <div
+                              key={action}
+                              className="flex items-center justify-between p-1.5 bg-theme-card rounded border border-theme-subtle"
+                            >
+                              <span className="font-mono text-theme-primary">file.{action}</span>
+                              <select
+                                value={
+                                  trustPolicy.customRules?.files?.[action] ??
+                                  (action === "delete" || action === "rename"
+                                    ? "ask"
+                                    : "allow")
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value as FileActionPolicy;
+                                  setTrustPolicy((prev) => ({
+                                    ...prev,
+                                    customRules: {
+                                      ...prev.customRules,
+                                      files: {
+                                        ...prev.customRules?.files,
+                                        [action]: val,
+                                      },
+                                    },
+                                  }));
+                                }}
+                                className="bg-theme-input border border-theme-input rounded px-1.5 py-0.5 text-[10px] text-theme-primary"
+                              >
+                                <option value="allow">Allow</option>
+                                <option value="ask">Ask</option>
+                                <option value="deny">Deny</option>
+                              </select>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Command rules */}
+                    <div className="space-y-1.5 pt-2 border-t border-theme-subtle">
+                      <div className="text-[11px] font-medium text-theme-secondary">
+                        {t.trust.commandPolicyTitle}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        {(["build", "test", "controlledCommand"] as const).map((cmd) => (
+                          <div
+                            key={cmd}
+                            className="flex items-center justify-between p-1.5 bg-theme-card rounded border border-theme-subtle"
+                          >
+                            <span className="font-mono text-theme-primary">{cmd}</span>
+                            <select
+                              value={
+                                trustPolicy.customRules?.commands?.[cmd] ??
+                                (cmd === "controlledCommand" ? "controlled" : "ask")
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value as CommandActionPolicy;
+                                setTrustPolicy((prev) => ({
+                                  ...prev,
+                                  customRules: {
+                                    ...prev.customRules,
+                                    commands: {
+                                      ...prev.customRules?.commands,
+                                      [cmd]: val,
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="bg-theme-input border border-theme-input rounded px-1.5 py-0.5 text-[10px] text-theme-primary"
+                            >
+                              <option value="allow">{t.trust.commandAllow}</option>
+                              <option value="controlled">{t.trust.commandControlled}</option>
+                              <option value="ask">{t.trust.commandAsk}</option>
+                              <option value="deny">{t.trust.commandDeny}</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Protected Files Policy Selector */}
+                <div className="pt-2">
+                  <label className="block text-xs font-medium text-theme-secondary mb-1.5">
+                    {t.trust.protectedFilesTitle}
+                  </label>
+                  <p className="text-[11px] text-theme-muted mb-2">
+                    {t.trust.protectedFilesDesc}
+                  </p>
+                  <select
+                    value={trustPolicy.protectedFilesPolicy}
+                    onChange={(e) =>
+                      setTrustPolicy((prev) => ({
+                        ...prev,
+                        protectedFilesPolicy: e.target.value as ProtectedFilesPolicy,
+                      }))
+                    }
+                    className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs text-theme-primary focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="always-ask">{t.trust.protectedAlwaysAsk}</option>
+                    <option value="deny">{t.trust.protectedDeny}</option>
+                    <option value="follow-policy">{t.trust.protectedFollowPolicy}</option>
+                  </select>
+                </div>
+
+                {/* Save Policy Button */}
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={policyBusy}
+                    onClick={handleSavePolicy}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition shadow-sm"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{t.common.save}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Global Trust Controls */}
+            <div className="pt-4 border-t border-theme-subtle flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                disabled={policyBusy}
+                onClick={handleResetAllDefaults}
+                className="flex items-center gap-1 px-3 py-1.5 bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary rounded-lg text-xs font-medium border border-theme-subtle transition"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{t.trust.resetAllDefaultsBtn}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={policyBusy}
+                onClick={handleClearAllSessions}
+                className="flex items-center gap-1 px-3 py-1.5 bg-theme-card-muted hover:bg-theme-card-hover text-amber-500 rounded-lg text-xs font-medium border border-theme-subtle transition"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>{t.trust.clearAllSessionsBtn}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Right Column: General, Security & About */}
@@ -827,12 +1348,53 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               </div>
             </div>
 
-            <div className="text-[11px] text-theme-muted border-t border-theme-subtle pt-3">
-              {t.settings.architectureLabel}
-            </div>
           </div>
         </div>
       </div>
+
+      {/* Full Project Trust Confirmation Modal */}
+      {showFullTrustModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-theme-card border border-amber-500/50 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-6 py-4 bg-amber-500/10 border-b border-amber-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-amber-500 font-bold text-base">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                <span>{t.trust.fullTrustWarningTitle}</span>
+              </div>
+              <button
+                onClick={() => setShowFullTrustModal(false)}
+                className="text-amber-500 hover:text-amber-600 p-1 rounded-lg hover:bg-amber-500/10 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-xs text-theme-secondary whitespace-pre-line leading-relaxed">
+                {t.trust.fullTrustWarningBody}
+              </div>
+
+              <div className="flex gap-2 pt-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowFullTrustModal(false)}
+                  className="px-4 py-2 bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary rounded-lg text-xs font-medium transition"
+                >
+                  {t.common.cancel}
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmFullProjectTrust}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{t.trust.fullTrustConfirmBtn}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

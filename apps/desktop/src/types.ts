@@ -90,9 +90,13 @@ export interface AuditEvent {
   toolName: string;
   projectId?: string;
   runnerId?: string;
+  relativePath?: string;
   durationMs?: number;
   resultStatus?: "success" | "error";
   errorCode?: string;
+  decisionSource?: string;
+  policyLevel?: string;
+  actorDisplayName?: string;
 }
 
 export interface DesktopHealthStatus {
@@ -104,3 +108,49 @@ export interface DesktopHealthStatus {
   runner_running: boolean;
   startup_error: string | null;
 }
+
+export type ProjectTrustLevel =
+  | "standard"
+  | "session-trusted"
+  | "full-project-trust"
+  | "custom";
+
+export type FileActionPolicy = "allow" | "ask" | "deny";
+export type CommandActionPolicy = "allow" | "controlled" | "ask" | "deny";
+export type ProtectedFilesPolicy = "always-ask" | "deny" | "follow-policy";
+
+export interface ProjectCustomRules {
+  files?: {
+    read?: FileActionPolicy;
+    create?: FileActionPolicy;
+    write?: FileActionPolicy;
+    patch?: FileActionPolicy;
+    delete?: FileActionPolicy;
+    rename?: FileActionPolicy;
+  };
+  git?: {
+    status?: FileActionPolicy;
+    diff?: FileActionPolicy;
+    log?: FileActionPolicy;
+    stage?: FileActionPolicy;
+    unstage?: FileActionPolicy;
+    commit?: FileActionPolicy;
+    createBranch?: FileActionPolicy;
+    restore?: FileActionPolicy;
+  };
+  commands?: {
+    build?: CommandActionPolicy;
+    test?: CommandActionPolicy;
+    controlledCommand?: CommandActionPolicy;
+  };
+}
+
+export interface ProjectTrustPolicy {
+  trustLevel: ProjectTrustLevel;
+  filePolicy: "standard" | "allow-all" | "ask-all" | "read-only";
+  commandPolicy: CommandActionPolicy;
+  protectedFilesPolicy: ProtectedFilesPolicy;
+  customRules?: ProjectCustomRules;
+  updatedAt?: number;
+}
+

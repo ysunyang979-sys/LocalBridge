@@ -8,6 +8,12 @@ import {
   type ProjectListItem,
   type ProjectInfoResult,
   type ProjectValidateResult,
+  type ProjectTrustLevel,
+  type FileActionPolicy,
+  type CommandActionPolicy,
+  type ProtectedFilesPolicy,
+  type ProjectCustomRules,
+  type ProjectTrustPolicy,
 } from "@localbridge/protocol";
 import { resolveProjectPath, isSensitiveFile } from "@localbridge/security";
 import type { Logger } from "@localbridge/shared";
@@ -33,6 +39,7 @@ function getComparisonKey(p: string): string {
 
 export class ProjectRegistry extends EventEmitter {
   private readonly projects = new Map<string, RunnerProjectRecord>();
+  private readonly sessionTrustGrants = new Map<string, Set<string>>();
 
   constructor(
     private readonly storagePath: string,
@@ -49,10 +56,22 @@ export class ProjectRegistry extends EventEmitter {
     this.projects.clear();
     const state: ProjectStateFile = loadProjectsState(this.storagePath);
     for (const p of state.projects) {
+      let trustPolicy = p.trustPolicy;
+      if (trustPolicy && trustPolicy.canonicalRoot !== p.canonicalRoot) {
+        trustPolicy = {
+          trustLevel: "standard",
+          canonicalRoot: p.canonicalRoot,
+          policyVersion: (trustPolicy.policyVersion ?? 1) + 1,
+          commandPolicy: "ask",
+          protectedFilesPolicy: "always-ask",
+          updatedAt: Date.now(),
+        };
+      }
       this.projects.set(p.id, {
         ...p,
         accessMode: p.accessMode ?? "read-only",
         executionMode: p.executionMode ?? "disabled",
+        trustPolicy,
       });
     }
     this.logger?.debug(
@@ -388,5 +407,197 @@ export class ProjectRegistry extends EventEmitter {
     }
 
     return { valid: true };
+  }
+
+  /**
+   * Get the active trust policy for a project.
+   */
+  getTrustPolicy(projectId: string): ProjectTrustPolicy {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+        `Project "${projectId}" not found`
+      );
+    }
+    if (project.trustPolicy) {
+      return project.trustPolicy;
+    }
+    return {
+      trustLevel: "standard",
+      canonicalRoot: project.canonicalRoot,
+      policyVersion: 1,
+      commandPolicy: "ask",
+      protectedFilesPolicy: "always-ask",
+      updatedAt: project.updatedAt,
+    };
+  }
+
+  /**
+   * Set and persist the trust policy for an authorized project.
+   */
+  setTrustPolicy(
+    projectIdOrParams:
+      | string
+      | {
+          projectId: string;
+          trustPolicy?: {
+            trustLevel: ProjectTrustLevel;
+            filePolicy?: FileActionPolicy;
+            commandPolicy?: CommandActionPolicy;
+            protectedFilesPolicy?: ProtectedFilesPolicy;
+            customRules?: ProjectCustomRules;
+          };
+          policy?: {
+            trustLevel: ProjectTrustLevel;
+            filePolicy?: FileActionPolicy;
+            commandPolicy?: CommandActionPolicy;
+            protectedFilesPolicy?: ProtectedFilesPolicy;
+            customRules?: ProjectCustomRules;
+          };
+          trustLevel?: ProjectTrustLevel;
+          filePolicy?: FileActionPolicy;
+          commandPolicy?: CommandActionPolicy;
+          protectedFilesPolicy?: ProtectedFilesPolicy;
+          customRules?: ProjectCustomRules;
+        },
+    maybePolicy?: {
+      trustLevel: ProjectTrustLevel;
+      filePolicy?: FileActionPolicy;
+      commandPolicy?: CommandActionPolicy;
+      protectedFilesPolicy?: ProtectedFilesPolicy;
+      customRules?: ProjectCustomRules;
+    }
+  ): { projectId: string; policy: ProjectTrustPolicy } {
+    let projectId: string;
+    let policy: {
+      trustLevel: ProjectTrustLevel;
+      filePolicy?: FileActionPolicy;
+      commandPolicy?: CommandActionPolicy;
+      protectedFilesPolicy?: ProtectedFilesPolicy;
+      customRules?: ProjectCustomRules;
+    };
+
+    if (typeof projectIdOrParams === "string") {
+      projectId = projectIdOrParams;
+      policy = maybePolicy!;
+    } else {
+      projectId = projectIdOrParams.projectId;
+      policy = (projectIdOrParams.policy ??
+        projectIdOrParams.trustPolicy ??
+        projectIdOrParams) as any;
+    }
+
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+        `Project "${projectId}" not found`
+      );
+    }
+
+    const currentVersion = project.trustPolicy?.policyVersion ?? 0;
+    const newPolicy: ProjectTrustPolicy = {
+      trustLevel: policy.trustLevel,
+      filePolicy:
+        policy.filePolicy ??
+        (policy.trustLevel === "full-project-trust" ? "allow" : "ask"),
+      canonicalRoot: project.canonicalRoot,
+      policyVersion: currentVersion + 1,
+      commandPolicy: policy.commandPolicy ?? project.trustPolicy?.commandPolicy ?? "ask",
+      protectedFilesPolicy:
+        policy.protectedFilesPolicy ?? project.trustPolicy?.protectedFilesPolicy ?? "always-ask",
+      customRules: policy.customRules ?? project.trustPolicy?.customRules,
+      updatedAt: Date.now(),
+    };
+
+    project.trustPolicy = newPolicy;
+    project.updatedAt = Date.now();
+    this.save();
+    this.emit("trustPolicyChanged", { projectId, policy: newPolicy });
+
+    return { projectId, policy: newPolicy };
+  }
+
+  /**
+   * Grant in-memory session trust for a project (cleared on app exit).
+   */
+  grantSessionTrust(projectId: string, operations?: string[]): void {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+        `Project "${projectId}" not found`
+      );
+    }
+    const current = this.sessionTrustGrants.get(projectId) ?? new Set<string>();
+    if (!operations || operations.length === 0) {
+      current.add("*");
+    } else {
+      for (const op of operations) {
+        current.add(op);
+      }
+    }
+    this.sessionTrustGrants.set(projectId, current);
+    this.emit("sessionTrustChanged", { projectId, operations: Array.from(current) });
+  }
+
+  /**
+   * Revoke in-memory session trust for a project.
+   */
+  revokeSessionTrust(projectId: string): void {
+    this.sessionTrustGrants.delete(projectId);
+    this.emit("sessionTrustChanged", { projectId, operations: [] });
+  }
+
+  /**
+   * Check if a project (and optional operation) has an active in-memory session trust grant.
+   */
+  isSessionTrusted(projectId: string, operation?: string): boolean {
+    const grants = this.sessionTrustGrants.get(projectId);
+    if (!grants) return false;
+    if (grants.has("*")) return true;
+    if (operation && grants.has(operation)) return true;
+    return false;
+  }
+
+  /**
+   * List operations granted in-memory session trust for a project.
+   */
+  getSessionTrustOperations(projectId: string): string[] {
+    const grants = this.sessionTrustGrants.get(projectId);
+    return grants ? Array.from(grants) : [];
+  }
+
+  /**
+   * Clear all in-memory session trust grants across all projects.
+   */
+  clearAllSessionTrust(): void {
+    this.sessionTrustGrants.clear();
+    this.emit("allSessionTrustCleared");
+  }
+
+  /**
+   * Reset a project's trust policy to safe standard defaults.
+   */
+  resetTrustPolicyToDefaults(projectId: string): ProjectTrustPolicy {
+    this.revokeSessionTrust(projectId);
+    const res = this.setTrustPolicy(projectId, {
+      trustLevel: "standard",
+      commandPolicy: "ask",
+      protectedFilesPolicy: "always-ask",
+      customRules: undefined,
+    });
+    return res.policy;
+  }
+
+  /**
+   * Reset all projects' trust policies to safe standard defaults.
+   */
+  resetAllTrustPoliciesToDefaults(): void {
+    this.clearAllSessionTrust();
+    for (const projectId of this.projects.keys()) {
+      this.resetTrustPolicyToDefaults(projectId);
+    }
   }
 }

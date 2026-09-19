@@ -38,6 +38,9 @@ export const RunnerRpcMethods = {
   ApprovalList: "approval.list",
   ApprovalGet: "approval.get",
   JobCancelAll: "job.cancelAll",
+  ProjectSetTrustPolicy: "project.setTrustPolicy",
+  ProjectSessionTrust: "project.sessionTrust",
+  ApprovalBulkResolve: "approval.bulkResolve",
 } as const;
 
 export type RunnerRpcMethod =

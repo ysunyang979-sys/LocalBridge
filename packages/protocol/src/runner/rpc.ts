@@ -208,6 +208,7 @@ export const FileCreateParamsSchema = z
     projectId: z.string(),
     path: z.string(),
     content: z.string(),
+    approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
   })
   .strict();
 export type FileCreateParams = z.infer<typeof FileCreateParamsSchema>;
@@ -230,6 +231,7 @@ export const FileWriteParamsSchema = z
     path: z.string(),
     expectedHash: z.string(),
     content: z.string(),
+    approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
   })
   .strict();
 export type FileWriteParams = z.infer<typeof FileWriteParamsSchema>;
@@ -263,6 +265,7 @@ export const FilePatchParamsSchema = z
     path: z.string(),
     expectedHash: z.string(),
     replacements: z.array(PatchReplacementSchema).min(1, "At least one replacement is required"),
+    approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
   })
   .strict();
 export type FilePatchParams = z.infer<typeof FilePatchParamsSchema>;
@@ -925,6 +928,128 @@ export type SystemShutdownParams = z.infer<typeof SystemShutdownParamsSchema>;
 export const SystemShutdownResultSchema = z.object({ accepted: z.literal(true) }).strict();
 export type SystemShutdownResult = z.infer<typeof SystemShutdownResultSchema>;
 
+// Trust & Approval Policy
+export const ProjectTrustLevelSchema = z.enum(["standard", "session-trusted", "full-project-trust", "custom"]);
+export type ProjectTrustLevel = z.infer<typeof ProjectTrustLevelSchema>;
+
+export const FileActionPolicySchema = z.enum(["allow", "ask", "deny"]);
+export type FileActionPolicy = z.infer<typeof FileActionPolicySchema>;
+
+export const CommandActionPolicySchema = z.enum(["ask", "controlled", "deny"]);
+export type CommandActionPolicy = z.infer<typeof CommandActionPolicySchema>;
+
+export const ProtectedFilesPolicySchema = z.enum(["always-ask", "deny", "follow-policy"]);
+export type ProtectedFilesPolicy = z.infer<typeof ProtectedFilesPolicySchema>;
+
+export const ProjectCustomRulesSchema = z
+  .object({
+    files: z
+      .object({
+        read: FileActionPolicySchema.optional(),
+        create: FileActionPolicySchema.optional(),
+        write: FileActionPolicySchema.optional(),
+        patch: FileActionPolicySchema.optional(),
+        delete: FileActionPolicySchema.optional(),
+        rename: FileActionPolicySchema.optional(),
+      })
+      .optional(),
+    git: z
+      .object({
+        status: FileActionPolicySchema.optional(),
+        diff: FileActionPolicySchema.optional(),
+        log: FileActionPolicySchema.optional(),
+        stage: FileActionPolicySchema.optional(),
+        unstage: FileActionPolicySchema.optional(),
+        commit: FileActionPolicySchema.optional(),
+        createBranch: FileActionPolicySchema.optional(),
+        restore: FileActionPolicySchema.optional(),
+      })
+      .optional(),
+    commands: z
+      .object({
+        build: FileActionPolicySchema.optional(),
+        test: FileActionPolicySchema.optional(),
+        packageScript: FileActionPolicySchema.optional(),
+        packageInstall: FileActionPolicySchema.optional(),
+        controlledCommand: FileActionPolicySchema.optional(),
+      })
+      .optional(),
+  })
+  .strict();
+export type ProjectCustomRules = z.infer<typeof ProjectCustomRulesSchema>;
+
+export const ProjectTrustPolicySchema = z
+  .object({
+    trustLevel: ProjectTrustLevelSchema,
+    filePolicy: FileActionPolicySchema.optional(),
+    canonicalRoot: z.string(),
+    policyVersion: z.number().int().default(1),
+    commandPolicy: CommandActionPolicySchema.default("ask"),
+    protectedFilesPolicy: ProtectedFilesPolicySchema.default("always-ask"),
+    customRules: ProjectCustomRulesSchema.optional(),
+    updatedAt: z.number().int(),
+  })
+  .strict();
+export type ProjectTrustPolicy = z.infer<typeof ProjectTrustPolicySchema>;
+
+// 39. project.setTrustPolicy
+export const ProjectSetTrustPolicyParamsSchema = z
+  .object({
+    projectId: z.string(),
+    trustLevel: ProjectTrustLevelSchema,
+    filePolicy: FileActionPolicySchema.optional(),
+    commandPolicy: CommandActionPolicySchema.optional(),
+    protectedFilesPolicy: ProtectedFilesPolicySchema.optional(),
+    customRules: ProjectCustomRulesSchema.optional(),
+  })
+  .strict();
+export type ProjectSetTrustPolicyParams = z.infer<typeof ProjectSetTrustPolicyParamsSchema>;
+
+export const ProjectSetTrustPolicyResultSchema = z
+  .object({
+    projectId: z.string(),
+    policy: ProjectTrustPolicySchema,
+  })
+  .strict();
+export type ProjectSetTrustPolicyResult = z.infer<typeof ProjectSetTrustPolicyResultSchema>;
+
+// 40. project.sessionTrust
+export const ProjectSessionTrustParamsSchema = z
+  .object({
+    projectId: z.string(),
+    action: z.enum(["grant", "revoke"]),
+    operations: z.array(z.string()).optional(),
+  })
+  .strict();
+export type ProjectSessionTrustParams = z.infer<typeof ProjectSessionTrustParamsSchema>;
+
+export const ProjectSessionTrustResultSchema = z
+  .object({
+    projectId: z.string(),
+    active: z.boolean(),
+    operations: z.array(z.string()),
+  })
+  .strict();
+export type ProjectSessionTrustResult = z.infer<typeof ProjectSessionTrustResultSchema>;
+
+// 41. approval.bulkResolve
+export const ApprovalBulkResolveParamsSchema = z
+  .object({
+    approvalIds: z.array(z.string()),
+    action: z.enum(["approve", "deny"]),
+    resolvedBy: z.string().default("desktop-user"),
+  })
+  .strict();
+export type ApprovalBulkResolveParams = z.infer<typeof ApprovalBulkResolveParamsSchema>;
+
+export const ApprovalBulkResolveResultSchema = z
+  .object({
+    resolved: z.array(ApprovalRequestSchema),
+    failedIds: z.array(z.string()),
+  })
+  .strict();
+export type ApprovalBulkResolveResult = z.infer<typeof ApprovalBulkResolveResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -1078,6 +1203,18 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.JobCancelAll]: {
     params: JobCancelAllParams;
     result: JobCancelAllResult;
+  };
+  [RunnerRpcMethods.ProjectSetTrustPolicy]: {
+    params: ProjectSetTrustPolicyParams;
+    result: ProjectSetTrustPolicyResult;
+  };
+  [RunnerRpcMethods.ProjectSessionTrust]: {
+    params: ProjectSessionTrustParams;
+    result: ProjectSessionTrustResult;
+  };
+  [RunnerRpcMethods.ApprovalBulkResolve]: {
+    params: ApprovalBulkResolveParams;
+    result: ApprovalBulkResolveResult;
   };
 }
 
@@ -1236,5 +1373,17 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.JobCancelAll]: {
     params: JobCancelAllParamsSchema,
     result: JobCancelAllResultSchema,
+  },
+  [RunnerRpcMethods.ProjectSetTrustPolicy]: {
+    params: ProjectSetTrustPolicyParamsSchema,
+    result: ProjectSetTrustPolicyResultSchema,
+  },
+  [RunnerRpcMethods.ProjectSessionTrust]: {
+    params: ProjectSessionTrustParamsSchema,
+    result: ProjectSessionTrustResultSchema,
+  },
+  [RunnerRpcMethods.ApprovalBulkResolve]: {
+    params: ApprovalBulkResolveParamsSchema,
+    result: ApprovalBulkResolveResultSchema,
   },
 } as const;

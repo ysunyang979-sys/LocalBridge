@@ -137,14 +137,6 @@ export function resolveProjectPath(
     );
   }
 
-  // Check sensitive file policy
-  if (!allowSensitive && isSensitiveFile(relativePath)) {
-    throw new SecurityPathError(
-      LocalBridgeErrorCode.PATH_NOT_ALLOWED,
-      `Access to sensitive file "${relativePath}" denied by policy`
-    );
-  }
-
   // 3. Resolve absolute target path
   const absoluteTarget = path.resolve(realRoot, relativePath);
 
@@ -226,6 +218,14 @@ export function resolveProjectPath(
   }
 
   const safeRel = path.relative(realRoot, canonicalTarget).replace(/\\/g, "/");
+
+  if (!allowSensitive && isSensitiveFile(safeRel)) {
+    throw new SecurityPathError(
+      LocalBridgeErrorCode.PATH_NOT_ALLOWED,
+      `Access to sensitive file "${safeRel}" denied by policy`
+    );
+  }
+
   return {
     absolutePath: absoluteTarget,
     canonicalPath: canonicalTarget,

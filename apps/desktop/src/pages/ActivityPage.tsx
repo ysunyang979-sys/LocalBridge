@@ -60,6 +60,16 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({ events, onRefresh })
                       [{evt.projectId}]
                     </span>
                   )}
+                  {evt.decisionSource && (
+                    <span className="badge badge-blue text-[10px]">
+                      {t.activity.decisionSourceLabel}: {evt.decisionSource}
+                    </span>
+                  )}
+                  {evt.actorDisplayName && (
+                    <span className="text-theme-secondary text-[11px]">
+                      {t.activity.operatorLabel}: {evt.actorDisplayName}
+                    </span>
+                  )}
                   {evt.errorCode && (
                     <span className="badge badge-red text-[10px]">{evt.errorCode}</span>
                   )}

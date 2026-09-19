@@ -202,6 +202,9 @@ describe("Phase 12 - Security Audit Redaction & Parameter Policy", () => {
         "durationMs",
         "resultStatus",
         "errorCode",
+        "decisionSource",
+        "policyLevel",
+        "actorDisplayName",
       ]);
       for (const key of Object.keys(event)) {
         expect(allowedKeys.has(key)).toBe(true);

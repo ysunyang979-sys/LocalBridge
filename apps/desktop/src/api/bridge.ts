@@ -9,6 +9,7 @@ import type {
   RunnerInfo,
   AuditEvent,
   DesktopHealthStatus,
+  ProjectTrustPolicy,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -272,11 +273,161 @@ class ApiBridge {
         resolvedBy: resolvedBy ?? null,
       });
     }
-    return this.fetchJson<Approval>(`/api/approvals/${approvalId}/resolve`, {
+      return this.fetchJson<Approval>(`/api/approvals/${approvalId}/resolve`, {
       method: "POST",
       body: JSON.stringify({ action, resolvedBy: resolvedBy || "desktop-user" }),
     });
   }
+
+  async bulkResolveApprovals(
+    approvalIds: string[],
+    action: "approve" | "deny",
+    resolvedBy?: string
+  ): Promise<{
+    resolvedCount: number;
+    failedCount: number;
+    results: Array<{ approvalId: string; success: boolean; error?: string }>;
+  }> {
+    if (isTauri()) {
+      return invoke<{
+        resolvedCount: number;
+        failedCount: number;
+        results: Array<{ approvalId: string; success: boolean; error?: string }>;
+      }>("desktop_bulk_resolve_approvals", {
+        approvalIds,
+        action,
+        resolvedBy: resolvedBy ?? null,
+      });
+    }
+    return this.fetchJson<{
+      resolvedCount: number;
+      failedCount: number;
+      results: Array<{ approvalId: string; success: boolean; error?: string }>;
+    }>("/api/management/approvals/bulk-resolve", {
+      method: "POST",
+      body: JSON.stringify({ approvalIds, action, resolvedBy }),
+    });
+  }
+
+  // Trust & Approval Policy
+  async getProjectTrustPolicy(
+    projectId: string
+  ): Promise<{ projectId: string; trustPolicy: ProjectTrustPolicy }> {
+    if (isTauri()) {
+      return invoke<{ projectId: string; trustPolicy: ProjectTrustPolicy }>(
+        "desktop_get_project_trust_policy",
+        { projectId }
+      );
+    }
+    return this.fetchJson<{ projectId: string; trustPolicy: ProjectTrustPolicy }>(
+      `/api/management/projects/${projectId}/trust-policy`
+    );
+  }
+
+  async setProjectTrustPolicy(
+    projectId: string,
+    trustPolicy: ProjectTrustPolicy
+  ): Promise<{ projectId: string; trustPolicy: ProjectTrustPolicy }> {
+    if (isTauri()) {
+      return invoke<{ projectId: string; trustPolicy: ProjectTrustPolicy }>(
+        "desktop_set_project_trust_policy",
+        { projectId, trustPolicy }
+      );
+    }
+    return this.fetchJson<{ projectId: string; trustPolicy: ProjectTrustPolicy }>(
+      `/api/management/projects/${projectId}/trust-policy`,
+      {
+        method: "POST",
+        body: JSON.stringify({ trustPolicy }),
+      }
+    );
+  }
+
+  async grantProjectSessionTrust(
+    projectId: string
+  ): Promise<{ projectId: string; isSessionTrusted: boolean }> {
+    if (isTauri()) {
+      return invoke<{ projectId: string; isSessionTrusted: boolean }>(
+        "desktop_grant_session_trust",
+        { projectId }
+      );
+    }
+    return this.fetchJson<{ projectId: string; isSessionTrusted: boolean }>(
+      `/api/management/projects/${projectId}/session-trust`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action: "grant" }),
+      }
+    );
+  }
+
+  async revokeProjectSessionTrust(
+    projectId: string
+  ): Promise<{ projectId: string; isSessionTrusted: boolean }> {
+    if (isTauri()) {
+      return invoke<{ projectId: string; isSessionTrusted: boolean }>(
+        "desktop_revoke_session_trust",
+        { projectId }
+      );
+    }
+    return this.fetchJson<{ projectId: string; isSessionTrusted: boolean }>(
+      `/api/management/projects/${projectId}/session-trust`,
+      {
+        method: "DELETE",
+      }
+    );
+  }
+
+  async resetTrustPoliciesToDefaults(): Promise<{ reset: boolean }> {
+    if (isTauri()) {
+      return invoke<{ reset: boolean }>("desktop_reset_trust_defaults");
+    }
+    return this.fetchJson<{ reset: boolean }>(
+      "/api/management/trust/reset-defaults",
+      {
+        method: "POST",
+      }
+    );
+  }
+
+  async clearAllSessionTrust(): Promise<{ cleared: boolean }> {
+    if (isTauri()) {
+      return invoke<{ cleared: boolean }>("desktop_clear_session_trusts");
+    }
+    return this.fetchJson<{ cleared: boolean }>(
+      "/api/management/trust/clear-sessions",
+      {
+        method: "POST",
+      }
+    );
+  }
+
+  async getOperatorDisplayName(): Promise<{ displayName: string }> {
+    if (isTauri()) {
+      return invoke<{ displayName: string }>("desktop_get_operator_name");
+    }
+    return this.fetchJson<{ displayName: string }>(
+      "/api/management/settings/operator"
+    );
+  }
+
+  async setOperatorDisplayName(
+    displayName: string
+  ): Promise<{ displayName: string }> {
+    if (isTauri()) {
+      return invoke<{ displayName: string }>("desktop_set_operator_name", {
+        displayName,
+      });
+    }
+    return this.fetchJson<{ displayName: string }>(
+      "/api/management/settings/operator",
+      {
+        method: "POST",
+        body: JSON.stringify({ displayName }),
+      }
+    );
+  }
+
 
   // Jobs
   async listJobs(params?: {

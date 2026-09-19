@@ -31,16 +31,19 @@ export function isSensitiveFile(relativePath: string): boolean {
     return true;
   }
 
-  // 3. SSH private keys: id_rsa, id_ed25519, id_ecdsa
-  const sshKeys = ["id_rsa", "id_ed25519", "id_ecdsa"];
-  for (const key of sshKeys) {
-    if (basename === key || basename.startsWith(`${key}.`)) {
+  // 3. SSH private keys: id_rsa*, id_ed25519*, id_ecdsa*
+  const sshPrefixes = ["id_rsa", "id_ed25519", "id_ecdsa"];
+  for (const prefix of sshPrefixes) {
+    if (basename.startsWith(prefix)) {
       return true;
     }
   }
 
-  // 4. credentials.json and client_secret*.json
-  if (basename === "credentials.json" || basename.startsWith("client_secret")) {
+  // 4. credentials* and client_secret*
+  if (
+    basename.startsWith("credentials") ||
+    basename.startsWith("client_secret")
+  ) {
     return true;
   }
 

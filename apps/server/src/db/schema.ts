@@ -43,6 +43,24 @@ export interface AuditLogRow {
   result_summary: string | null;
   duration_ms: number | null;
   risk_level: string;
+  decision_source?: string | null;
+  actor_display_name?: string | null;
+}
+
+export interface ProjectTrustPolicyRow {
+  project_id: string;
+  trust_level: string;
+  file_policy: string;
+  command_policy: string;
+  protected_files_policy: string;
+  custom_rules: string | null; // JSON string
+  updated_at: number;
+}
+
+export interface SystemSettingRow {
+  key: string;
+  value: string;
+  updated_at: number;
 }
 
 export interface MigrationRow {
@@ -50,3 +68,4 @@ export interface MigrationRow {
   name: string;
   applied_at: number;
 }
+

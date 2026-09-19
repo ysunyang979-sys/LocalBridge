@@ -6,6 +6,7 @@ import {
   type ProjectAccessMode,
   type ProjectExecutionMode,
   type ApprovalRisk,
+  type ProjectTrustPolicy,
 } from "@localbridge/protocol";
 import type { TokenService } from "../db/token-service.js";
 import type { RunnerRegistry } from "../runner/registry.js";
@@ -463,6 +464,126 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     }
   );
 
+  fastify.get<{ Params: { id: string }; Querystring: { runnerId?: string } }>(
+    "/management/projects/:id/trust-policy",
+    async (request, reply) => {
+      const { id } = request.params;
+      const project = projectService.getProject(id);
+      if (!project) {
+        return reply.status(404).send({
+          code: LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+          message: `Project "${id}" not found`,
+        });
+      }
+
+      const dbPolicy = projectService.getTrustPolicy(id);
+      if (dbPolicy) {
+        return reply.status(200).send({ projectId: id, trustPolicy: dbPolicy });
+      }
+
+      const targetRunnerId =
+        request.query.runnerId || project.runnerId || getActiveRunnerId();
+      try {
+        const info = await rpcService.request(
+          targetRunnerId,
+          RunnerRpcMethods.ProjectInfo,
+          { projectId: id }
+        );
+        return reply.status(200).send({ projectId: id, trustPolicy: (info as any).trustPolicy });
+      } catch {
+        return reply.status(200).send({
+          projectId: id,
+          trustPolicy: {
+            trustLevel: "standard",
+            filePolicy: "standard",
+            commandPolicy: "ask",
+            protectedFilesPolicy: "always-ask",
+          },
+        });
+      }
+    }
+  );
+
+  fastify.post<{
+    Params: { id: string };
+    Body: {
+      trustPolicy: ProjectTrustPolicy;
+      runnerId?: string;
+    };
+  }>("/management/projects/:id/trust-policy", async (request, reply) => {
+    const { id } = request.params;
+    const { trustPolicy, runnerId } = request.body || {};
+    if (!trustPolicy) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Field 'trustPolicy' is required",
+      });
+    }
+
+    const project = projectService.getProject(id);
+    const targetRunnerId = runnerId || project?.runnerId || getActiveRunnerId();
+
+    const result = await rpcService.request(
+      targetRunnerId,
+      RunnerRpcMethods.ProjectSetTrustPolicy,
+      {
+        projectId: id,
+        trustLevel: trustPolicy.trustLevel,
+        filePolicy: trustPolicy.filePolicy,
+        commandPolicy: trustPolicy.commandPolicy,
+        protectedFilesPolicy: trustPolicy.protectedFilesPolicy,
+        customRules: trustPolicy.customRules,
+      }
+    );
+
+    projectService.setTrustPolicy(id, result.policy);
+    return reply.status(200).send({ projectId: id, trustPolicy: result.policy });
+  });
+
+  fastify.post<{
+    Params: { id: string };
+    Body?: { action?: "grant" | "revoke"; runnerId?: string };
+  }>("/management/projects/:id/session-trust", async (request, reply) => {
+    const { id } = request.params;
+    const action = request.body?.action || "grant";
+    const project = projectService.getProject(id);
+    const targetRunnerId =
+      request.body?.runnerId || project?.runnerId || getActiveRunnerId();
+
+    const result = await rpcService.request(
+      targetRunnerId,
+      RunnerRpcMethods.ProjectSessionTrust,
+      {
+        projectId: id,
+        action,
+      }
+    );
+
+    return reply.status(200).send(result);
+  });
+
+  fastify.delete<{ Params: { id: string }; Querystring: { runnerId?: string } }>(
+    "/management/projects/:id/session-trust",
+    async (request, reply) => {
+      const { id } = request.params;
+      const project = projectService.getProject(id);
+      const targetRunnerId =
+        request.query.runnerId || project?.runnerId || getActiveRunnerId();
+
+      const result = await rpcService.request(
+        targetRunnerId,
+        RunnerRpcMethods.ProjectSessionTrust,
+        {
+          projectId: id,
+          action: "revoke",
+        }
+      );
+
+      return reply.status(200).send(result);
+    }
+  );
+
+
   // ==========================================
   // 4. Approvals Management (/approvals)
   // ==========================================
@@ -559,17 +680,57 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     }
 
     const targetRunnerId = getActiveRunnerId(runnerId);
+    const opDisplayName = projectService.getOperatorDisplayName();
     const resolved = await rpcService.request(
       targetRunnerId,
       RunnerRpcMethods.ApprovalResolve,
       {
         approvalId: id,
         action,
-        resolvedBy: resolvedBy || "desktop-user",
+        resolvedBy: resolvedBy || opDisplayName || "desktop-user",
       }
     );
 
     return reply.status(200).send(resolved);
+  });
+
+  fastify.post<{
+    Body: {
+      approvalIds: string[];
+      action: "approve" | "deny";
+      resolvedBy?: string;
+      runnerId?: string;
+    };
+  }>("/management/approvals/bulk-resolve", async (request, reply) => {
+    const { approvalIds, action, resolvedBy, runnerId } = request.body || {};
+    if (
+      !Array.isArray(approvalIds) ||
+      approvalIds.length === 0 ||
+      !action ||
+      (action !== "approve" && action !== "deny")
+    ) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message:
+          "Fields 'approvalIds' (non-empty array) and 'action' ('approve' | 'deny') are required",
+      });
+    }
+
+    const targetRunnerId = getActiveRunnerId(runnerId);
+    const opDisplayName = projectService.getOperatorDisplayName();
+    const actor = resolvedBy || opDisplayName || "desktop-user";
+
+    const result = await rpcService.request(
+      targetRunnerId,
+      RunnerRpcMethods.ApprovalBulkResolve,
+      {
+        approvalIds,
+        action,
+        resolvedBy: actor,
+      }
+    );
+
+    return reply.status(200).send(result);
   });
 
   // ==========================================
@@ -631,6 +792,93 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       const limit = request.query.limit ? Number(request.query.limit) : 100;
       const events = mcpContext.getAuditEvents(limit);
       return reply.status(200).send({ events });
+    }
+  );
+
+  // ==========================================
+  // 7. Trust & System Settings
+  // ==========================================
+  fastify.post("/management/trust/reset-defaults", async (_request, reply) => {
+    projectService.resetAllTrustPolicies();
+    const runners = runnerRegistry.list();
+    for (const runner of runners) {
+      try {
+        const projects = await rpcService.request(
+          runner.id,
+          RunnerRpcMethods.ProjectList,
+          {}
+        );
+        for (const p of projects) {
+          await rpcService.request(
+            runner.id,
+            RunnerRpcMethods.ProjectSetTrustPolicy,
+            {
+              projectId: p.id,
+              trustLevel: "standard",
+              filePolicy: "ask",
+              commandPolicy: "ask",
+              protectedFilesPolicy: "always-ask",
+            }
+          );
+        }
+      } catch (err) {
+        fastify.log.warn(
+          { runnerId: runner.id, err },
+          "Failed to reset trust policy for runner projects"
+        );
+      }
+    }
+    return reply.status(200).send({ reset: true });
+  });
+
+  fastify.post("/management/trust/clear-sessions", async (_request, reply) => {
+    const runners = runnerRegistry.list();
+    for (const runner of runners) {
+      try {
+        const projects = await rpcService.request(
+          runner.id,
+          RunnerRpcMethods.ProjectList,
+          {}
+        );
+        for (const p of projects) {
+          await rpcService.request(
+            runner.id,
+            RunnerRpcMethods.ProjectSessionTrust,
+            {
+              projectId: p.id,
+              action: "revoke",
+            }
+          );
+        }
+      } catch (err) {
+        fastify.log.warn(
+          { runnerId: runner.id, err },
+          "Failed to clear session trust for runner projects"
+        );
+      }
+    }
+    return reply.status(200).send({ cleared: true });
+  });
+
+  fastify.get("/management/settings/operator", async (_request, reply) => {
+    const displayName = projectService.getOperatorDisplayName();
+    return reply.status(200).send({ displayName });
+  });
+
+  fastify.post<{ Body: { displayName: string } }>(
+    "/management/settings/operator",
+    async (request, reply) => {
+      const { displayName } = request.body || {};
+      if (!displayName || typeof displayName !== "string") {
+        return reply.status(400).send({
+          code: LocalBridgeErrorCode.INVALID_REQUEST,
+          message: "Field 'displayName' is required",
+        });
+      }
+      projectService.setOperatorDisplayName(displayName);
+      return reply
+        .status(200)
+        .send({ displayName: projectService.getOperatorDisplayName() });
     }
   );
 };

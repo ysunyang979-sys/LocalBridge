@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
-import type { ProjectListItem, ProjectPublic } from "@localbridge/protocol";
-import type { ProjectRow } from "../db/schema.js";
+import type { ProjectListItem, ProjectPublic, ProjectTrustPolicy } from "@localbridge/protocol";
+import type { ProjectRow, ProjectTrustPolicyRow, SystemSettingRow } from "../db/schema.js";
 import type { RunnerRegistry } from "./registry.js";
 import type { Logger } from "@localbridge/shared";
 
@@ -8,6 +8,15 @@ export class ServerProjectService {
   private readonly stmtUpsertProject: Database.Statement;
   private readonly stmtListProjects: Database.Statement;
   private readonly stmtGetProject: Database.Statement;
+  private readonly stmtRemoveProject: Database.Statement;
+  private readonly stmtUpdateAccess: Database.Statement;
+  private readonly stmtUpdateEnabled: Database.Statement;
+  private readonly stmtUpsertTrustPolicy: Database.Statement;
+  private readonly stmtGetTrustPolicy: Database.Statement;
+  private readonly stmtDeleteTrustPolicy: Database.Statement;
+  private readonly stmtDeleteAllTrustPolicies: Database.Statement;
+  private readonly stmtGetSystemSetting: Database.Statement;
+  private readonly stmtSetSystemSetting: Database.Statement;
 
   constructor(
     private readonly db: Database.Database,
@@ -39,11 +48,38 @@ export class ServerProjectService {
     this.stmtUpdateEnabled = this.db.prepare(
       "UPDATE projects SET enabled = ?, last_seen_at = ? WHERE id = ?"
     );
+    this.stmtUpsertTrustPolicy = this.db.prepare(`
+      INSERT INTO project_trust_policies (project_id, trust_level, file_policy, command_policy, protected_files_policy, custom_rules, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id) DO UPDATE SET
+        trust_level = excluded.trust_level,
+        file_policy = excluded.file_policy,
+        command_policy = excluded.command_policy,
+        protected_files_policy = excluded.protected_files_policy,
+        custom_rules = excluded.custom_rules,
+        updated_at = excluded.updated_at
+    `);
+    this.stmtGetTrustPolicy = this.db.prepare(
+      "SELECT * FROM project_trust_policies WHERE project_id = ?"
+    );
+    this.stmtDeleteTrustPolicy = this.db.prepare(
+      "DELETE FROM project_trust_policies WHERE project_id = ?"
+    );
+    this.stmtDeleteAllTrustPolicies = this.db.prepare(
+      "DELETE FROM project_trust_policies"
+    );
+    this.stmtGetSystemSetting = this.db.prepare(
+      "SELECT value FROM system_settings WHERE key = ?"
+    );
+    this.stmtSetSystemSetting = this.db.prepare(`
+      INSERT INTO system_settings (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `);
   }
 
-  private readonly stmtRemoveProject: Database.Statement;
-  private readonly stmtUpdateAccess: Database.Statement;
-  private readonly stmtUpdateEnabled: Database.Statement;
 
   /**
    * Synchronize public project metadata reported by a connected Runner.
@@ -129,6 +165,7 @@ export class ServerProjectService {
   removeProject(projectId: string): void {
     if (!this.db.open) return;
     this.stmtRemoveProject.run(projectId);
+    this.stmtDeleteTrustPolicy.run(projectId);
   }
 
   updateProjectAccess(projectId: string, accessMode: string): void {
@@ -140,4 +177,63 @@ export class ServerProjectService {
     if (!this.db.open) return;
     this.stmtUpdateEnabled.run(enabled ? 1 : 0, Date.now(), projectId);
   }
+
+  setTrustPolicy(projectId: string, policy: ProjectTrustPolicy): void {
+    if (!this.db.open) return;
+    this.stmtUpsertTrustPolicy.run(
+      projectId,
+      policy.trustLevel,
+      policy.filePolicy,
+      policy.commandPolicy,
+      policy.protectedFilesPolicy,
+      policy.customRules ? JSON.stringify(policy.customRules) : null,
+      policy.updatedAt || Date.now()
+    );
+  }
+
+  getTrustPolicy(projectId: string): ProjectTrustPolicy | undefined {
+    if (!this.db.open) return undefined;
+    const row = this.stmtGetTrustPolicy.get(projectId) as
+      | ProjectTrustPolicyRow
+      | undefined;
+    if (!row) return undefined;
+    let customRules = undefined;
+    if (row.custom_rules) {
+      try {
+        customRules = JSON.parse(row.custom_rules);
+      } catch {
+        // ignore parse error
+      }
+    }
+    return {
+      trustLevel: row.trust_level as any,
+      filePolicy: row.file_policy as any,
+      commandPolicy: row.command_policy as any,
+      protectedFilesPolicy: row.protected_files_policy as any,
+      customRules,
+      canonicalRoot: "",
+      policyVersion: 1,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  resetAllTrustPolicies(): void {
+    if (!this.db.open) return;
+    this.stmtDeleteAllTrustPolicies.run();
+  }
+
+  getOperatorDisplayName(): string {
+    if (!this.db.open) return "本机用户";
+    const row = this.stmtGetSystemSetting.get("operator_display_name") as
+      | SystemSettingRow
+      | undefined;
+    return row?.value || "本机用户";
+  }
+
+  setOperatorDisplayName(name: string): void {
+    if (!this.db.open) return;
+    const trimmed = name.trim() || "本机用户";
+    this.stmtSetSystemSetting.run("operator_display_name", trimmed, Date.now());
+  }
 }
+

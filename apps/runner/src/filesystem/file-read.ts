@@ -38,22 +38,23 @@ export function readTextFile(options: ReadTextFileOptions): FileReadResult {
     maxLines = DEFAULT_READ_LINES,
   } = options;
 
-  // 1. Proactive sensitive file check
-  if (isSensitiveFile(projectRelativePath)) {
+  // 1. Validate input line parameters
+  const requestedStart = Math.max(1, startLine);
+  const requestedMaxLines = Math.max(1, Math.min(maxLines, MAX_READ_LINES));
+
+  // 2. Resolve target in sandbox
+  const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
+    mustExist: true,
+    allowSensitive: true,
+  });
+
+  // 3. Proactive sensitive file check on resolved relative path
+  if (isSensitiveFile(resolved.relativePath)) {
     throw new LocalBridgeError(
       LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED,
       "Access to sensitive credential file is blocked"
     );
   }
-
-  // 2. Validate input line parameters
-  const requestedStart = Math.max(1, startLine);
-  const requestedMaxLines = Math.max(1, Math.min(maxLines, MAX_READ_LINES));
-
-  // 3. Resolve target in sandbox
-  const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
-    mustExist: true,
-  });
 
   // 4. Open file strictly with "r" mode
   let fd: number;

@@ -55,6 +55,9 @@ import { createApprovalCreateHandler } from "./rpc/handlers/approval-create.js";
 import { createApprovalResolveHandler } from "./rpc/handlers/approval-resolve.js";
 import { createApprovalListHandler } from "./rpc/handlers/approval-list.js";
 import { createApprovalGetHandler } from "./rpc/handlers/approval-get.js";
+import { createApprovalBulkResolveHandler } from "./rpc/handlers/approval-bulk-resolve.js";
+import { createProjectSetTrustPolicyHandler } from "./rpc/handlers/project-set-trust-policy.js";
+import { createProjectSessionTrustHandler } from "./rpc/handlers/project-session-trust.js";
 import { ApprovalManager } from "./approvals/index.js";
 import { ProjectRegistry } from "./projects/index.js";
 import { FilesystemService } from "./filesystem/index.js";
@@ -231,27 +234,47 @@ export class LocalBridgeRunner {
 
     this.rpcRouter.register(
       RunnerRpcMethods.FileCreate,
-      createFileCreateHandler(this.filesystemService)
+      createFileCreateHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry
+      )
     );
 
     this.rpcRouter.register(
       RunnerRpcMethods.FileWrite,
-      createFileWriteHandler(this.filesystemService)
+      createFileWriteHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry
+      )
     );
 
     this.rpcRouter.register(
       RunnerRpcMethods.FilePatch,
-      createFilePatchHandler(this.filesystemService)
+      createFilePatchHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry
+      )
     );
 
     this.rpcRouter.register(
       RunnerRpcMethods.FileDelete,
-      createFileDeleteHandler(this.filesystemService, this.approvalManager)
+      createFileDeleteHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry
+      )
     );
 
     this.rpcRouter.register(
       RunnerRpcMethods.FileRestore,
-      createFileRestoreHandler(this.filesystemService)
+      createFileRestoreHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry
+      )
     );
 
     this.rpcRouter.register(
@@ -367,6 +390,21 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.ApprovalGet,
       createApprovalGetHandler(this.approvalManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ApprovalBulkResolve,
+      createApprovalBulkResolveHandler(this.approvalManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectSetTrustPolicy,
+      createProjectSetTrustPolicyHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectSessionTrust,
+      createProjectSessionTrustHandler(this.projectRegistry)
     );
 
     this.rpcRouter.register(

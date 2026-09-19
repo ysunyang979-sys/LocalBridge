@@ -6,6 +6,8 @@ import {
   type ApprovalCreateParams,
   type ApprovalResolveParams,
   type ApprovalListParams,
+  type ApprovalBulkResolveParams,
+  type ApprovalBulkResolveResult,
 } from "@localbridge/protocol";
 import type { Logger } from "@localbridge/shared";
 
@@ -115,6 +117,42 @@ export class ApprovalManager {
     );
 
     return { ...req };
+  }
+
+  /**
+   * Bulk resolve multiple approval requests.
+   */
+  bulkResolve(params: ApprovalBulkResolveParams): ApprovalBulkResolveResult & {
+    resolvedCount: number;
+    failedCount: number;
+    results: Array<{ approvalId: string; success: boolean; error?: string }>;
+  } {
+    const resolved: ApprovalRequest[] = [];
+    const failedIds: string[] = [];
+    const results: Array<{ approvalId: string; success: boolean; error?: string }> = [];
+
+    for (const approvalId of params.approvalIds) {
+      try {
+        const res = this.resolve({
+          approvalId,
+          action: params.action,
+          resolvedBy: params.resolvedBy,
+        });
+        resolved.push(res);
+        results.push({ approvalId, success: true });
+      } catch (err: any) {
+        failedIds.push(approvalId);
+        results.push({ approvalId, success: false, error: err?.message || String(err) });
+      }
+    }
+
+    return {
+      resolved,
+      failedIds,
+      resolvedCount: resolved.length,
+      failedCount: failedIds.length,
+      results,
+    };
   }
 
   /**

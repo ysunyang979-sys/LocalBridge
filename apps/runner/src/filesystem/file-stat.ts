@@ -21,18 +21,19 @@ export interface StatFileOptions {
 export function statFile(options: StatFileOptions): FileStatResult {
   const { projectId, canonicalRoot, projectRelativePath } = options;
 
-  // 1. Sensitive file check
-  if (isSensitiveFile(projectRelativePath)) {
+  // 1. Resolve target in sandbox (enforcing canonical containment and symlink escape checks)
+  const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
+    mustExist: true,
+    allowSensitive: true,
+  });
+
+  // 2. Sensitive file check on resolved relative path
+  if (isSensitiveFile(resolved.relativePath)) {
     throw new LocalBridgeError(
       LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED,
       "Access to sensitive credential file is blocked"
     );
   }
-
-  // 2. Resolve target in sandbox (enforcing canonical containment and symlink escape checks)
-  const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
-    mustExist: true,
-  });
 
   // 3. Inspect target stats
   let stat: fs.Stats;

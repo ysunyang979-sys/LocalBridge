@@ -29,6 +29,9 @@ export interface SafeAuditMetadata {
   durationMs?: number;
   resultStatus?: "success" | "error";
   errorCode?: string;
+  decisionSource?: string;
+  policyLevel?: string;
+  actorDisplayName?: string;
 }
 
 export type AuditRecord = SafeAuditMetadata;
@@ -168,6 +171,9 @@ export class McpContext {
       durationMs?: number;
       resultStatus?: "success" | "error";
       errorCode?: string;
+      decisionSource?: string;
+      policyLevel?: string;
+      actorDisplayName?: string;
     }
   ): void {
     // Explicit whitelist construction - strictly drops any unlisted properties
@@ -184,6 +190,9 @@ export class McpContext {
       durationMs: data.durationMs,
       resultStatus: data.resultStatus,
       errorCode: data.errorCode,
+      decisionSource: data.decisionSource,
+      policyLevel: data.policyLevel,
+      actorDisplayName: data.actorDisplayName,
     };
     this.auditLogBuffer.push(record);
     if (this.auditLogBuffer.length > this.maxAuditLogSize) {
@@ -202,6 +211,9 @@ export class McpContext {
         durationMs: data.durationMs,
         resultStatus: data.resultStatus,
         errorCode: data.errorCode,
+        decisionSource: data.decisionSource,
+        policyLevel: data.policyLevel,
+        actorDisplayName: data.actorDisplayName,
       },
       `MCP tool [${data.toolName}]: ${event}`
     );
