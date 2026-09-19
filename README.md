@@ -61,66 +61,73 @@ localbridge/
 
 ---
 
-## Getting Started (Phase 2)
+## Quick Start (LocalBridge v1.0)
 
-### Prerequisites
-- **Node.js**: `>= 24.0.0`
-- **pnpm**: `>= 10.0.0`
+LocalBridge can be run either as a standalone desktop application via the Tauri installer, or built directly from source.
 
-### Installation & Build
+### 5-Step Quick Start
+
+#### Step 1: Install or Launch LocalBridge
+- **Installer (Recommended)**: Download and run the `LocalBridge-Setup-1.0.0.exe` or `.msi` Windows installer.
+- **From Source**:
+  ```powershell
+  # Clone and install dependencies
+  pnpm install
+  pnpm build
+  
+  # Start desktop control center
+  pnpm --filter @localbridge/desktop dev
+  ```
+
+#### Step 2: Open Desktop Control Center
+Launch LocalBridge. The system tray icon indicates the local server (`127.0.0.1:18080`) and execution runner are active and connected.
+
+#### Step 3: Authorize Project Repository
+1. Navigate to the **Projects** tab in the desktop UI.
+2. Click **Authorize Project** and select your local project folder (e.g. `C:\Users\user\Projects\my-app`).
+3. Configure the **Access Mode** (`read-only` or `read-write`) and **Execution Mode** (`disabled`, `safe-only`, or `project-code`).
+
+#### Step 4: Generate an MCP Client Token
+1. Go to the **Tokens** tab.
+2. Click **Generate Token**, select `MCP Client Token` (`lb_...`), and enter a descriptive label (e.g. `Claude Desktop`).
+3. Copy the 256-bit token. *(Plaintext is displayed only once and never persisted).*
+
+#### Step 5: Connect Your AI Assistant
+In your AI Client's configuration (e.g. `claude_desktop_config.json` or Cursor MCP settings), add the LocalBridge Streamable HTTP endpoint:
+
+```json
+{
+  "mcpServers": {
+    "localbridge": {
+      "url": "http://127.0.0.1:18080/mcp",
+      "headers": {
+        "Authorization": "Bearer lb_your_copied_token_here",
+        "MCP-Protocol-Version": "2026-07-28"
+      }
+    }
+  }
+}
+```
+
+Your AI client now has access to all 23 audited LocalBridge tools within your authorized project boundaries!
+
+---
+
+## Developer / CLI Operations
+
+For headless server or developer workflows:
 
 ```bash
-# Install dependencies across monorepo
-pnpm install
-
-# Typecheck all packages and apps
+# Typecheck all workspace packages
 pnpm typecheck
 
-# Build all packages, server and runner
-pnpm build
-
-# Run automated tests (Vitest)
+# Execute the 74 test suites (440 automated tests)
 pnpm test
-```
 
-### 1. Running the Server
-
-Start the LocalBridge Server daemon:
-
-```bash
+# Run Server standalone
 pnpm --filter @localbridge/server dev
-```
 
-The server starts at `http://127.0.0.1:18080`.
-
-### 2. Creating a Runner Token
-
-Generate an authenticated runner token (returned once, stored as a SHA-256 hash):
-
-```bash
-pnpm --filter @localbridge/server token:create runner "My PC"
-```
-
-To view or revoke tokens:
-```bash
-# List all registered tokens
-pnpm --filter @localbridge/server token:list
-
-# Revoke a token
-pnpm --filter @localbridge/server token:revoke <token_id>
-```
-
-### 3. Running the Runner
-
-**Linux / macOS (Bash):**
-```bash
-LOCALBRIDGE_RUNNER_TOKEN=lbr_xxxxxxxxxxxxxxxxx \
-pnpm --filter @localbridge/runner dev
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:LOCALBRIDGE_RUNNER_TOKEN="lbr_xxxxxxxxxxxxxxxxx"
+# Run Runner daemon standalone
 pnpm --filter @localbridge/runner dev
 ```
 
@@ -476,10 +483,24 @@ LocalBridge Phase 11 establishes a full GUI desktop control center (`apps/deskto
 - **Global Pause (`Pause AI Access`)**: One-click toggle instantly returns HTTP 503 `Service Paused` to all inbound AI MCP requests without disconnecting the Runner daemon or GUI.
 - **Emergency Stop**: Instantly triggers process tree termination (`taskkill.exe /PID <pid> /T /F` on Windows) across all running background jobs, cancels queued operations, and locks MCP access.
 
-### 14. Management API Security Boundary
+### 15. Security Hardening & v1.0 Release (Phase 12)
 
-- **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/management/*`, `/api/tokens`, and `/api/emergency-stop`) are intended exclusively for local administrative inspection and trusted loopback access.
-- **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.
+LocalBridge v1.0 marks the formal Feature Freeze and production hardening of the platform:
+
+- **Tri-Domain Token Isolation**: Strictly separates `lb_` (MCP clients), `lbr_` (Runner daemons), and `lm_` (Management UI) tokens. Attempting to use tokens across unauthorized domains is immediately rejected.
+- **Canary Redaction & Safe Audit Metadata**: Strict `SafeAuditMetadata` field whitelisting ensures no sensitive file patches, diffs, command arguments, stdout/stderr streams, or tokens are logged or stored in SQLite.
+- **Browser Pivot & Rebinding Defense**: Hardened loopback checks, `Host` header whitelisting, and blocking of cross-site browser fetches (`Sec-Fetch-Site: cross-site`).
+- **State Integrity & Crash Recovery**: Automatic pre-migration SQLite snapshots (`<dbPath>.pre-migration.bak`) and orphan temp file purges (`.localbridge-*.tmp`) ensure clean boot recovery.
+- **Verification Baseline**: 74 automated test suites comprising 440 tests passing with a 100% success rate.
+
+### Security & Privacy Resources
+
+- [Security Policy & Vulnerability Reporting](SECURITY.md)
+- [Comprehensive STRIDE Threat Model (14 Vectors)](docs/THREAT_MODEL.md)
+- [Privacy Policy & Zero-Telemetry Commitment](PRIVACY.md)
+- [Project Changelog](CHANGELOG.md)
+- [Software Bill of Materials (SBOM)](sbom.json)
+- [Release Checksums (SHA-256)](SHA256SUMS.txt)
 
 ---
 

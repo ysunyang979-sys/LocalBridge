@@ -16,7 +16,7 @@ export interface McpContextDeps {
   logger?: Logger;
 }
 
-export interface AuditRecord {
+export interface SafeAuditMetadata {
   id: string;
   timestamp: string;
   event: string;
@@ -25,10 +25,13 @@ export interface AuditRecord {
   toolName: string;
   projectId?: string;
   runnerId?: string;
+  relativePath?: string;
   durationMs?: number;
   resultStatus?: "success" | "error";
   errorCode?: string;
 }
+
+export type AuditRecord = SafeAuditMetadata;
 
 export class McpContext {
   public readonly projectService: ServerProjectService;
@@ -161,12 +164,14 @@ export class McpContext {
       toolName: string;
       projectId?: string;
       runnerId?: string;
+      relativePath?: string;
       durationMs?: number;
       resultStatus?: "success" | "error";
       errorCode?: string;
     }
   ): void {
-    const record: AuditRecord = {
+    // Explicit whitelist construction - strictly drops any unlisted properties
+    const record: SafeAuditMetadata = {
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       timestamp: new Date().toISOString(),
       event,
@@ -175,6 +180,7 @@ export class McpContext {
       toolName: data.toolName,
       projectId: data.projectId,
       runnerId: data.runnerId,
+      relativePath: data.relativePath,
       durationMs: data.durationMs,
       resultStatus: data.resultStatus,
       errorCode: data.errorCode,
@@ -192,6 +198,7 @@ export class McpContext {
         toolName: data.toolName,
         projectId: data.projectId,
         runnerId: data.runnerId,
+        relativePath: data.relativePath,
         durationMs: data.durationMs,
         resultStatus: data.resultStatus,
         errorCode: data.errorCode,

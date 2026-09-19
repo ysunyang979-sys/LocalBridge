@@ -7,6 +7,7 @@ import {
   verifyToken,
   MCP_TOKEN_PREFIX,
   RUNNER_TOKEN_PREFIX,
+  MANAGEMENT_TOKEN_PREFIX,
   type TokenType,
 } from "@localbridge/shared";
 import type { TokenRow } from "./schema.js";
@@ -46,7 +47,8 @@ export interface ValidateTokenResult {
     | "INVALID_TOKEN_TYPE"
     | "TOKEN_NOT_FOUND"
     | "TOKEN_REVOKED"
-    | "TOKEN_EXPIRED";
+    | "TOKEN_EXPIRED"
+    | "INVALID_SECRET";
 }
 
 export class TokenService {
@@ -127,8 +129,8 @@ export class TokenService {
       return { valid: false, reason: "MISSING_TOKEN" };
     }
 
-    // Explicitly reject MCP tokens (lb_ prefix)
-    if (rawToken.startsWith(MCP_TOKEN_PREFIX)) {
+    // Explicitly reject MCP tokens (lb_ prefix) and Management tokens (lm_ prefix)
+    if (rawToken.startsWith(MCP_TOKEN_PREFIX) || rawToken.startsWith(MANAGEMENT_TOKEN_PREFIX)) {
       return { valid: false, reason: "INVALID_TOKEN_TYPE" };
     }
 
@@ -165,15 +167,15 @@ export class TokenService {
 
   /**
    * Validate an MCP token strictly.
-   * Rejects runner tokens, revoked tokens, expired tokens, and unknown tokens.
+   * Rejects runner tokens, management tokens, revoked tokens, expired tokens, and unknown tokens.
    */
   validateMcpToken(rawToken: string): ValidateTokenResult {
     if (!rawToken || typeof rawToken !== "string") {
       return { valid: false, reason: "MISSING_TOKEN" };
     }
 
-    // Explicitly reject Runner tokens (lbr_ prefix)
-    if (rawToken.startsWith(RUNNER_TOKEN_PREFIX)) {
+    // Explicitly reject Runner tokens (lbr_ prefix) and Management tokens (lm_ prefix)
+    if (rawToken.startsWith(RUNNER_TOKEN_PREFIX) || rawToken.startsWith(MANAGEMENT_TOKEN_PREFIX)) {
       return { valid: false, reason: "INVALID_TOKEN_TYPE" };
     }
 
@@ -206,6 +208,35 @@ export class TokenService {
     this.stmtUpdateLastUsed.run(Date.now(), row.id);
 
     return { valid: true, tokenRecord: row };
+  }
+
+  /**
+   * Validate a Local Management token strictly.
+   * Rejects MCP tokens (lb_), Runner tokens (lbr_), and enforces lm_ prefix and secret match.
+   */
+  validateManagementToken(rawToken: string, expectedSecret?: string): ValidateTokenResult {
+    if (!rawToken || typeof rawToken !== "string") {
+      return { valid: false, reason: "MISSING_TOKEN" };
+    }
+
+    // Explicitly reject MCP tokens (lb_) and Runner tokens (lbr_)
+    if (rawToken.startsWith(MCP_TOKEN_PREFIX) || rawToken.startsWith(RUNNER_TOKEN_PREFIX)) {
+      return { valid: false, reason: "INVALID_TOKEN_TYPE" };
+    }
+
+    if (!rawToken.startsWith(MANAGEMENT_TOKEN_PREFIX)) {
+      return { valid: false, reason: "INVALID_TOKEN_TYPE" };
+    }
+
+    if (expectedSecret) {
+      const rawBuf = Buffer.from(rawToken, "utf-8");
+      const expBuf = Buffer.from(expectedSecret, "utf-8");
+      if (rawBuf.length !== expBuf.length || !crypto.timingSafeEqual(rawBuf, expBuf)) {
+        return { valid: false, reason: "INVALID_SECRET" };
+      }
+    }
+
+    return { valid: true };
   }
 
   /**

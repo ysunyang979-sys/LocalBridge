@@ -53,6 +53,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   // 1. Determine config file path
   const configFilePath =
     (cli.configPath as string) ||
+    options.configPath ||
     env.LOCALBRIDGE_CONFIG ||
     path.resolve(process.cwd(), "config.json");
 

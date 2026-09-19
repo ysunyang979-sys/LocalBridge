@@ -68,15 +68,15 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
           });
         }
 
-        // 2. Reject MCP client tokens explicitly
-        if (token.startsWith(MCP_TOKEN_PREFIX)) {
+        // 2. Reject MCP client tokens and Management tokens explicitly
+        if (token.startsWith(MCP_TOKEN_PREFIX) || token.startsWith("lm_")) {
           fastify.log.warn(
-            { event: "runner_auth_failed", reason: "mcp_token_rejected" },
-            "Runner connection rejected: MCP token cannot be used for runner authentication"
+            { event: "runner_auth_failed", reason: "invalid_token_type" },
+            "Runner connection rejected: MCP or Management token cannot be used for runner authentication"
           );
           return reply.status(403).send({
             code: "INVALID_TOKEN_TYPE",
-            message: "MCP token cannot be used to authenticate runner daemon",
+            message: "MCP or Management token cannot be used to authenticate runner daemon",
           });
         }
 

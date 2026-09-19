@@ -1,6 +1,6 @@
 [package]
 name = "localbridge-desktop"
-version = "0.11.0"
+version = "1.0.0"
 description = "LocalBridge Desktop Control Center"
 authors = ["LocalBridge Team"]
 edition = "2021"

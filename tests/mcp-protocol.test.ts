@@ -77,7 +77,7 @@ describe("Phase 10 - MCP Protocol Compliance & Transport Hardening", () => {
     expect(data).toEqual({
       mcpActive: true,
       paused: false,
-      version: "0.11.0",
+      version: "1.0.0",
       protocolVersion: "2026-07-28",
       toolsCount: 23,
     });

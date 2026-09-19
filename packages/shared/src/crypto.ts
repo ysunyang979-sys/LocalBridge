@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 
 export const MCP_TOKEN_PREFIX = "lb_";
 export const RUNNER_TOKEN_PREFIX = "lbr_";
+export const MANAGEMENT_TOKEN_PREFIX = "lm_";
 
-export type TokenType = "mcp" | "runner";
+export type TokenType = "mcp" | "runner" | "management";
 
 /**
  * Generate a secure cryptographically random token for MCP client.
@@ -24,11 +25,21 @@ export function generateRunnerToken(): string {
 }
 
 /**
+ * Generate a secure cryptographically random token for local management channel.
+ * e.g. "lm_7f8a9b..."
+ */
+export function generateManagementToken(): string {
+  const bytes = crypto.randomBytes(32).toString("hex");
+  return `${MANAGEMENT_TOKEN_PREFIX}${bytes}`;
+}
+
+/**
  * Detect token type from prefix.
  */
 export function getTokenType(token: string): TokenType | null {
   if (token.startsWith(MCP_TOKEN_PREFIX)) return "mcp";
   if (token.startsWith(RUNNER_TOKEN_PREFIX)) return "runner";
+  if (token.startsWith(MANAGEMENT_TOKEN_PREFIX)) return "management";
   return null;
 }
 

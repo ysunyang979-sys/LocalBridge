@@ -40,6 +40,7 @@ export const ProjectConfigSchema = z.object({
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
 export const AppConfigSchema = z.object({
+  configVersion: z.number().int().default(1),
   server: ServerConfigSchema.default({}),
   runner: RunnerConfigSchema.default({}),
   security: SecurityConfigSchema.default({}),

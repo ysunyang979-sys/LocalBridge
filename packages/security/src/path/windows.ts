@@ -19,11 +19,19 @@ const WINDOWS_RESERVED_NAMES_REGEX =
  * - Trailing dots and spaces on path segments
  */
 export function validateWindowsPathSecurity(relativePath: string): void {
-  // 1. Null byte check
-  if (relativePath.includes("\0")) {
+  // 1. Null byte and percent-encoded null byte check
+  if (relativePath.includes("\0") || /%00/i.test(relativePath)) {
     throw new SecurityPathError(
       LocalBridgeErrorCode.PATH_TRAVERSAL,
       "Null byte in path is strictly prohibited"
+    );
+  }
+
+  // Unicode separator check (fullwidth slashes)
+  if (/[\uFF0F\uFF3C]/.test(relativePath)) {
+    throw new SecurityPathError(
+      LocalBridgeErrorCode.PATH_TRAVERSAL,
+      "Unicode separator in path is strictly prohibited"
     );
   }
 

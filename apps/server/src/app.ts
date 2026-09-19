@@ -5,7 +5,7 @@ import Fastify, {
 } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { createLogger, type AppConfig } from "@localbridge/shared";
+import { createLogger, generateManagementToken, type AppConfig } from "@localbridge/shared";
 import {
   LocalBridgeError,
   LocalBridgeErrorCode,
@@ -35,6 +35,8 @@ export interface BuildAppOptions {
   rateLimiter?: McpRateLimiter;
   migrationsDir?: string;
   enableLogging?: boolean;
+  managementSecret?: string;
+  requireManagementAuth?: boolean;
 }
 
 export type AppInstance = ReturnType<typeof Fastify>;
@@ -48,6 +50,7 @@ export interface BuiltAppResult {
   projectService: ServerProjectService;
   mcpContext: McpContext;
   rateLimiter: McpRateLimiter;
+  managementSecret: string;
 }
 
 export async function buildApp(
@@ -143,11 +146,15 @@ export async function buildApp(
     }
   );
 
+  const managementSecret =
+    options.managementSecret ?? generateManagementToken();
+  const requireManagementAuth = options.requireManagementAuth ?? false;
+
   // Register REST API routes
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "0.11.0",
+    version: "1.0.0",
     getRunnersConnected: () => runnerRegistry.count(),
     isMcpActive: () => !mcpContext.isPaused(),
   });
@@ -167,6 +174,8 @@ export async function buildApp(
     rpcService,
     projectService,
     mcpContext,
+    managementSecret,
+    requireManagementAuth,
   });
 
   // Register WebSocket route for runner connections
@@ -175,7 +184,7 @@ export async function buildApp(
     runnerRegistry,
     projectService,
     db: db.db,
-    serverVersion: "0.11.0",
+    serverVersion: "1.0.0",
     heartbeatIntervalMs: 15000,
   });
 
@@ -208,5 +217,6 @@ export async function buildApp(
     projectService,
     mcpContext,
     rateLimiter,
+    managementSecret,
   };
 }

@@ -61,66 +61,73 @@ localbridge/
 
 ---
 
-## 快速上手 (Phase 2)
+## 快速上手 (LocalBridge v1.0)
 
-### 环境要求
-- **Node.js**: `>= 24.0.0`
-- **pnpm**: `>= 10.0.0`
+LocalBridge 既可作为预打包的独立桌面应用（Tauri 安装包）运行，也可直接从源码启动。
 
-### 安装与构建
+### 5 步极简使用指南
+
+#### 第一步：安装或启动 LocalBridge
+- **安装包（推荐）**：下载并运行 `LocalBridge-Setup-1.0.0.exe` 或 `.msi` 安装向导。
+- **源码启动**：
+  ```powershell
+  # 克隆并编译
+  pnpm install
+  pnpm build
+  
+  # 启动桌面控制中心
+  pnpm --filter @localbridge/desktop dev
+  ```
+
+#### 第二步：打开桌面控制中心
+启动 LocalBridge 桌面程序。系统托盘常驻图标显示绿色，指示本地服务端（`127.0.0.1:18080`）与执行 Runner 守护进程已自动连接就绪。
+
+#### 第三步：授权本地项目目录
+1. 在桌面控制中心切换到 **项目 (Projects)** 标签页。
+2. 点击 **添加项目 (Authorize Project)**，使用系统原生目录选择器选取本地项目目录（如 `D:\Projects\my-app`）。
+3. 选择 **访问模式 (Access Mode)**（`只读` 或 `读写`）及 **执行模式 (Execution Mode)**（`禁用执行`、`仅安全工具` 或 `允许项目脚本`）。
+
+#### 第四步：创建 MCP 客户端 Token
+1. 进入 **令牌 (Tokens)** 标签页。
+2. 点击 **生成令牌 (Generate Token)**，类型选择 `MCP Client Token`（以 `lb_` 为前缀），填写用途备注（例如 `Claude Desktop`）。
+3. 复制生成的 256 位高熵 Token。*（注意：明文仅展示一次，数据库绝不持久化明文）*。
+
+#### 第五步：接入 AI 客户端
+在你的 AI 桌面应用配置文件中（例如 Claude Desktop 的 `claude_desktop_config.json` 或 Cursor MCP 设置），添加 LocalBridge 端点：
+
+```json
+{
+  "mcpServers": {
+    "localbridge": {
+      "url": "http://127.0.0.1:18080/mcp",
+      "headers": {
+        "Authorization": "Bearer lb_你的令牌内容",
+        "MCP-Protocol-Version": "2026-07-28"
+      }
+    }
+  }
+}
+```
+
+现在你的 AI 助手即可在受限项目边界内，安全调用全部 23 个官方 MCP 工具！
+
+---
+
+## 开发者与 CLI 运维操作
+
+针对无桌面环境或服务端集成测试：
 
 ```bash
-# 安装 Monorepo 所有依赖
-pnpm install
-
-# TypeScript 类型检查
+# 执行类型检查
 pnpm typecheck
 
-# 编译所有 packages、server 与 runner
-pnpm build
-
-# 运行全套自动化测试 (Vitest)
+# 运行全套 74 个测试套件（440 个自动化测试，100% 通过）
 pnpm test
-```
 
-### 1. 启动 LocalBridge 服务端
-
-启动 LocalBridge Server 守护进程：
-
-```bash
+# 独立启动服务端
 pnpm --filter @localbridge/server dev
-```
 
-服务默认监听 `http://127.0.0.1:18080`。
-
-### 2. 生成 Runner 认证令牌 (Token)
-
-生成经密码学认证的 Runner Token（仅显示一次，数据库仅存储 SHA-256 哈希）：
-
-```bash
-pnpm --filter @localbridge/server token:create runner "My PC"
-```
-
-查看或撤销 Token：
-```bash
-# 查看所有已注册令牌
-pnpm --filter @localbridge/server token:list
-
-# 撤销指定令牌
-pnpm --filter @localbridge/server token:revoke <token_id>
-```
-
-### 3. 启动 LocalBridge Runner 守护进程
-
-**Linux / macOS (Bash):**
-```bash
-LOCALBRIDGE_RUNNER_TOKEN=lbr_xxxxxxxxxxxxxxxxx \
-pnpm --filter @localbridge/runner dev
-```
-
-**Windows (PowerShell):**
-```powershell
-$env:LOCALBRIDGE_RUNNER_TOKEN="lbr_xxxxxxxxxxxxxxxxx"
+# 独立启动 Runner 守护进程
 pnpm --filter @localbridge/runner dev
 ```
 
@@ -478,10 +485,24 @@ LocalBridge Phase 11 建立了基于 Tauri 2 + React + TypeScript + Vite 的原�
 - **一键暂停 AI 访问 (Global Pause)**：桌面顶部控制栏提供实时开关，开启后所有进来的 AI MCP 请求将直接返回 HTTP 503 `Service Paused`，同时保持 Runner 进程及桌面程序正常运作。
 - **紧急熔断 (Emergency Stop)**：一键强制杀死当前 Runner 宿主机上所有正在运行的后台任务进程树（Windows 下通过 `taskkill.exe /PID <pid> /T /F`，POSIX 下通过进程组机制），并同步开启全局暂停。
 
-### 14. 管理 API 安全边界与本地访问说明
+### 15. 安全加固与 v1.0 正式发布 (Phase 12)
 
-- **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/management/*`、`/api/tokens` 以及 `/api/emergency-stop`）仅面向本地管理探针及受信任的环回访问。
-- **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。
+LocalBridge v1.0 标志着功能冻结（Feature Freeze）与生产级全方位安全加固的完成：
+
+- **三域 Token 绝对隔离**：严格区分 `lb_`（MCP 客户端）、`lbr_`（Runner 守护进程）与 `lm_`（桌面管理通道）三种 Token 前缀。任何跨域复用 Token 的行为均被严格拦截并返回 401/403 错误。
+- **金丝雀脱敏与安全审计白名单**：实施 `SafeAuditMetadata` 字段白名单机制，敏感文件补丁、Diff 内容、执行命令参数、标准输入输出流（stdout/stderr）以及认证凭证绝不记录至审计日志与数据库中。
+- **浏览器跳板与 DNS 重绑定防御**：强制 Host 请求头白名单校验，拦截非本地 Origin，并直接阻断跨站浏览器请求（`Sec-Fetch-Site: cross-site`）。
+- **状态完整性与崩溃自动恢复**：数据库迁移前自动生成时间戳备份快照（`<dbPath>.pre-migration.bak`），Runner 启动时自动清理历史孤立临时文件（`.localbridge-*.tmp`）。
+- **全量测试基线**：74 个自动化测试套件共 440 个测试用例，达成 100% 通过率。
+
+### 安全与隐私文档指引
+
+- [安全政策与漏洞披露流程 (SECURITY.md)](SECURITY.md)
+- [STRIDE 威胁建模与 14 类威胁防御规范 (THREAT_MODEL.md)](docs/THREAT_MODEL.md)
+- [隐私政策与零遥测承诺 (PRIVACY.md)](PRIVACY.md)
+- [版本变更日志 (CHANGELOG.md)](CHANGELOG.md)
+- [软件物料清单 (SBOM)](sbom.json)
+- [发行版 SHA-256 校验和 (SHA256SUMS.txt)](SHA256SUMS.txt)
 
 ---
 

@@ -186,4 +186,22 @@ export class BackupService {
       }
     }
   }
+
+  /**
+   * Run backup retention cleanup across all projects on runner startup.
+   */
+  cleanupAllProjects(): void {
+    if (!fs.existsSync(this.baseDir)) return;
+    try {
+      const entries = fs.readdirSync(this.baseDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          this.enforceRetention(entry.name, 0);
+        }
+      }
+    } catch (e) {
+      this.logger?.warn(`Backup retention cleanup encountered error: ${e}`);
+    }
+  }
 }
+

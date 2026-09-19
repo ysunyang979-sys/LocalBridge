@@ -14,6 +14,7 @@ import { detectCapabilities } from "./system/capabilities.js";
 import { ReconnectController } from "./client/reconnect.js";
 import { HeartbeatMonitor } from "./client/heartbeat.js";
 import { RunnerWsClient } from "./client/websocket.js";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { RpcRouter } from "./rpc/router.js";
@@ -66,7 +67,7 @@ import {
 } from "./process/index.js";
 import { JobManager } from "./jobs/index.js";
 
-export const RUNNER_VERSION = "0.11.0";
+export const RUNNER_VERSION = "1.0.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -89,6 +90,7 @@ export class LocalBridgeRunner {
   readonly commandExecutionService: CommandExecutionService;
   readonly jobManager: JobManager;
   readonly approvalManager: ApprovalManager;
+  readonly runnerStateDir: string;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -107,6 +109,7 @@ export class LocalBridgeRunner {
       config.statePath
         ? path.dirname(config.statePath)
         : path.join(os.homedir(), ".localbridge");
+    this.runnerStateDir = runnerStateDir;
 
     const projectsPath =
       config.projectsPath ||
@@ -372,6 +375,55 @@ export class LocalBridgeRunner {
   }
 
   /**
+   * Safe cleanup of orphaned LocalBridge temporary files from previous crashed runs.
+   * Strictly targets files matching the LocalBridge atomic write pattern:
+   * (e.g. `.*.localbridge-[0-9a-f]{16}.tmp` or `.localbridge-*.tmp`).
+   * Never deletes ordinary user files.
+   */
+  private cleanOrphanedTempFiles(): void {
+    const isLocalBridgeTempFile = (filename: string): boolean => {
+      return (
+        /^\..*\.localbridge-[0-9a-f]+\.tmp$/i.test(filename) ||
+        /^\.localbridge-.*\.tmp$/i.test(filename)
+      );
+    };
+
+    const cleanDirectory = (dirPath: string): void => {
+      if (!fs.existsSync(dirPath)) return;
+      try {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && isLocalBridgeTempFile(entry.name)) {
+            const filePath = path.join(dirPath, entry.name);
+            try {
+              fs.unlinkSync(filePath);
+              this.logger.debug(
+                { file: entry.name, dir: dirPath },
+                "Cleaned up orphaned LocalBridge temp file"
+              );
+            } catch (e) {
+              this.logger.warn(
+                { file: entry.name, error: String(e) },
+                "Failed to delete temp file"
+              );
+            }
+          }
+        }
+      } catch (e) {
+        this.logger.warn(
+          { dir: dirPath, error: String(e) },
+          "Failed to scan directory for temp files"
+        );
+      }
+    };
+
+    cleanDirectory(this.runnerStateDir);
+    for (const project of this.projectRegistry.list()) {
+      cleanDirectory(project.canonicalRoot);
+    }
+  }
+
+  /**
    * Start the Runner daemon and initiate connection to LocalBridge Server.
    */
   async start(): Promise<void> {
@@ -385,6 +437,10 @@ export class LocalBridgeRunner {
       },
       "Starting LocalBridge Runner daemon..."
     );
+
+    // Phase 12 Security Hardening: Startup cleanups
+    this.backupService.cleanupAllProjects();
+    this.cleanOrphanedTempFiles();
 
     await this.connect();
   }

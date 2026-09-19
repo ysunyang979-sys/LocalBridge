@@ -20,9 +20,16 @@ export interface ManagementRoutesOptions {
   rpcService: RunnerRpcService;
   projectService: ServerProjectService;
   mcpContext: McpContext;
+  managementSecret?: string;
+  requireManagementAuth?: boolean;
 }
 
-function checkLoopback(request: FastifyRequest, reply: FastifyReply): boolean {
+function checkLoopbackAndSecurity(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  opts: ManagementRoutesOptions
+): boolean {
+  // 1. Loopback IP Check
   const clientIp = request.ip;
   const isLoopback =
     clientIp === "127.0.0.1" ||
@@ -37,6 +44,97 @@ function checkLoopback(request: FastifyRequest, reply: FastifyReply): boolean {
     });
     return false;
   }
+
+  // 2. Host Header Validation (DNS rebinding protection)
+  const host = request.headers.host;
+  if (host) {
+    const hostWithoutPort = host.split(":")[0]?.toLowerCase();
+    const isAllowedHost =
+      hostWithoutPort === "127.0.0.1" ||
+      hostWithoutPort === "localhost" ||
+      hostWithoutPort === "[::1]" ||
+      hostWithoutPort === "::1";
+    if (!isAllowedHost) {
+      reply.status(403).send({
+        error: "Forbidden: Host header validation failed",
+        code: "HOST_NOT_ALLOWED",
+      });
+      return false;
+    }
+  }
+
+  // 3. Browser-Origin / CSRF Attack Defense
+  const origin = request.headers.origin;
+  if (origin) {
+    const allowedOrigins = [
+      "tauri://localhost",
+      "http://tauri.localhost",
+      "https://tauri.localhost",
+    ];
+    const isTauriOrigin = allowedOrigins.includes(origin);
+    const isLocalUrlOrigin =
+      origin.startsWith("http://127.0.0.1:") ||
+      origin.startsWith("http://localhost:") ||
+      origin === "http://127.0.0.1" ||
+      origin === "http://localhost";
+    if (!isTauriOrigin && !isLocalUrlOrigin) {
+      reply.status(403).send({
+        error: "Forbidden: Browser cross-origin management access is rejected",
+        code: "BROWSER_CROSS_ORIGIN_FORBIDDEN",
+      });
+      return false;
+    }
+  }
+
+  const secFetchSite = request.headers["sec-fetch-site"];
+  if (secFetchSite === "cross-site") {
+    reply.status(403).send({
+      error: "Forbidden: Cross-site browser requests are blocked",
+      code: "BROWSER_CROSS_ORIGIN_FORBIDDEN",
+    });
+    return false;
+  }
+
+  // 4. Token Domain Isolation & Local Management Authentication
+  const authHeader =
+    request.headers.authorization ||
+    (request.headers["x-management-token"] as string | undefined);
+
+  if (authHeader) {
+    const tokenStr = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7).trim()
+      : authHeader.trim();
+
+    // Cross-token domain rejection: lb_ (MCP) and lbr_ (Runner) can NEVER access management
+    if (tokenStr.startsWith("lb_") || tokenStr.startsWith("lbr_")) {
+      reply.status(401).send({
+        error: "Unauthorized: MCP and Runner tokens cannot access management APIs",
+        code: "INVALID_TOKEN_TYPE",
+      });
+      return false;
+    }
+
+    if (opts.managementSecret) {
+      const validation = opts.tokenService.validateManagementToken(
+        tokenStr,
+        opts.managementSecret
+      );
+      if (!validation.valid) {
+        reply.status(401).send({
+          error: `Unauthorized: ${validation.reason ?? "Invalid management token"}`,
+          code: validation.reason ?? "UNAUTHORIZED",
+        });
+        return false;
+      }
+    }
+  } else if (opts.requireManagementAuth && opts.managementSecret) {
+    reply.status(401).send({
+      error: "Unauthorized: Missing management secret token",
+      code: "MISSING_TOKEN",
+    });
+    return false;
+  }
+
   return true;
 }
 
@@ -46,9 +144,9 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
 ) => {
   const { tokenService, runnerRegistry, rpcService, projectService, mcpContext } = opts;
 
-  // Middleware: Enforce loopback check for all routes in this plugin
+  // Middleware: Enforce loopback check and security for all routes in this plugin
   fastify.addHook("onRequest", async (request, reply) => {
-    if (!checkLoopback(request, reply)) {
+    if (!checkLoopbackAndSecurity(request, reply, opts)) {
       return reply;
     }
   });
