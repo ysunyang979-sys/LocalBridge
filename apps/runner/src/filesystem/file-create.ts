@@ -29,6 +29,7 @@ export function createFile(params: CreateFileParams): FileCreateResult {
   // 1. Resolve sandbox path without requiring target to exist
   const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
     mustExist: false,
+    allowSensitive: true,
   });
 
   // 2. Direct parent directory check (no implicit mkdir -p)

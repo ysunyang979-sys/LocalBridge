@@ -5,7 +5,7 @@ import type {
   ProjectCustomRules,
   ProjectTrustPolicy,
 } from "@localbridge/protocol";
-import { isSensitiveFile } from "../path/sensitive.js";
+import { isProtectedFile, isAbsoluteDenyPath } from "../path/sensitive.js";
 
 export interface PolicyEvaluationInput {
   projectId: string;
@@ -105,8 +105,18 @@ export class TrustPolicyEvaluator {
       }
     }
 
-    // 6. Sensitive / Protected Path Policy Check
-    if (relativePath && isSensitiveFile(relativePath)) {
+    // 6. Absolute Security Boundary Check (Paths that can NEVER be accessed or approved)
+    if (relativePath && isAbsoluteDenyPath(relativePath)) {
+      return {
+        decision: "deny",
+        decisionSource: "security-boundary",
+        reason: `Access to absolute protected path '${relativePath}' is denied by security boundary.`,
+        requiresApproval: false,
+      };
+    }
+
+    // 7. Protected File Policy Check (.env, *.key, credentials, etc.)
+    if (relativePath && isProtectedFile(relativePath)) {
       const protectedPolicy: ProtectedFilesPolicy =
         trustPolicy?.protectedFilesPolicy ?? "always-ask";
 

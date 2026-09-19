@@ -3,7 +3,7 @@ import path from "node:path";
 import { LocalBridgeErrorCode } from "@localbridge/protocol";
 import { SecurityPathError } from "./errors.js";
 import { validateWindowsPathSecurity } from "./windows.js";
-import { isSensitiveFile } from "./sensitive.js";
+import { isAbsoluteDenyPath, isProtectedFile } from "./sensitive.js";
 
 /**
  * =========================================================================
@@ -18,7 +18,8 @@ import { isSensitiveFile } from "./sensitive.js";
 
 export interface ResolveProjectOptions {
   mustExist?: boolean; // default true
-  allowSensitive?: boolean; // default false
+  allowSensitive?: boolean; // default true (protected files governed by TrustPolicyEvaluator)
+  rejectProtectedFiles?: boolean; // default false (explicit rejection if requested)
 }
 
 export interface ResolvedProjectPath {
@@ -84,7 +85,8 @@ export function resolveProjectPath(
   options?: ResolveProjectOptions
 ): ResolvedProjectPath {
   const mustExist = options?.mustExist ?? true;
-  const allowSensitive = options?.allowSensitive ?? false;
+  const allowSensitive = options?.allowSensitive ?? true;
+  const rejectProtectedFiles = options?.rejectProtectedFiles ?? false;
 
   // 1. Validate canonical project root
   if (!canonicalProjectRoot || typeof canonicalProjectRoot !== "string") {
@@ -161,8 +163,16 @@ export function resolveProjectPath(
 
     const safeRel = path.relative(realRoot, canonicalTarget).replace(/\\/g, "/");
 
-    // Double-check sensitive policy on canonical target
-    if (!allowSensitive && isSensitiveFile(safeRel)) {
+    // 1. Absolute security boundary: always denied, regardless of trust policy or approval
+    if (isAbsoluteDenyPath(safeRel)) {
+      throw new SecurityPathError(
+        LocalBridgeErrorCode.PATH_NOT_ALLOWED,
+        `Access to absolute protected path "${safeRel}" is denied by security boundary`
+      );
+    }
+
+    // 2. Protected files: governed by TrustPolicyEvaluator. Only rejected here if explicitly requested or allowSensitive is false
+    if ((rejectProtectedFiles || !allowSensitive) && isProtectedFile(safeRel)) {
       throw new SecurityPathError(
         LocalBridgeErrorCode.PATH_NOT_ALLOWED,
         `Access to sensitive file "${safeRel}" denied by policy`
@@ -219,7 +229,16 @@ export function resolveProjectPath(
 
   const safeRel = path.relative(realRoot, canonicalTarget).replace(/\\/g, "/");
 
-  if (!allowSensitive && isSensitiveFile(safeRel)) {
+  // 1. Absolute security boundary: always denied, regardless of trust policy or approval
+  if (isAbsoluteDenyPath(safeRel)) {
+    throw new SecurityPathError(
+      LocalBridgeErrorCode.PATH_NOT_ALLOWED,
+      `Access to absolute protected path "${safeRel}" is denied by security boundary`
+    );
+  }
+
+  // 2. Protected files: governed by TrustPolicyEvaluator. Only rejected here if explicitly requested or allowSensitive is false
+  if ((rejectProtectedFiles || !allowSensitive) && isProtectedFile(safeRel)) {
     throw new SecurityPathError(
       LocalBridgeErrorCode.PATH_NOT_ALLOWED,
       `Access to sensitive file "${safeRel}" denied by policy`

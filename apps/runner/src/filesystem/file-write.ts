@@ -37,6 +37,7 @@ export function writeFile(params: WriteFileParams): FileWriteResult {
   // 1. Resolve sandbox path (target must exist)
   const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
     mustExist: true,
+    allowSensitive: true,
   });
 
   // 2. Validate file type and block symlinks

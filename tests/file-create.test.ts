@@ -109,11 +109,11 @@ describe("file.create Operation & Sandbox Validation", () => {
     );
   });
 
-  it("rejects creation targeting sensitive file paths (PATH_NOT_ALLOWED)", async () => {
+  it("rejects creation targeting absolute deny paths (PATH_NOT_ALLOWED)", async () => {
     await expect(
       fsService.createFile({
         projectId,
-        path: ".env",
+        path: ".git/config",
         content: "SECRET=123",
       })
     ).rejects.toThrowError(

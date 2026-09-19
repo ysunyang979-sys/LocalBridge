@@ -153,7 +153,6 @@ describe("LocalBridge Trust & Approval Policy", () => {
         "server.key",
         "cert.pem",
         "credentials.json",
-        ".git/config",
       ];
 
       for (const pFile of protectedFiles) {
@@ -174,6 +173,30 @@ describe("LocalBridge Trust & Approval Policy", () => {
         expect(res.decision).toBe("ask");
         expect(res.decisionSource).toBe("protected-file");
         expect(res.requiresApproval).toBe(true);
+      }
+    });
+
+    it("Absolute Security Boundary (.git, .localbridge) always denies access regardless of trust policy", () => {
+      const boundaryPaths = [".git/config", ".git/HEAD", ".localbridge/state.json", "localbridge.json"];
+      for (const bPath of boundaryPaths) {
+        const res = TrustPolicyEvaluator.evaluate({
+          projectId,
+          operation: "file.delete",
+          relativePath: bPath,
+          projectEnabled: true,
+          projectAccessMode: "read-write",
+          trustPolicy: {
+            trustLevel: "full-project-trust",
+            filePolicy: "allow-all",
+            commandPolicy: "allow",
+            protectedFilesPolicy: "follow-policy",
+          },
+          isSessionTrusted: true,
+        });
+
+        expect(res.decision).toBe("deny");
+        expect(res.decisionSource).toBe("security-boundary");
+        expect(res.requiresApproval).toBe(false);
       }
     });
 

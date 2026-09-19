@@ -30,6 +30,7 @@ export function restoreFile(params: RestoreFileParams): FileRestoreResult {
   // 2. Resolve sandbox target path
   const resolved = resolveProjectPath(canonicalRoot, metadata.relativePath, {
     mustExist: false,
+    allowSensitive: true,
   });
 
   // 3. Verify target state and conflict detection

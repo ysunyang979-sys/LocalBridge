@@ -38,6 +38,7 @@ export function patchFile(params: PatchFileParams): FilePatchResult {
   // 1. Resolve sandbox path (must exist)
   const resolved = resolveProjectPath(canonicalRoot, projectRelativePath, {
     mustExist: true,
+    allowSensitive: true,
   });
 
   // 2. Validate file type and block symlinks
