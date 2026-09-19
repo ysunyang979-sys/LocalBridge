@@ -293,6 +293,18 @@ export interface I18nDictionary {
     errorConfigFailed: string;
     errorAuthFailed: string;
     errorPortConflict: string;
+    reconnectingNotice: string;
+    needsAttentionNotice: string;
+    viewDiagnostics: string;
+    hideDiagnostics: string;
+    diagnosticsTitle: string;
+    diagProcess: string;
+    diagLocalHealth: string;
+    diagControlPlane: string;
+    diagMcpSession: string;
+    diagReconnectAttempts: string;
+    diagLastError: string;
+    diagChildExitCode: string;
   };
   modals: {
     authorize: {

@@ -16,6 +16,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
+  ChevronDown,
+  Activity,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -49,6 +51,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     success: boolean;
     message: string;
   } | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+
+  // Diagnostic secret redaction helper
+  const redactSecrets = (text: string | null | undefined): string => {
+    if (!text) return "";
+    return text
+      .replace(/\b(lb_[a-zA-Z0-9_-]{3})[a-zA-Z0-9_-]*/g, "$1***")
+      .replace(/\b(lbr_[a-zA-Z0-9_-]{3})[a-zA-Z0-9_-]*/g, "$1***")
+      .replace(/\b(lm_[a-zA-Z0-9_-]{3})[a-zA-Z0-9_-]*/g, "$1***")
+      .replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
+      .replace(/(Authorization:\s*)[^\r\n]+/gi, "$1[REDACTED]")
+      .replace(/(api[-_]?key[=:\s]+)[a-zA-Z0-9._~+/-]+/gi, "$1[REDACTED]");
+  };
 
   useEffect(() => {
     if (tunnelStatus?.tunnel_id && !tunnelId) {
@@ -221,7 +236,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
 
   const getStatusBadge = () => {
     const s = tunnelStatus?.status;
-    if (s === "Connected") {
+    if (s === "Connected" && tunnelStatus?.configured) {
       return (
         <span className="badge badge-emerald flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -229,14 +244,32 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
         </span>
       );
     }
+    if (s === "Starting") {
+      return <span className="badge badge-blue">{t.tunnel.statusStarting}</span>;
+    }
     if (s === "Connecting") {
-      return <span className="badge badge-amber">{t.tunnel.statusConnecting}</span>;
+      return <span className="badge badge-blue">{t.tunnel.statusConnecting}</span>;
     }
     if (s === "Reconnecting") {
       return <span className="badge badge-amber">{t.tunnel.statusReconnecting}</span>;
     }
     if (s === "AuthenticationError") {
       return <span className="badge badge-red">{t.tunnel.statusAuthError}</span>;
+    }
+    if (s === "NeedsAttention") {
+      return <span className="badge badge-red">{t.tunnel.statusNeedsAttention}</span>;
+    }
+    if (s === "RuntimeMissing") {
+      return <span className="badge badge-red">{t.tunnel.statusMissingRuntime}</span>;
+    }
+    if (s === "HealthPortConflict") {
+      return <span className="badge badge-red">{t.tunnel.statusPortConflict}</span>;
+    }
+    if (s === "LocalMcpUnavailable") {
+      return <span className="badge badge-red">{t.tunnel.statusMcpUnavailable}</span>;
+    }
+    if (s === "Error") {
+      return <span className="badge badge-red">{t.tunnel.statusError}</span>;
     }
     if (s === "Stopped") {
       return <span className="badge badge-slate">{t.tunnel.statusStopped}</span>;
@@ -265,7 +298,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
 
             <p className="text-xs text-theme-muted">{t.tunnel.cardDesc}</p>
 
-            {/* Error or Success feedback */}
+            {/* Error, Warning or Success feedback */}
             {tunnelSuccessMsg && (
               <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center gap-2 text-emerald-500 text-xs font-medium">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -275,15 +308,40 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
             {tunnelErrorMsg && (
               <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-500 text-xs font-medium">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{tunnelErrorMsg}</span>
+                <span>{redactSecrets(tunnelErrorMsg)}</span>
               </div>
             )}
-            {tunnelStatus?.error_message && (
-              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-500 text-xs">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{tunnelStatus.error_message}</span>
+            {/* Transient reconnect notice (Amber, gentle, non-alarmist) */}
+            {tunnelStatus?.status === "Reconnecting" && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center gap-2 text-amber-500 text-xs font-medium">
+                <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
+                <span>{t.tunnel.reconnectingNotice}</span>
               </div>
             )}
+            {/* Actionable error banner (Red only for genuine attention required) */}
+            {tunnelStatus?.status !== "Connected" &&
+              tunnelStatus?.status !== "Reconnecting" &&
+              tunnelStatus?.status !== "Connecting" &&
+              tunnelStatus?.status !== "Starting" &&
+              (tunnelStatus?.error_message ||
+                tunnelStatus?.status === "NeedsAttention" ||
+                tunnelStatus?.status === "AuthenticationError" ||
+                tunnelStatus?.status === "RuntimeMissing" ||
+                tunnelStatus?.status === "HealthPortConflict" ||
+                tunnelStatus?.status === "LocalMcpUnavailable" ||
+                tunnelStatus?.status === "Error") && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-500 text-xs">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>
+                    {redactSecrets(tunnelStatus?.error_message) ||
+                      (tunnelStatus?.status === "AuthenticationError"
+                        ? t.tunnel.errorAuthFailed
+                        : tunnelStatus?.status === "HealthPortConflict"
+                          ? t.tunnel.errorPortConflict
+                          : t.tunnel.needsAttentionNotice)}
+                  </span>
+                </div>
+              )}
             {testResult && (
               <div
                 className={`p-3 rounded-lg flex items-center gap-2 text-xs font-medium ${
@@ -493,6 +551,97 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                 </button>
               )}
             </div>
+
+            {/* Collapsible Diagnostics Section */}
+            <div className="pt-2 border-t border-theme-subtle">
+              <button
+                type="button"
+                onClick={() => setShowDiagnostics(!showDiagnostics)}
+                className="flex items-center gap-1.5 text-xs text-theme-muted hover:text-theme-primary font-medium transition"
+              >
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDiagnostics ? "rotate-180" : ""}`} />
+                <span>{showDiagnostics ? t.tunnel.hideDiagnostics : t.tunnel.viewDiagnostics}</span>
+              </button>
+
+              {showDiagnostics && (
+                <div className="mt-3 p-3.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-2.5 text-xs">
+                  <div className="font-semibold text-theme-primary text-xs flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>{t.tunnel.diagnosticsTitle}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                    <div>
+                      <span className="text-theme-muted">{t.tunnel.diagProcess}:</span>{" "}
+                      <span className="text-theme-primary">
+                        {tunnelStatus?.status === "Connected"
+                          ? "Running (Active)"
+                          : tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Starting"
+                            ? "Starting..."
+                            : tunnelStatus?.status === "Reconnecting"
+                              ? "Restarting (Backoff)"
+                              : tunnelStatus?.status === "Stopped"
+                                ? "Stopped"
+                                : tunnelStatus?.status === "NotConfigured"
+                                  ? "Not Configured"
+                                  : tunnelStatus?.status || "Unknown"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-theme-muted">{t.tunnel.diagLocalHealth}:</span>{" "}
+                      <span className="text-theme-primary">
+                        {tunnelStatus?.status === "Connected"
+                          ? `OK (Port ${tunnelStatus.health_port})`
+                          : tunnelStatus?.status === "HealthPortConflict"
+                            ? `Conflict (Port ${tunnelStatus?.health_port || 8080})`
+                            : `Standby (Port ${tunnelStatus?.health_port || 8080})`}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-theme-muted">{t.tunnel.diagControlPlane}:</span>{" "}
+                      <span className="text-theme-primary">
+                        {tunnelStatus?.status === "Connected"
+                          ? "Connected"
+                          : tunnelStatus?.status === "Reconnecting"
+                            ? "Reconnecting..."
+                            : tunnelStatus?.status === "Connecting"
+                              ? "Connecting..."
+                              : tunnelStatus?.status === "AuthenticationError"
+                                ? "Auth Failed (401/403)"
+                                : "Disconnected"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-theme-muted">{t.tunnel.diagMcpSession}:</span>{" "}
+                      <span className="text-theme-primary">
+                        {tunnelStatus?.status === "Connected"
+                          ? "Active / Ready"
+                          : tunnelStatus?.status === "LocalMcpUnavailable"
+                            ? "Offline (503)"
+                            : "Inactive"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-theme-muted">{t.tunnel.diagReconnectAttempts}:</span>{" "}
+                      <span className="text-theme-primary">{tunnelStatus?.reconnect_attempts ?? 0}</span>
+                    </div>
+                    <div>
+                      <span className="text-theme-muted">{t.tunnel.diagChildExitCode}:</span>{" "}
+                      <span className="text-theme-primary">
+                        {tunnelStatus?.error_message?.includes("exit code")
+                          ? (tunnelStatus.error_message.match(/exit code[:\s]+(\d+)/i)?.[1] ?? "Non-zero")
+                          : "0 (OK)"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-theme-subtle">
+                    <div className="text-[11px] text-theme-muted mb-1">{t.tunnel.diagLastError}:</div>
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle text-[11px] font-mono break-all text-theme-secondary">
+                      {redactSecrets(tunnelStatus?.error_message) || (language === "zh-CN" ? "无" : "None")}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Server Connection */}
@@ -672,7 +821,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               />
               <div>
                 <div className="font-bold text-sm text-theme-primary">{t.settings.appName}</div>
-                <div className="text-theme-muted">{t.settings.versionLabel} 1.2.0 P0 Pre-release &bull; Build d9510b4</div>
+                <div className="text-theme-muted">
+                  {t.settings.versionLabel} 1.2.0 P0 Pre-release &bull; Build {typeof __BUILD_COMMIT__ !== "undefined" ? __BUILD_COMMIT__ : "dev"}
+                </div>
               </div>
             </div>
 

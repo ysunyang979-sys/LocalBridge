@@ -140,27 +140,44 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             <div className="text-xl font-bold flex items-center gap-2">
               <span
                 className={`w-3 h-3 rounded-full shrink-0 ${
-                  tunnelStatus?.status === "Connected"
+                  tunnelStatus?.status === "Connected" && tunnelStatus?.configured
                     ? "bg-emerald-500"
-                    : tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Reconnecting"
+                    : tunnelStatus?.status === "Reconnecting"
                       ? "bg-amber-500"
-                      : tunnelStatus?.status === "AuthenticationError" || tunnelStatus?.status === "Error"
-                        ? "bg-red-500"
-                        : "bg-slate-400"
+                      : tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Starting"
+                        ? "bg-blue-500"
+                        : tunnelStatus?.status === "AuthenticationError" ||
+                          tunnelStatus?.status === "NeedsAttention" ||
+                          tunnelStatus?.status === "Error" ||
+                          tunnelStatus?.status === "RuntimeMissing" ||
+                          tunnelStatus?.status === "HealthPortConflict" ||
+                          tunnelStatus?.status === "LocalMcpUnavailable"
+                          ? "bg-red-500"
+                          : "bg-slate-400"
                 }`}
               />
               <span className="text-base font-bold truncate text-theme-primary">
-                {tunnelStatus?.status === "Connected"
+                {tunnelStatus?.status === "Connected" && tunnelStatus?.configured
                   ? t.overview.chatGptReady
                   : tunnelStatus?.status === "Reconnecting"
                     ? t.tunnel.statusReconnecting
-                    : tunnelStatus?.status === "Connecting"
-                      ? t.tunnel.statusConnecting
-                      : tunnelStatus?.status === "AuthenticationError"
-                        ? t.tunnel.statusAuthError
-                        : tunnelStatus?.status === "Stopped"
-                          ? t.tunnel.statusStopped
-                          : t.tunnel.statusNotConfigured}
+                    : tunnelStatus?.status === "Starting"
+                      ? t.tunnel.statusStarting
+                      : tunnelStatus?.status === "Connecting"
+                        ? t.tunnel.statusConnecting
+                        : tunnelStatus?.status === "AuthenticationError"
+                          ? t.tunnel.statusAuthError
+                          : tunnelStatus?.status === "NeedsAttention"
+                            ? t.tunnel.statusNeedsAttention
+                            : tunnelStatus?.status === "RuntimeMissing"
+                              ? t.tunnel.statusMissingRuntime
+                              : tunnelStatus?.status === "HealthPortConflict"
+                                ? t.tunnel.statusPortConflict
+                                : tunnelStatus?.status === "LocalMcpUnavailable"
+                                  ? t.tunnel.statusMcpUnavailable
+                                  : tunnelStatus?.status === "Stopped"
+                                    ? t.tunnel.statusStopped
+                                    : t.tunnel.statusNotConfigured}
               </span>
             </div>
             <div className="text-xs text-theme-muted mt-1 truncate">

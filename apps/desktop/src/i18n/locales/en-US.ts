@@ -293,6 +293,18 @@ export const enUS: I18nDictionary = {
     errorConfigFailed: "Failed to save tunnel configuration. Please check the inputs and retry.",
     errorAuthFailed: "Tunnel credential validation failed. Please check your Runtime API Key.",
     errorPortConflict: "Health check port is already in use. Please select a different port in settings.",
+    reconnectingNotice: "Tunnel connection interrupted. Reconnecting automatically…",
+    needsAttentionNotice: "Connection failed, action required",
+    viewDiagnostics: "View Diagnostics",
+    hideDiagnostics: "Hide Diagnostics",
+    diagnosticsTitle: "Connection Diagnostics",
+    diagProcess: "Process State",
+    diagLocalHealth: "Local Health",
+    diagControlPlane: "Control Plane",
+    diagMcpSession: "MCP Session",
+    diagReconnectAttempts: "Reconnect Attempts",
+    diagLastError: "Last Error",
+    diagChildExitCode: "Child Exit Code",
   },
   modals: {
     authorize: {

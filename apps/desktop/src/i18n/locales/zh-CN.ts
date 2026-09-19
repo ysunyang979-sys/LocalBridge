@@ -293,6 +293,18 @@ export const zhCN: I18nDictionary = {
     errorConfigFailed: "无法保存隧道配置。请检查配置参数后重试。",
     errorAuthFailed: "隧道凭据验证失败，请确认 Runtime API Key 是否正确。",
     errorPortConflict: "健康检查端口已被占用，请在设置中更换端口。",
+    reconnectingNotice: "隧道连接短暂中断，正在自动恢复…",
+    needsAttentionNotice: "连接失败，需要处理",
+    viewDiagnostics: "查看诊断",
+    hideDiagnostics: "收起诊断",
+    diagnosticsTitle: "连接诊断信息",
+    diagProcess: "进程状态",
+    diagLocalHealth: "本地就绪状态",
+    diagControlPlane: "控制平面连接",
+    diagMcpSession: "MCP 会话状态",
+    diagReconnectAttempts: "重连尝试次数",
+    diagLastError: "最近错误",
+    diagChildExitCode: "进程退出码",
   },
   modals: {
     authorize: {
