@@ -712,6 +712,209 @@ export const TestStartResultSchema = z
   .strict();
 export type TestStartResult = z.infer<typeof TestStartResultSchema>;
 
+// 28. project.authorize
+export const ProjectAuthorizeParamsSchema = z
+  .object({
+    path: z.string(),
+    name: z.string().optional(),
+    accessMode: ProjectAccessModeSchema.default("read-only"),
+  })
+  .strict();
+export type ProjectAuthorizeParams = z.infer<typeof ProjectAuthorizeParamsSchema>;
+
+export const ProjectAuthorizeResultSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    root: z.string(),
+    enabled: z.boolean(),
+    accessMode: ProjectAccessModeSchema,
+    executionMode: ProjectExecutionModeSchema,
+  })
+  .strict();
+export type ProjectAuthorizeResult = z.infer<typeof ProjectAuthorizeResultSchema>;
+
+// 29. project.setAccess
+export const ProjectSetAccessParamsSchema = z
+  .object({
+    projectId: z.string(),
+    accessMode: ProjectAccessModeSchema,
+  })
+  .strict();
+export type ProjectSetAccessParams = z.infer<typeof ProjectSetAccessParamsSchema>;
+
+export const ProjectSetAccessResultSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    accessMode: ProjectAccessModeSchema,
+    executionMode: ProjectExecutionModeSchema,
+    cancelledJobsCount: z.number().int().default(0),
+  })
+  .strict();
+export type ProjectSetAccessResult = z.infer<typeof ProjectSetAccessResultSchema>;
+
+// 30. project.setExecution
+export const ProjectSetExecutionParamsSchema = z
+  .object({
+    projectId: z.string(),
+    executionMode: ProjectExecutionModeSchema,
+  })
+  .strict();
+export type ProjectSetExecutionParams = z.infer<typeof ProjectSetExecutionParamsSchema>;
+
+export const ProjectSetExecutionResultSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    executionMode: ProjectExecutionModeSchema,
+    cancelledJobsCount: z.number().int().default(0),
+  })
+  .strict();
+export type ProjectSetExecutionResult = z.infer<typeof ProjectSetExecutionResultSchema>;
+
+// 31. project.remove
+export const ProjectRemoveParamsSchema = z
+  .object({
+    projectId: z.string(),
+  })
+  .strict();
+export type ProjectRemoveParams = z.infer<typeof ProjectRemoveParamsSchema>;
+
+export const ProjectRemoveResultSchema = z
+  .object({
+    id: z.string(),
+    removed: z.boolean(),
+    cancelledJobsCount: z.number().int().default(0),
+  })
+  .strict();
+export type ProjectRemoveResult = z.infer<typeof ProjectRemoveResultSchema>;
+
+// 32. project.enable
+export const ProjectEnableParamsSchema = z
+  .object({
+    projectId: z.string(),
+  })
+  .strict();
+export type ProjectEnableParams = z.infer<typeof ProjectEnableParamsSchema>;
+
+export const ProjectEnableResultSchema = z
+  .object({
+    id: z.string(),
+    enabled: z.literal(true),
+  })
+  .strict();
+export type ProjectEnableResult = z.infer<typeof ProjectEnableResultSchema>;
+
+// 33. project.disable
+export const ProjectDisableParamsSchema = z
+  .object({
+    projectId: z.string(),
+  })
+  .strict();
+export type ProjectDisableParams = z.infer<typeof ProjectDisableParamsSchema>;
+
+export const ProjectDisableResultSchema = z
+  .object({
+    id: z.string(),
+    disabled: z.literal(true),
+    cancelledJobsCount: z.number().int().default(0),
+  })
+  .strict();
+export type ProjectDisableResult = z.infer<typeof ProjectDisableResultSchema>;
+
+// Approvals
+export const ApprovalRiskSchema = z.enum(["CAUTION", "DANGEROUS"]);
+export type ApprovalRisk = z.infer<typeof ApprovalRiskSchema>;
+
+export const ApprovalStatusSchema = z.enum(["pending", "approved", "denied", "expired"]);
+export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
+
+export const ApprovalRequestSchema = z
+  .object({
+    id: z.string(),
+    projectId: z.string(),
+    operation: z.string(),
+    risk: ApprovalRiskSchema,
+    summary: z.string(),
+    payloadHash: z.string(),
+    createdAt: z.number().int(),
+    expiresAt: z.number().int(),
+    status: ApprovalStatusSchema,
+    resolvedAt: z.number().int().nullable().optional(),
+    resolvedBy: z.string().nullable().optional(),
+  })
+  .strict();
+export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
+
+// 34. approval.create
+export const ApprovalCreateParamsSchema = z
+  .object({
+    projectId: z.string(),
+    operation: z.string(),
+    risk: ApprovalRiskSchema,
+    summary: z.string(),
+    payloadHash: z.string(),
+    timeoutMs: z.number().int().min(1000).max(3600000).default(300000),
+  })
+  .strict();
+export type ApprovalCreateParams = z.infer<typeof ApprovalCreateParamsSchema>;
+
+export const ApprovalCreateResultSchema = ApprovalRequestSchema;
+export type ApprovalCreateResult = z.infer<typeof ApprovalCreateResultSchema>;
+
+// 35. approval.resolve
+export const ApprovalResolveParamsSchema = z
+  .object({
+    approvalId: z.string(),
+    action: z.enum(["approve", "deny"]),
+    resolvedBy: z.string().default("local-user"),
+  })
+  .strict();
+export type ApprovalResolveParams = z.infer<typeof ApprovalResolveParamsSchema>;
+
+export const ApprovalResolveResultSchema = ApprovalRequestSchema;
+export type ApprovalResolveResult = z.infer<typeof ApprovalResolveResultSchema>;
+
+// 36. approval.list
+export const ApprovalListParamsSchema = z
+  .object({
+    projectId: z.string().optional(),
+    status: ApprovalStatusSchema.optional(),
+  })
+  .strict();
+export type ApprovalListParams = z.infer<typeof ApprovalListParamsSchema>;
+
+export const ApprovalListResultSchema = z.array(ApprovalRequestSchema);
+export type ApprovalListResult = z.infer<typeof ApprovalListResultSchema>;
+
+// 37. approval.get
+export const ApprovalGetParamsSchema = z
+  .object({
+    approvalId: z.string(),
+  })
+  .strict();
+export type ApprovalGetParams = z.infer<typeof ApprovalGetParamsSchema>;
+
+export const ApprovalGetResultSchema = ApprovalRequestSchema;
+export type ApprovalGetResult = z.infer<typeof ApprovalGetResultSchema>;
+
+// 38. job.cancelAll
+export const JobCancelAllParamsSchema = z
+  .object({
+    reason: z.string().optional(),
+  })
+  .strict();
+export type JobCancelAllParams = z.infer<typeof JobCancelAllParamsSchema>;
+
+export const JobCancelAllResultSchema = z
+  .object({
+    cancelledCount: z.number().int().nonnegative(),
+    jobIds: z.array(z.string()),
+  })
+  .strict();
+export type JobCancelAllResult = z.infer<typeof JobCancelAllResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -817,6 +1020,50 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.TestStart]: {
     params: TestStartParams;
     result: TestStartResult;
+  };
+  [RunnerRpcMethods.ProjectAuthorize]: {
+    params: ProjectAuthorizeParams;
+    result: ProjectAuthorizeResult;
+  };
+  [RunnerRpcMethods.ProjectSetAccess]: {
+    params: ProjectSetAccessParams;
+    result: ProjectSetAccessResult;
+  };
+  [RunnerRpcMethods.ProjectSetExecution]: {
+    params: ProjectSetExecutionParams;
+    result: ProjectSetExecutionResult;
+  };
+  [RunnerRpcMethods.ProjectRemove]: {
+    params: ProjectRemoveParams;
+    result: ProjectRemoveResult;
+  };
+  [RunnerRpcMethods.ProjectEnable]: {
+    params: ProjectEnableParams;
+    result: ProjectEnableResult;
+  };
+  [RunnerRpcMethods.ProjectDisable]: {
+    params: ProjectDisableParams;
+    result: ProjectDisableResult;
+  };
+  [RunnerRpcMethods.ApprovalCreate]: {
+    params: ApprovalCreateParams;
+    result: ApprovalCreateResult;
+  };
+  [RunnerRpcMethods.ApprovalResolve]: {
+    params: ApprovalResolveParams;
+    result: ApprovalResolveResult;
+  };
+  [RunnerRpcMethods.ApprovalList]: {
+    params: ApprovalListParams;
+    result: ApprovalListResult;
+  };
+  [RunnerRpcMethods.ApprovalGet]: {
+    params: ApprovalGetParams;
+    result: ApprovalGetResult;
+  };
+  [RunnerRpcMethods.JobCancelAll]: {
+    params: JobCancelAllParams;
+    result: JobCancelAllResult;
   };
 }
 
@@ -927,5 +1174,49 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.TestStart]: {
     params: TestStartParamsSchema,
     result: TestStartResultSchema,
+  },
+  [RunnerRpcMethods.ProjectAuthorize]: {
+    params: ProjectAuthorizeParamsSchema,
+    result: ProjectAuthorizeResultSchema,
+  },
+  [RunnerRpcMethods.ProjectSetAccess]: {
+    params: ProjectSetAccessParamsSchema,
+    result: ProjectSetAccessResultSchema,
+  },
+  [RunnerRpcMethods.ProjectSetExecution]: {
+    params: ProjectSetExecutionParamsSchema,
+    result: ProjectSetExecutionResultSchema,
+  },
+  [RunnerRpcMethods.ProjectRemove]: {
+    params: ProjectRemoveParamsSchema,
+    result: ProjectRemoveResultSchema,
+  },
+  [RunnerRpcMethods.ProjectEnable]: {
+    params: ProjectEnableParamsSchema,
+    result: ProjectEnableResultSchema,
+  },
+  [RunnerRpcMethods.ProjectDisable]: {
+    params: ProjectDisableParamsSchema,
+    result: ProjectDisableResultSchema,
+  },
+  [RunnerRpcMethods.ApprovalCreate]: {
+    params: ApprovalCreateParamsSchema,
+    result: ApprovalCreateResultSchema,
+  },
+  [RunnerRpcMethods.ApprovalResolve]: {
+    params: ApprovalResolveParamsSchema,
+    result: ApprovalResolveResultSchema,
+  },
+  [RunnerRpcMethods.ApprovalList]: {
+    params: ApprovalListParamsSchema,
+    result: ApprovalListResultSchema,
+  },
+  [RunnerRpcMethods.ApprovalGet]: {
+    params: ApprovalGetParamsSchema,
+    result: ApprovalGetResultSchema,
+  },
+  [RunnerRpcMethods.JobCancelAll]: {
+    params: JobCancelAllParamsSchema,
+    result: JobCancelAllResultSchema,
   },
 } as const;

@@ -26,6 +26,17 @@ export const RunnerRpcMethods = {
   JobList: "job.list",
   BuildStart: "build.start",
   TestStart: "test.start",
+  ProjectAuthorize: "project.authorize",
+  ProjectSetAccess: "project.setAccess",
+  ProjectSetExecution: "project.setExecution",
+  ProjectRemove: "project.remove",
+  ProjectEnable: "project.enable",
+  ProjectDisable: "project.disable",
+  ApprovalCreate: "approval.create",
+  ApprovalResolve: "approval.resolve",
+  ApprovalList: "approval.list",
+  ApprovalGet: "approval.get",
+  JobCancelAll: "job.cancelAll",
 } as const;
 
 export type RunnerRpcMethod =

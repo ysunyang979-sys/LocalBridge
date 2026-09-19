@@ -40,9 +40,21 @@ import { createJobStartHandler } from "./rpc/handlers/job-start.js";
 import { createJobStatusHandler } from "./rpc/handlers/job-status.js";
 import { createJobLogsHandler } from "./rpc/handlers/job-logs.js";
 import { createJobCancelHandler } from "./rpc/handlers/job-cancel.js";
+import { createJobCancelAllHandler } from "./rpc/handlers/job-cancel-all.js";
 import { createJobListHandler } from "./rpc/handlers/job-list.js";
 import { createBuildStartHandler } from "./rpc/handlers/build-start.js";
 import { createTestStartHandler } from "./rpc/handlers/test-start.js";
+import { createProjectAuthorizeHandler } from "./rpc/handlers/project-authorize.js";
+import { createProjectSetAccessHandler } from "./rpc/handlers/project-set-access.js";
+import { createProjectSetExecutionHandler } from "./rpc/handlers/project-set-execution.js";
+import { createProjectRemoveHandler } from "./rpc/handlers/project-remove.js";
+import { createProjectEnableHandler } from "./rpc/handlers/project-enable.js";
+import { createProjectDisableHandler } from "./rpc/handlers/project-disable.js";
+import { createApprovalCreateHandler } from "./rpc/handlers/approval-create.js";
+import { createApprovalResolveHandler } from "./rpc/handlers/approval-resolve.js";
+import { createApprovalListHandler } from "./rpc/handlers/approval-list.js";
+import { createApprovalGetHandler } from "./rpc/handlers/approval-get.js";
+import { ApprovalManager } from "./approvals/index.js";
 import { ProjectRegistry } from "./projects/index.js";
 import { FilesystemService } from "./filesystem/index.js";
 import { BackupService } from "./backup/index.js";
@@ -54,7 +66,7 @@ import {
 } from "./process/index.js";
 import { JobManager } from "./jobs/index.js";
 
-export const RUNNER_VERSION = "0.10.0";
+export const RUNNER_VERSION = "0.11.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -76,6 +88,7 @@ export class LocalBridgeRunner {
   readonly processRunner: ProcessRunner;
   readonly commandExecutionService: CommandExecutionService;
   readonly jobManager: JobManager;
+  readonly approvalManager: ApprovalManager;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -152,6 +165,8 @@ export class LocalBridgeRunner {
       runnerStateDir,
       this.logger
     );
+
+    this.approvalManager = new ApprovalManager(this.logger);
 
     this.rpcRouter = new RpcRouter(this.logger);
     this.registerDefaultHandlers();
@@ -295,6 +310,61 @@ export class LocalBridgeRunner {
       RunnerRpcMethods.TestStart,
       createTestStartHandler(this.jobManager)
     );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectAuthorize,
+      createProjectAuthorizeHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectSetAccess,
+      createProjectSetAccessHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectSetExecution,
+      createProjectSetExecutionHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectRemove,
+      createProjectRemoveHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectEnable,
+      createProjectEnableHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectDisable,
+      createProjectDisableHandler(this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ApprovalCreate,
+      createApprovalCreateHandler(this.approvalManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ApprovalResolve,
+      createApprovalResolveHandler(this.approvalManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ApprovalList,
+      createApprovalListHandler(this.approvalManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ApprovalGet,
+      createApprovalGetHandler(this.approvalManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.JobCancelAll,
+      createJobCancelAllHandler(this.jobManager)
+    );
   }
 
   get router(): RpcRouter {
@@ -328,6 +398,7 @@ export class LocalBridgeRunner {
     this.reconnectController.cancel();
     this.heartbeatMonitor.stop();
     await this.jobManager.stop();
+    this.approvalManager.expireAll();
 
     if (this.client) {
       this.logger.info("Closing WebSocket connection to server...");

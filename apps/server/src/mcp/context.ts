@@ -16,6 +16,20 @@ export interface McpContextDeps {
   logger?: Logger;
 }
 
+export interface AuditRecord {
+  id: string;
+  timestamp: string;
+  event: string;
+  principalId?: string;
+  authType?: string;
+  toolName: string;
+  projectId?: string;
+  runnerId?: string;
+  durationMs?: number;
+  resultStatus?: "success" | "error";
+  errorCode?: string;
+}
+
 export class McpContext {
   public readonly projectService: ServerProjectService;
   public readonly runnerRegistry: RunnerRegistry;
@@ -25,11 +39,30 @@ export class McpContext {
   // In-memory mapping from jobId to runnerId for background jobs
   private readonly jobToRunnerMap = new Map<string, string>();
 
+  // Global pause state for AI access
+  private isPausedState = false;
+
+  // In-memory sanitized audit log ring buffer (up to 500 events)
+  private readonly auditLogBuffer: AuditRecord[] = [];
+  private readonly maxAuditLogSize = 500;
+
   constructor(deps: McpContextDeps) {
     this.projectService = deps.projectService;
     this.runnerRegistry = deps.runnerRegistry;
     this.rpcService = deps.rpcService;
     this.logger = deps.logger;
+  }
+
+  isPaused(): boolean {
+    return this.isPausedState;
+  }
+
+  setPaused(val: boolean): void {
+    this.isPausedState = val;
+  }
+
+  getAuditEvents(limit = 100): AuditRecord[] {
+    return [...this.auditLogBuffer].reverse().slice(0, limit);
   }
 
   /**
@@ -133,6 +166,24 @@ export class McpContext {
       errorCode?: string;
     }
   ): void {
+    const record: AuditRecord = {
+      id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      timestamp: new Date().toISOString(),
+      event,
+      principalId: data.principal?.id,
+      authType: data.principal?.authType,
+      toolName: data.toolName,
+      projectId: data.projectId,
+      runnerId: data.runnerId,
+      durationMs: data.durationMs,
+      resultStatus: data.resultStatus,
+      errorCode: data.errorCode,
+    };
+    this.auditLogBuffer.push(record);
+    if (this.auditLogBuffer.length > this.maxAuditLogSize) {
+      this.auditLogBuffer.shift();
+    }
+
     this.logger?.info(
       {
         event,

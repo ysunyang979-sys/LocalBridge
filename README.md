@@ -412,7 +412,7 @@ LocalBridge Phase 9 introduces a robust, asynchronous background job execution s
 > **Background Job Trust Boundary**: Background jobs execute with local OS user privileges. LocalBridge provides strict sandboxing, path validation, environment variable stripping, resource limits, and process tree termination, but does not provide hardware virtualization or OS container isolation. Grant `project-code` permission only to trusted repositories.
 
 > [!IMPORTANT]
-> **Phase 10 Status Notice**: LocalBridge has completed Phase 10. The MCP 2026-07-28 Streamable HTTP Server (`POST /mcp`), 23 safe typed tools, cross-token isolation, DNS rebinding hardening, and official MCP SDK client integration are fully operational.
+> **Phase 11 Status Notice**: LocalBridge has completed Phase 11. The Desktop Control Center (`apps/desktop`), Loopback Management Channel, Human-in-the-Loop Approval System, and Emergency Stop controls are fully operational.
 
 ### 12. MCP 2026-07-28 Server & AI Client Integration (Phase 10)
 
@@ -426,7 +426,7 @@ LocalBridge Phase 10 exposes 23 safe, typed, user-authorized tools to external A
   - `Authorization: Bearer lb_...`: Mandatory MCP bearer token.
   - `Mcp-Method`: If provided, strictly validated against the request body method (e.g. `tools/list`, `tools/call`).
   - `Mcp-Name`: If provided on `tools/call`, strictly validated against `params.name`.
-- **Diagnostics**: Loopback-only `GET /api/mcp/status` returns metadata (`{ mcpActive: true, version: "0.10.0", protocolVersion: "2026-07-28", toolsCount: 23 }`).
+- **Diagnostics**: Loopback-only `GET /api/mcp/status` returns metadata (`{ mcpActive: true, version: "0.11.0", protocolVersion: "2026-07-28", toolsCount: 23 }`).
 
 #### The 23 Safe Official MCP Tools
 LocalBridge exposes exactly 23 audited tools across 5 domains:
@@ -452,9 +452,33 @@ The MCP interface strictly excludes:
 - **Payload Bounds**: Enforces a strict 1 MiB (`1,048,576 bytes`) request body limit, rejecting oversized requests with 413 `Payload Too Large`.
 - **Rate & Concurrency Limits**: Token-based bucket limiting enforcing at most 60 requests per minute and a maximum of 10 concurrent requests per token.
 
-### 13. Management API Security Boundary
+### 13. Desktop Control Center & Human Approval (Phase 11)
 
-- **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/runners/:id/ping`, and `/api/runners/:id/system-info`) are intended exclusively for local administrative inspection and trusted loopback access.
+LocalBridge Phase 11 establishes a full GUI desktop control center (`apps/desktop/`) built with Tauri 2, React, TypeScript, and Vite, pairing it with a local administrative channel and human-in-the-loop approval workflow.
+
+#### Desktop Control Center (`apps/desktop`)
+- **Modern Tauri 2 Architecture**: Lightweight desktop client rendering reactive management dashboards, project configuration cards, job trackers, audit logs, and token provisioning interfaces.
+- **Hardened Tauri Security Boundary**: Webview is strictly scoped to `core:default` and `dialog:default`. Direct shell spawning (`tauri-plugin-shell`) and direct disk write (`tauri-plugin-fs`) are omitted by design.
+- **Native OS Dialogs**: Secure folder selection via native OS directory dialogs.
+
+#### Dedicated Loopback Management Channel
+- **Loopback-Only REST API**: Administrative endpoints (`/api/management/*`, `/api/tokens`, `/api/pause`, `/api/emergency-stop`, `/api/approvals`, `/api/jobs`, `/api/audit`) bind strictly to loopback interfaces (`127.0.0.1`, `::1`, `localhost`).
+- **Complete MCP Separation**: External AI clients connected over Streamable HTTP (`POST /mcp`) have **zero access** to loopback administrative routes and cannot create tokens, change permissions, or approve their own actions.
+
+#### Human-in-the-Loop Approval Center
+- **Unique Request Identifiers**: `approval_<UUIDv4>` generated for sensitive actions requiring human elevation.
+- **5-Minute Auto-Expiry**: Requests automatically expire after 300 seconds if not reviewed.
+- **SHA-256 Parameter Hash Binding**: Sensitive parameters (commands, script names, target paths) are hashed upon creation. Resolution validates that arguments have not been altered or substituted.
+- **Single-Use Guarantee**: Approvals can be resolved exactly once; replay attempts fail immediately with `APPROVAL_ALREADY_RESOLVED`.
+- **Runner Teardown Invalidation**: When the runner process terminates or restarts, all unconsumed approvals are expired.
+
+#### Emergency Kill Switches
+- **Global Pause (`Pause AI Access`)**: One-click toggle instantly returns HTTP 503 `Service Paused` to all inbound AI MCP requests without disconnecting the Runner daemon or GUI.
+- **Emergency Stop**: Instantly triggers process tree termination (`taskkill.exe /PID <pid> /T /F` on Windows) across all running background jobs, cancels queued operations, and locks MCP access.
+
+### 14. Management API Security Boundary
+
+- **Loopback Default (`127.0.0.1`)**: LocalBridge Server binds to `127.0.0.1` by default. Management REST endpoints (such as `/api/status`, `/api/runners`, `/api/projects`, `/api/management/*`, `/api/tokens`, and `/api/emergency-stop`) are intended exclusively for local administrative inspection and trusted loopback access.
 - **Access & Exposure Disclaimer**: If exposing the LocalBridge Server to non-loopback network interfaces or reverse proxies, administrative `/api/*` management routes MUST be protected behind appropriate authentication or reverse-proxy firewall rules to prevent unauthorized discovery or diagnostic probing.
 
 ---
@@ -462,3 +486,4 @@ The MCP interface strictly excludes:
 ## License
 
 [MIT](LICENSE)
+

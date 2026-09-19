@@ -9,7 +9,7 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "build": "pnpm -r --filter=./packages/* run build && pnpm --filter=@localbridge/server run build && pnpm --filter=@localbridge/runner run build",
+    "build": "pnpm -r --filter=./packages/* run build && pnpm --filter=@localbridge/server run build && pnpm --filter=@localbridge/runner run build && pnpm --filter=@localbridge/desktop run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",

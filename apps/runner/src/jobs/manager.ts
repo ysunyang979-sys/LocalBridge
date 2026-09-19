@@ -94,6 +94,24 @@ export class JobManager {
   }
 
   /**
+   * Cancel all currently running jobs across all projects (e.g. for Emergency Stop).
+   */
+  async cancelAllJobs(reason?: string): Promise<{ cancelledCount: number; jobIds: string[] }> {
+    const jobIds: string[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.state === "running" || job.state === "queued") {
+        this.logger?.warn({ jobId: job.id, reason }, "Emergency stop: aborting active job");
+        await this.cancelJob(job.id).catch(() => {});
+        jobIds.push(job.id);
+      }
+    }
+    return {
+      cancelledCount: jobIds.length,
+      jobIds,
+    };
+  }
+
+  /**
    * Check runner and project concurrency bounds.
    */
   private checkCapacity(projectId: string): void {

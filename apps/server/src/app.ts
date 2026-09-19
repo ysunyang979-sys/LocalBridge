@@ -21,6 +21,7 @@ import { statusRoutes } from "./routes/status.js";
 import { runnerWsRoute } from "./routes/runner-ws.js";
 import { runnersRoutes } from "./routes/runners.js";
 import { projectsRoutes } from "./routes/projects.js";
+import { managementRoutes } from "./routes/management.js";
 import { mcpRoutes, McpContext, McpRateLimiter } from "./mcp/index.js";
 
 export interface BuildAppOptions {
@@ -146,9 +147,9 @@ export async function buildApp(
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "0.10.0",
+    version: "0.11.0",
     getRunnersConnected: () => runnerRegistry.count(),
-    isMcpActive: () => true,
+    isMcpActive: () => !mcpContext.isPaused(),
   });
   await app.register(runnersRoutes, {
     prefix: "/api",
@@ -159,6 +160,14 @@ export async function buildApp(
     prefix: "/api",
     projectService,
   });
+  await app.register(managementRoutes, {
+    prefix: "/api",
+    tokenService,
+    runnerRegistry,
+    rpcService,
+    projectService,
+    mcpContext,
+  });
 
   // Register WebSocket route for runner connections
   await app.register(runnerWsRoute, {
@@ -166,7 +175,7 @@ export async function buildApp(
     runnerRegistry,
     projectService,
     db: db.db,
-    serverVersion: "0.10.0",
+    serverVersion: "0.11.0",
     heartbeatIntervalMs: 15000,
   });
 

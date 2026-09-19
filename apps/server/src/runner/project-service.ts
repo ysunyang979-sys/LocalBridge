@@ -30,7 +30,20 @@ export class ServerProjectService {
     this.stmtGetProject = this.db.prepare(
       "SELECT * FROM projects WHERE id = ?"
     );
+    this.stmtRemoveProject = this.db.prepare(
+      "DELETE FROM projects WHERE id = ?"
+    );
+    this.stmtUpdateAccess = this.db.prepare(
+      "UPDATE projects SET access_mode = ?, last_seen_at = ? WHERE id = ?"
+    );
+    this.stmtUpdateEnabled = this.db.prepare(
+      "UPDATE projects SET enabled = ?, last_seen_at = ? WHERE id = ?"
+    );
   }
+
+  private readonly stmtRemoveProject: Database.Statement;
+  private readonly stmtUpdateAccess: Database.Statement;
+  private readonly stmtUpdateEnabled: Database.Statement;
 
   /**
    * Synchronize public project metadata reported by a connected Runner.
@@ -111,5 +124,20 @@ export class ServerProjectService {
       available: runnerOnline && isEnabled,
       accessMode: row.access_mode === "read-write" ? "read-write" : "read-only",
     };
+  }
+
+  removeProject(projectId: string): void {
+    if (!this.db.open) return;
+    this.stmtRemoveProject.run(projectId);
+  }
+
+  updateProjectAccess(projectId: string, accessMode: string): void {
+    if (!this.db.open) return;
+    this.stmtUpdateAccess.run(accessMode, Date.now(), projectId);
+  }
+
+  updateProjectEnabled(projectId: string, enabled: boolean): void {
+    if (!this.db.open) return;
+    this.stmtUpdateEnabled.run(enabled ? 1 : 0, Date.now(), projectId);
   }
 }

@@ -414,7 +414,7 @@ LocalBridge Phase 9 引入了面向长时间运行的构建、测试及项目脚
 > **后台任务信任边界声明**：后台任务具有 Runner 进程宿主操作系统的同等用户权限。LocalBridge 提供了极其严苛的参数校验、路径限制、环境净化、缓冲区上限与超时终止机制，但并不提供操作系统内核级容器沙箱或虚拟机级物理隔离。用户必须仅对完全信任的代码与依赖项启用 `project-code` 模式。
 
 > [!IMPORTANT]
-> **Phase 10 状态声明**：LocalBridge 已完成 Phase 10。MCP 2026-07-28 流式 HTTP 服务端（`POST /mcp`）、23 个安全类型化工具、跨 Token 隔离防护、DNS 重绑定防御以及官方 MCP SDK 客户端集成均已全面就绪。
+> **Phase 11 状态声明**：LocalBridge 已完成 Phase 11。桌面管理控制中心（`apps/desktop`）、本地环回管理通道、人工审批系统（Human-in-the-Loop Approval）与紧急熔断控制均已全面就绪。
 
 ### 12. MCP 2026-07-28 服务端与 AI 客户端集成 (Phase 10)
 
@@ -428,7 +428,7 @@ LocalBridge Phase 10 通过官方 Model Context Protocol (MCP) 规范版本 `"20
   - `Authorization: Bearer lb_...`：必需的 MCP 客户端 Bearer 令牌。
   - `Mcp-Method`：若提供，必须严格与请求体中的 JSON-RPC 方法（如 `tools/list`、`tools/call`）匹配。
   - `Mcp-Name`：若在 `tools/call` 请求中提供，必须严格与 `params.name` 保持一致。
-- **诊断端点**：仅允许本地环回访问的 `GET /api/mcp/status` 返回 MCP 运行状态元数据（`{ mcpActive: true, version: "0.10.0", protocolVersion: "2026-07-28", toolsCount: 23 }`）。
+- **诊断端点**：仅允许本地环回访问的 `GET /api/mcp/status` 返回 MCP 运行状态元数据（`{ mcpActive: true, version: "0.11.0", protocolVersion: "2026-07-28", toolsCount: 23 }`）。
 
 #### 23 个安全官方 MCP 工具列表
 LocalBridge 严格向 MCP 暴露且仅暴露 23 个审计工具：
@@ -454,9 +454,33 @@ MCP 端点严格排除了以下高危能力：
 - **请求体积限制**：严格限制单个 MCP 请求体不超过 1 MiB（1,048,576 字节），超限返回 413 `Payload Too Large`。
 - **速率与并发限制**：基于令牌桶机制限制单令牌每分钟最多 60 次请求，最大并发度为 10。
 
-### 13. 管理 API 安全边界与本地访问说明
+### 13. 桌面控制中心与人工审批机制 (Phase 11)
 
-- **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/runners/:id/ping` 以及 `/api/runners/:id/system-info`）仅面向本地管理探针及受信任的环回访问。
+LocalBridge Phase 11 建立了基于 Tauri 2 + React + TypeScript + Vite 的原生桌面管理程序（`apps/desktop/`），配合本地环回管理通道与 Human-in-the-Loop 审批流程，实现免命令行、可视化、安全可控的桌面运维体系。
+
+#### 桌面控制中心 (`apps/desktop`)
+- **现代化 Tauri 2 架构**：轻量级桌面客户端，提供直观的运行状态概览、项目权限管控面板、后台任务追踪器、实时审计日志流与 MCP 令牌管理面板。
+- **严密 Tauri 权限沙箱**：Webview 权限严格收敛至 `core:default` 与 `dialog:default`。彻底剔除底层系统 Shell 插件（`tauri-plugin-shell`）与直接磁盘写入插件（`tauri-plugin-fs`），所有写操作均经由安全通道校验执行。
+- **原生文件系统选择器**：集成操作系统原生目录对话框，安全选取需授权的项目物理路径。
+
+#### 本地独占环回管理通道 (Loopback Management Channel)
+- **仅限本地环回 REST 路由**：管理端点（`/api/management/*`、`/api/tokens`、`/api/pause`、`/api/emergency-stop`、`/api/approvals`、`/api/jobs`、`/api/audit`）严格仅绑定并允许本地环回地址访问（`127.0.0.1`、`::1`、`localhost`）。
+- **外部 AI 完全隔离防护**：外部 AI 客户端通过 Streamable HTTP（`POST /mcp`）接入，**严禁且无法访问任何管理路由**，绝无可能创建/删除 Token、变更项目权限或对自己发起的审批请求进行自审批。
+
+#### 人工审批中心 (Approval Center)
+- **全局唯一审批标识**：对敏感越权或代码执行操作动态生成 `approval_<UUIDv4>` 凭证。
+- **5 分钟自动超时**：任何未在 300 秒内获得人工决断的审批请求将自动失效，杜绝悬挂权限残留。
+- **SHA-256 参数完整性校验**：创建审批时对敏感参数（执行命令、目标路径、工作目录等）进行 SHA-256 哈希固化。决断时严格比对哈希值，一旦检测到参数被篡改立即阻断。
+- **单次使用即销毁 (Single-Use)**：每个审批凭证仅允许决断与执行一次，严防重放攻击。
+- **Runner 关机即刻销毁**：Runner 进程断开或重启时，所有未决审批立即失效。
+
+#### 紧急熔断与访问冻结
+- **一键暂停 AI 访问 (Global Pause)**：桌面顶部控制栏提供实时开关，开启后所有进来的 AI MCP 请求将直接返回 HTTP 503 `Service Paused`，同时保持 Runner 进程及桌面程序正常运作。
+- **紧急熔断 (Emergency Stop)**：一键强制杀死当前 Runner 宿主机上所有正在运行的后台任务进程树（Windows 下通过 `taskkill.exe /PID <pid> /T /F`，POSIX 下通过进程组机制），并同步开启全局暂停。
+
+### 14. 管理 API 安全边界与本地访问说明
+
+- **默认监听环回地址 (`127.0.0.1`)**：LocalBridge Server 默认仅绑定到 `127.0.0.1`。管理 REST 端点（如 `/api/status`、`/api/runners`、`/api/projects`、`/api/management/*`、`/api/tokens` 以及 `/api/emergency-stop`）仅面向本地管理探针及受信任的环回访问。
 - **外部暴露安全免责声明**：若将 LocalBridge Server 绑定到非环回网卡（如 `0.0.0.0`）或反向代理，管理路由 `/api/*` 必须通过鉴权网关或反向代理防火墙进行严格访问控制，以防未授权设备进行信息嗅探与诊断探测。
 
 ---
@@ -464,3 +488,4 @@ MCP 端点严格排除了以下高危能力：
 ## 开源协议
 
 [MIT](LICENSE)
+

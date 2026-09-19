@@ -57,8 +57,9 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
     }
 
     return reply.status(200).send({
-      mcpActive: true,
-      version: "0.10.0",
+      mcpActive: !mcpContext.isPaused(),
+      paused: mcpContext.isPaused(),
+      version: "0.11.0",
       protocolVersion: MCP_PROTOCOL_VERSION,
       toolsCount: 23,
     });
@@ -87,6 +88,24 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
       bodyLimit: MAX_MCP_BODY_BYTES,
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // 3.0 Global Pause Check
+      if (mcpContext.isPaused()) {
+        const bodyId =
+          typeof request.body === "object" &&
+          request.body !== null &&
+          !Array.isArray(request.body)
+            ? (request.body as Record<string, any>).id ?? null
+            : null;
+        return reply.status(503).send({
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: "LocalBridge AI access is paused by local user",
+          },
+          id: bodyId,
+        });
+      }
+
       // 3.1 DNS Rebinding Protection: Host Header Validation
       const host = request.headers.host;
       if (!isHostAllowed(host)) {
