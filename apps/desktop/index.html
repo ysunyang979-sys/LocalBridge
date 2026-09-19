@@ -1,11 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <title>LocalBridge Control Center</title>
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem("localbridge_theme") || "system";
+          var resolved = mode;
+          if (mode === "system") {
+            resolved =
+              window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          }
+          document.documentElement.setAttribute("data-theme", resolved);
+          document.documentElement.style.colorScheme = resolved;
+
+          var lang = localStorage.getItem("localbridge_language");
+          if (!lang) {
+            var browserLang = (navigator.language || "").toLowerCase();
+            lang = browserLang.startsWith("zh") ? "zh-CN" : "en-US";
+          }
+          document.documentElement.lang = lang;
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-slate-900 text-slate-100 antialiased selection:bg-indigo-500 selection:text-white">
+  <body class="antialiased selection:bg-indigo-500 selection:text-white">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

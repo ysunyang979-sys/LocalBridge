@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { X, ShieldAlert, CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
 import type { Approval } from "../../types.js";
 import { bridge } from "../../api/bridge.js";
+import { useTranslation } from "../../i18n/useTranslation.js";
 
 interface ResolveApprovalModalProps {
   approval: Approval | null;
@@ -16,6 +17,7 @@ export const ResolveApprovalModal: React.FC<ResolveApprovalModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { t, translateError } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -44,7 +46,7 @@ export const ResolveApprovalModal: React.FC<ResolveApprovalModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || `Failed to ${action} approval`);
+      setError(translateError(err.code, err.message));
     } finally {
       setLoading(false);
     }
@@ -57,17 +59,17 @@ export const ResolveApprovalModal: React.FC<ResolveApprovalModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-theme-card border border-theme-card rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-semibold text-slate-100">
-            <ShieldAlert className="w-5 h-5 text-amber-400" />
-            <span>Human Approval Request</span>
+        <div className="px-6 py-4 border-b border-theme-subtle flex items-center justify-between">
+          <div className="flex items-center gap-2 font-semibold text-theme-primary">
+            <ShieldAlert className="w-5 h-5 text-amber-500" />
+            <span>{t.approvals.requestDetails}</span>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition"
+            className="text-theme-muted hover:text-theme-primary p-1 rounded-lg hover:bg-theme-card-hover transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -76,14 +78,14 @@ export const ResolveApprovalModal: React.FC<ResolveApprovalModalProps> = ({
         {/* Content */}
         <div className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-lg text-xs text-red-300 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-lg text-xs text-red-500 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           {/* Status & Expiry Bar */}
-          <div className="flex items-center justify-between p-3 bg-slate-950 rounded-lg border border-slate-800">
+          <div className="flex items-center justify-between p-3 bg-theme-card-muted rounded-lg border border-theme-subtle">
             <div className="flex items-center gap-2">
               <span
                 className={`badge ${
@@ -92,18 +94,18 @@ export const ResolveApprovalModal: React.FC<ResolveApprovalModalProps> = ({
               >
                 {approval.risk}
               </span>
-              <span className="text-xs text-slate-400 font-mono">
+              <span className="text-xs text-theme-muted font-mono">
                 {approval.operation}
               </span>
             </div>
 
             <div className="flex items-center gap-1.5 text-xs">
-              <Clock className="w-4 h-4 text-slate-400" />
+              <Clock className="w-4 h-4 text-theme-muted" />
               {isExpired ? (
-                <span className="text-red-400 font-semibold">EXPIRED</span>
+                <span className="text-red-500 font-semibold">{t.approvals.expired}</span>
               ) : (
-                <span className="text-slate-300 font-mono">
-                  {formatSeconds(timeLeft)} remaining
+                <span className="text-theme-primary font-mono">
+                  {formatSeconds(timeLeft)}
                 </span>
               )}
             </div>
@@ -111,55 +113,55 @@ export const ResolveApprovalModal: React.FC<ResolveApprovalModalProps> = ({
 
           {/* Summary Box */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
-              Operation Summary
+            <label className="block text-xs font-medium text-theme-secondary mb-1">
+              {t.approvals.operation}
             </label>
-            <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 font-medium">
+            <div className="p-3 bg-theme-card-muted border border-theme-subtle rounded-lg text-sm text-theme-primary font-medium">
               {approval.summary}
             </div>
           </div>
 
           {/* Details & Hashes */}
           <div className="space-y-2 text-xs">
-            <div className="flex justify-between py-1 border-b border-slate-800/60">
-              <span className="text-slate-400">Request ID</span>
-              <span className="font-mono text-slate-300 select-all">{approval.id}</span>
+            <div className="flex justify-between py-1 border-b border-theme-subtle">
+              <span className="text-theme-muted">Request ID</span>
+              <span className="font-mono text-theme-primary select-all">{approval.id}</span>
             </div>
-            <div className="flex justify-between py-1 border-b border-slate-800/60">
-              <span className="text-slate-400">Project ID</span>
-              <span className="font-mono text-slate-300">{approval.projectId}</span>
+            <div className="flex justify-between py-1 border-b border-theme-subtle">
+              <span className="text-theme-muted">{t.approvals.project}</span>
+              <span className="font-mono text-theme-primary">{approval.projectId}</span>
             </div>
-            <div className="flex justify-between py-1 border-b border-slate-800/60">
-              <span className="text-slate-400">Payload SHA-256 Hash</span>
-              <span className="font-mono text-indigo-300 text-[11px] truncate max-w-[280px]" title={approval.payloadHash}>
+            <div className="flex justify-between py-1 border-b border-theme-subtle">
+              <span className="text-theme-muted">{t.approvals.payloadHash}</span>
+              <span className="font-mono text-indigo-500 text-[11px] truncate max-w-[280px]" title={approval.payloadHash}>
                 {approval.payloadHash}
               </span>
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-400 leading-relaxed italic">
-            * Parameter binding ensures this approval is cryptographically tied to the exact command arguments and expires after one use.
+          <p className="text-[11px] text-theme-muted leading-relaxed italic">
+            * {t.approvals.autoExpiresNotice}
           </p>
 
           {/* Action Buttons */}
-          <div className="pt-4 border-t border-slate-800 flex justify-end gap-3">
+          <div className="pt-4 border-t border-theme-subtle flex justify-end gap-3">
             <button
               type="button"
               disabled={loading || isExpired}
               onClick={() => handleResolve("deny")}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-red-300 border border-slate-700 disabled:opacity-40 transition"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-theme-card-muted hover:bg-theme-card-hover text-red-500 border border-theme-subtle disabled:opacity-40 transition"
             >
-              <XCircle className="w-4 h-4 text-red-400" />
-              <span>Deny</span>
+              <XCircle className="w-4 h-4 text-red-500" />
+              <span>{t.approvals.denyBtn}</span>
             </button>
             <button
               type="button"
               disabled={loading || isExpired}
               onClick={() => handleResolve("approve")}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-950/40 disabled:opacity-40 transition"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-40 transition"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Approve One-Time Execution</span>
+              <span>{t.approvals.approveBtn}</span>
             </button>
           </div>
         </div>

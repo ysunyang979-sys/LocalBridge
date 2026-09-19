@@ -67,7 +67,7 @@ import {
 } from "./process/index.js";
 import { JobManager } from "./jobs/index.js";
 
-export const RUNNER_VERSION = "1.0.1";
+export const RUNNER_VERSION = "1.1.0";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 

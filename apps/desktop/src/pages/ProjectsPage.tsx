@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Project } from "../types.js";
 import { bridge } from "../api/bridge.js";
+import { useTranslation } from "../i18n/useTranslation.js";
 
 interface ProjectsPageProps {
   projects: Project[];
@@ -21,6 +22,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
   onOpenAuthorizeModal,
   onRefresh,
 }) => {
+  const { t, translateError } = useTranslation();
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
       }
       onRefresh();
     } catch (err: any) {
-      setError(err.message || "Failed to update project status");
+      setError(translateError(err.code, err.message));
     } finally {
       setLoadingId(null);
     }
@@ -50,7 +52,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
       await bridge.setProjectAccess(project.id, newMode);
       onRefresh();
     } catch (err: any) {
-      setError(err.message || "Failed to change access mode");
+      setError(translateError(err.code, err.message));
     } finally {
       setLoadingId(null);
     }
@@ -73,7 +75,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
       await bridge.setProjectExecution(project.id, newMode);
       onRefresh();
     } catch (err: any) {
-      setError(err.message || "Failed to change execution mode");
+      setError(translateError(err.code, err.message));
     } finally {
       setLoadingId(null);
     }
@@ -87,7 +89,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
       setDeleteConfirmId(null);
       onRefresh();
     } catch (err: any) {
-      setError(err.message || "Failed to remove project");
+      setError(translateError(err.code, err.message));
     } finally {
       setLoadingId(null);
     }
@@ -98,40 +100,36 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-100">Authorized Projects</h2>
-          <p className="text-xs text-slate-400">
-            Control which local folders AI agents can access and what permissions they hold.
-          </p>
+          <h2 className="text-xl font-bold text-theme-primary">{t.projects.title}</h2>
+          <p className="text-xs text-theme-muted">{t.projects.subtitle}</p>
         </div>
         <button
           onClick={onOpenAuthorizeModal}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs shadow-sm transition"
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-xs shadow-sm transition"
         >
           <Plus className="w-4 h-4" />
-          <span>Authorize Folder</span>
+          <span>{t.projects.authorizeBtn}</span>
         </button>
       </div>
 
       {error && (
-        <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-lg text-xs text-red-300 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+        <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Projects List */}
       {projects.length === 0 ? (
-        <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-          <FolderLock className="w-10 h-10 text-slate-600 mx-auto" />
-          <div className="text-slate-300 font-semibold text-sm">No Projects Authorized</div>
-          <p className="text-slate-500 text-xs max-w-md mx-auto">
-            AI tools cannot access any local files until you authorize a local folder root.
-          </p>
+        <div className="p-12 text-center bg-theme-card border border-theme-card rounded-xl space-y-3 shadow-sm">
+          <FolderLock className="w-10 h-10 text-theme-muted mx-auto" />
+          <div className="text-theme-primary font-semibold text-sm">{t.projects.noProjects}</div>
+          <p className="text-theme-muted text-xs max-w-md mx-auto">{t.projects.noProjectsDesc}</p>
           <button
             onClick={onOpenAuthorizeModal}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs transition"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-xs transition shadow-sm"
           >
-            Authorize Your First Project
+            {t.projects.authorizeBtn}
           </button>
         </div>
       ) : (
@@ -143,29 +141,29 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
             return (
               <div
                 key={project.id}
-                className={`p-5 bg-slate-900 border rounded-xl space-y-4 transition ${
-                  project.enabled ? "border-slate-800" : "border-slate-800/40 opacity-70"
+                className={`p-5 bg-theme-card border rounded-xl space-y-4 transition shadow-sm ${
+                  project.enabled ? "border-theme-card" : "border-theme-subtle opacity-70"
                 }`}
               >
                 {/* Upper Row: Name, Path, and Enable Toggle */}
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
-                      <span className="font-bold text-slate-100 text-base">
+                      <span className="font-bold text-theme-primary text-base">
                         {project.name}
                       </span>
-                      <span className="font-mono text-xs text-slate-500">
+                      <span className="font-mono text-xs text-theme-muted">
                         {project.id}
                       </span>
                       <span
                         className={`badge ${
-                          project.enabled ? "badge-green" : "badge-gray"
+                          project.enabled ? "badge-green" : "badge-amber"
                         }`}
                       >
-                        {project.enabled ? "Enabled" : "Disabled"}
+                        {project.enabled ? t.common.enable : t.common.disable}
                       </span>
                     </div>
-                    <div className="text-xs font-mono text-slate-400 bg-slate-950 px-2.5 py-1 rounded border border-slate-800/80 inline-block">
+                    <div className="text-xs font-mono text-theme-secondary bg-theme-card-muted px-2.5 py-1 rounded border border-theme-subtle inline-block select-all">
                       {project.root}
                     </div>
                   </div>
@@ -177,11 +175,11 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                       disabled={isLoading}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
                         project.enabled
-                          ? "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
-                          : "bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border-emerald-500/40"
+                          ? "bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border-theme-subtle"
+                          : "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-500 border-emerald-500/30"
                       }`}
                     >
-                      {project.enabled ? "Disable" : "Enable"}
+                      {project.enabled ? t.common.disable : t.common.enable}
                     </button>
 
                     {isDeleting ? (
@@ -189,23 +187,23 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                         <button
                           onClick={() => handleRemove(project.id)}
                           disabled={isLoading}
-                          className="px-2.5 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition"
+                          className="px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition shadow-sm"
                         >
-                          Confirm
+                          {t.common.confirm}
                         </button>
                         <button
                           onClick={() => setDeleteConfirmId(null)}
-                          className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs transition"
+                          className="px-2.5 py-1.5 bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary rounded-lg text-xs border border-theme-subtle transition"
                         >
-                          Cancel
+                          {t.common.cancel}
                         </button>
                       </div>
                     ) : (
                       <button
                         onClick={() => setDeleteConfirmId(project.id)}
                         disabled={isLoading}
-                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition"
-                        title="Remove Project Authorization"
+                        className="p-1.5 text-theme-muted hover:text-red-500 hover:bg-theme-card-hover rounded-lg transition"
+                        title={t.projects.removeConfirmTitle}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -214,18 +212,18 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                 </div>
 
                 {/* Lower Row: Security & Permission Settings */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-800/60 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-theme-subtle text-xs">
                   {/* Access Mode */}
-                  <div className="flex items-center justify-between p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <div className="flex items-center justify-between p-3 bg-theme-card-muted rounded-lg border border-theme-subtle">
                     <div>
-                      <div className="font-medium text-slate-300 flex items-center gap-1.5">
-                        <Shield className="w-3.5 h-3.5 text-slate-400" />
-                        Filesystem Access
+                      <div className="font-medium text-theme-primary flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-theme-muted" />
+                        {t.projects.accessMode}
                       </div>
-                      <div className="text-slate-400 text-[11px] mt-0.5">
+                      <div className="text-theme-muted text-[11px] mt-0.5">
                         {project.accessMode === "read-only"
-                          ? "AI cannot write or delete files"
-                          : "AI can modify files within sandbox"}
+                          ? t.modals.authorize.readOnlyOptionDesc
+                          : t.modals.authorize.readWriteOptionDesc}
                       </div>
                     </div>
                     <button
@@ -237,23 +235,25 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                           : "badge-amber"
                       }`}
                     >
-                      {project.accessMode === "read-only" ? "READ ONLY" : "READ WRITE"}
+                      {project.accessMode === "read-only"
+                        ? t.projects.readOnly
+                        : t.projects.readWrite}
                     </button>
                   </div>
 
                   {/* Execution Mode */}
-                  <div className="flex items-center justify-between p-3 bg-slate-950 rounded-lg border border-slate-800">
+                  <div className="flex items-center justify-between p-3 bg-theme-card-muted rounded-lg border border-theme-subtle">
                     <div>
-                      <div className="font-medium text-slate-300 flex items-center gap-1.5">
-                        <Terminal className="w-3.5 h-3.5 text-slate-400" />
-                        Command Execution
+                      <div className="font-medium text-theme-primary flex items-center gap-1.5">
+                        <Terminal className="w-3.5 h-3.5 text-theme-muted" />
+                        {t.projects.executionMode}
                       </div>
-                      <div className="text-slate-400 text-[11px] mt-0.5">
+                      <div className="text-theme-muted text-[11px] mt-0.5">
                         {project.executionMode === "disabled"
-                          ? "No commands allowed"
+                          ? t.modals.authorize.execDisabledOptionDesc
                           : project.executionMode === "safe-only"
-                            ? "Safe tool commands only"
-                            : "Elevated: project build scripts permitted"}
+                            ? t.modals.authorize.execSafeOnlyOptionDesc
+                            : t.modals.authorize.execProjectCodeOptionDesc}
                       </div>
                     </div>
                     <select
@@ -265,17 +265,17 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                         )
                       }
                       disabled={isLoading}
-                      className={`bg-slate-900 border rounded px-2 py-1 text-xs font-medium focus:outline-none ${
+                      className={`bg-theme-input border border-theme-input rounded px-2 py-1 text-xs font-medium focus:outline-none focus:border-indigo-500 ${
                         project.executionMode === "project-code"
-                          ? "text-red-400 border-red-500/50"
+                          ? "text-red-500"
                           : project.executionMode === "safe-only"
-                            ? "text-blue-400 border-blue-500/50"
-                            : "text-slate-300 border-slate-700"
+                            ? "text-blue-500"
+                            : "text-theme-secondary"
                       }`}
                     >
-                      <option value="disabled">Disabled</option>
-                      <option value="safe-only">Safe Only</option>
-                      <option value="project-code">Project Code</option>
+                      <option value="disabled">{t.projects.execDisabled}</option>
+                      <option value="safe-only">{t.projects.execSafeOnly}</option>
+                      <option value="project-code">{t.projects.execProjectCode}</option>
                     </select>
                   </div>
                 </div>

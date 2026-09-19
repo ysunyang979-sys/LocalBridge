@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import type { Token } from "../types.js";
 import { bridge } from "../api/bridge.js";
+import { useTranslation } from "../i18n/useTranslation.js";
 
 interface TokensPageProps {
   tokens: Token[];
@@ -14,11 +15,12 @@ export const TokensPage: React.FC<TokensPageProps> = ({
   onOpenCreateTokenModal,
   onRefresh,
 }) => {
+  const { t, translateError } = useTranslation();
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleRevoke = async (id: string) => {
-    const ok = window.confirm("Are you sure you want to revoke this token? Any connected clients will immediately lose access.");
+    const ok = window.confirm(t.tokens.revokeConfirmDesc);
     if (!ok) return;
 
     setRevokingId(id);
@@ -27,7 +29,7 @@ export const TokensPage: React.FC<TokensPageProps> = ({
       await bridge.revokeToken(id);
       onRefresh();
     } catch (err: any) {
-      setError(err.message || "Failed to revoke token");
+      setError(translateError(err.code, err.message));
     } finally {
       setRevokingId(null);
     }
@@ -37,38 +39,34 @@ export const TokensPage: React.FC<TokensPageProps> = ({
     <div className="p-8 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-100">Authentication Tokens</h2>
-          <p className="text-xs text-slate-400">
-            Manage Bearer tokens for MCP AI clients (Claude Desktop, Cursor) and Runner daemons.
-          </p>
+          <h2 className="text-xl font-bold text-theme-primary">{t.tokens.title}</h2>
+          <p className="text-xs text-theme-muted">{t.tokens.subtitle}</p>
         </div>
         <button
           onClick={onOpenCreateTokenModal}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs shadow-sm transition"
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-xs shadow-sm transition"
         >
           <Plus className="w-4 h-4" />
-          <span>Generate Token</span>
+          <span>{t.tokens.createTokenBtn}</span>
         </button>
       </div>
 
       {error && (
-        <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-lg text-xs text-red-300">
+        <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-lg text-xs text-red-500">
           {error}
         </div>
       )}
 
       {tokens.length === 0 ? (
-        <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-          <KeyRound className="w-10 h-10 text-slate-600 mx-auto" />
-          <div className="text-slate-300 font-semibold text-sm">No Tokens Found</div>
-          <p className="text-slate-500 text-xs">
-            Generate an MCP token to connect Claude Desktop or other AI clients.
-          </p>
+        <div className="p-12 text-center bg-theme-card border border-theme-card rounded-xl space-y-3 shadow-sm">
+          <KeyRound className="w-10 h-10 text-theme-muted mx-auto" />
+          <div className="text-theme-primary font-semibold text-sm">{t.tokens.noTokens}</div>
+          <p className="text-theme-muted text-xs">{t.tokens.noTokensDesc}</p>
           <button
             onClick={onOpenCreateTokenModal}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs transition"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-xs transition shadow-sm"
           >
-            Generate First Token
+            {t.tokens.createTokenBtn}
           </button>
         </div>
       ) : (
@@ -81,8 +79,8 @@ export const TokensPage: React.FC<TokensPageProps> = ({
             return (
               <div
                 key={token.id}
-                className={`p-4 bg-slate-900 border rounded-xl flex items-center justify-between gap-4 transition ${
-                  isRevoked ? "border-slate-800/40 opacity-50" : "border-slate-800"
+                className={`p-4 bg-theme-card border rounded-xl flex items-center justify-between gap-4 transition shadow-sm ${
+                  isRevoked ? "border-theme-subtle opacity-50" : "border-theme-card"
                 }`}
               >
                 <div className="space-y-1.5 flex-1 min-w-0">
@@ -94,25 +92,25 @@ export const TokensPage: React.FC<TokensPageProps> = ({
                     >
                       {token.type.toUpperCase()}
                     </span>
-                    <span className="font-semibold text-xs text-slate-100">
+                    <span className="font-semibold text-xs text-theme-primary">
                       {token.name}
                     </span>
-                    <span className="font-mono text-xs text-slate-500">
+                    <span className="font-mono text-xs text-theme-muted">
                       {token.id}
                     </span>
                     {isRevoked ? (
-                      <span className="badge badge-red">REVOKED</span>
+                      <span className="badge badge-red">{t.common.denied}</span>
                     ) : (
-                      <span className="badge badge-green">ACTIVE</span>
+                      <span className="badge badge-green">{t.common.active}</span>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-4 text-xs text-slate-400 font-mono">
-                    <span>Created: {created.toLocaleDateString()}</span>
+                  <div className="flex items-center gap-4 text-xs text-theme-muted font-mono">
+                    <span>{t.tokens.createdAt}: {created.toLocaleDateString()}</span>
                     <span>
-                      Last Used: {lastUsed ? lastUsed.toLocaleTimeString() : "Never"}
+                      {t.tokens.lastUsed}: {lastUsed ? lastUsed.toLocaleTimeString() : t.tokens.neverUsed}
                     </span>
-                    <span>Scopes: {(token.scopes || []).join(", ") || "all"}</span>
+                    <span>{t.tokens.scopes}: {(token.scopes || []).join(", ") || t.common.none}</span>
                   </div>
                 </div>
 
@@ -121,8 +119,8 @@ export const TokensPage: React.FC<TokensPageProps> = ({
                     <button
                       onClick={() => handleRevoke(token.id)}
                       disabled={revokingId === token.id}
-                      className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition"
-                      title="Revoke Token"
+                      className="p-2 text-theme-muted hover:text-red-500 hover:bg-theme-card-hover rounded-lg transition"
+                      title={t.tokens.revokeBtn}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

@@ -1,2 +1,2 @@
-3b300e6e2e0175fa39b182b4f7c0e6b0aebfd3f9208a391fa964082f11a47d30  LocalBridge_1.0.1_x64_en-US.msi
-05e7e4d6e0c64fcd889c2ca57e0610e5007f64cc63bfb362bc21578dda9c5dfd  LocalBridge_1.0.1_x64-setup.exe
+42efc12fd3a66b29506acae307a3ce6c1e4e38f04d4ea532053f730ee3990a69  LocalBridge_1.1.0_x64_en-US.msi
+68128f8b9a21e29c9e5ebf1a6bbce98111d3febfda929310e650b3f137e9f42f  LocalBridge_1.1.0_x64-setup.exe

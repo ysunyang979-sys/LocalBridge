@@ -15,6 +15,7 @@ import { CreateTokenModal } from "./components/modals/CreateTokenModal.js";
 import { EmergencyStopModal } from "./components/modals/EmergencyStopModal.js";
 import { ResolveApprovalModal } from "./components/modals/ResolveApprovalModal.js";
 import { bridge } from "./api/bridge.js";
+import { useTranslation } from "./i18n/useTranslation.js";
 import type {
   ServerStatus,
   McpStatus,
@@ -28,6 +29,7 @@ import type {
 import { applyServerPollResult } from "./polling-state.js";
 
 export const App: React.FC = () => {
+  const { t } = useTranslation();
   const [currentPage, setCurrentPage] = useState<NavPage>("overview");
 
   // State
@@ -77,7 +79,6 @@ export const App: React.FC = () => {
         bridge.getDesktopHealth(),
       ]);
 
-      // A slower, older poll must never overwrite fresher state.
       if (generation !== refreshGeneration.current) return;
 
       if (healthRes.status === "fulfilled" && healthRes.value?.startup_error) {
@@ -161,41 +162,41 @@ export const App: React.FC = () => {
 
   const pageTitles: Record<NavPage, { title: string; subtitle: string }> = {
     overview: {
-      title: "System Overview",
-      subtitle: "Unified status of server, runners, AI MCP access, and active tasks",
+      title: t.overview.title,
+      subtitle: t.overview.subtitle,
     },
     projects: {
-      title: "Project Authorizations",
-      subtitle: "Authorized filesystem sandboxes and command permissions",
+      title: t.projects.title,
+      subtitle: t.projects.subtitle,
     },
     approvals: {
-      title: "Approval Center",
-      subtitle: "Human review required for sensitive operations",
+      title: t.approvals.title,
+      subtitle: t.approvals.subtitle,
     },
     jobs: {
-      title: "Jobs & Tasks",
-      subtitle: "Background builds, tests, and long-running processes",
+      title: t.jobs.title,
+      subtitle: t.jobs.subtitle,
     },
     connections: {
-      title: "Service Connections",
-      subtitle: "LocalBridge Core Server and connected Runner daemons",
+      title: t.connections.title,
+      subtitle: t.connections.subtitle,
     },
     tokens: {
-      title: "Authentication Tokens",
-      subtitle: "Bearer tokens for AI clients and local runners",
+      title: t.tokens.title,
+      subtitle: t.tokens.subtitle,
     },
     activity: {
-      title: "Activity Stream",
-      subtitle: "Sanitized audit trail of recent MCP tool invocations",
+      title: t.activity.title,
+      subtitle: t.activity.subtitle,
     },
     settings: {
-      title: "Settings",
-      subtitle: "System configuration, port bindings, and security guarantees",
+      title: t.settings.title,
+      subtitle: t.settings.subtitle,
     },
   };
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-theme-app text-theme-primary overflow-hidden font-sans transition-colors duration-200">
       {/* Sidebar */}
       <Sidebar
         currentPage={currentPage}
@@ -222,8 +223,8 @@ export const App: React.FC = () => {
         />
 
         {startupError && (
-          <div className="bg-red-500/10 border-b border-red-500/30 px-6 py-3 flex items-center gap-3 text-red-300 text-xs">
-            <OctagonAlert className="w-4 h-4 text-red-400 shrink-0" />
+          <div className="bg-red-500/10 border-b border-red-500/30 px-6 py-3 flex items-center gap-3 text-red-500 text-xs">
+            <OctagonAlert className="w-4 h-4 text-red-500 shrink-0" />
             <span className="font-medium">{startupError}</span>
           </div>
         )}
