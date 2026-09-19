@@ -7,6 +7,7 @@ use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use tauri::image::Image;
 use tauri::Manager;
 
 #[cfg(target_os = "windows")]
@@ -960,6 +961,71 @@ fn main() {
             desktop_set_server_url
         ])
         .setup(move |app| {
+            // Explicitly set the window and taskbar icon for the main window
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(icon) = Image::from_bytes(include_bytes!("../icons/icon.png")) {
+                    let _ = window.set_icon(icon);
+                }
+
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(hwnd) = window.hwnd() {
+                        unsafe {
+                            type HMODULE = *mut std::ffi::c_void;
+                            type HICON = *mut std::ffi::c_void;
+                            type HwndPtr = *mut std::ffi::c_void;
+
+                            extern "system" {
+                                fn GetModuleHandleW(lpModuleName: *const u16) -> HMODULE;
+                                fn LoadImageW(
+                                    hInst: HMODULE,
+                                    name: *const u16,
+                                    type_: u32,
+                                    cx: i32,
+                                    cy: i32,
+                                    fuLoad: u32,
+                                ) -> HICON;
+                                fn SendMessageW(
+                                    hWnd: HwndPtr,
+                                    Msg: u32,
+                                    wParam: usize,
+                                    lParam: isize,
+                                ) -> isize;
+                                fn GetSystemMetrics(nIndex: i32) -> i32;
+                            }
+
+                            let hinstance = GetModuleHandleW(std::ptr::null());
+                            // 32512 is IDI_APPLICATION, embedded in localbridge-desktop.exe by resource.rc
+                            let hicon_big = LoadImageW(
+                                hinstance,
+                                32512 as *const u16,
+                                1, // IMAGE_ICON
+                                0,
+                                0,
+                                0x00000040, // LR_DEFAULTSIZE | LR_SHARED
+                            );
+                            let sm_cx = GetSystemMetrics(49); // SM_CXSMICON
+                            let sm_cy = GetSystemMetrics(50); // SM_CYSMICON
+                            let hicon_small = LoadImageW(
+                                hinstance,
+                                32512 as *const u16,
+                                1, // IMAGE_ICON
+                                sm_cx,
+                                sm_cy,
+                                0x00000000,
+                            );
+
+                            if !hicon_big.is_null() {
+                                SendMessageW(hwnd.0 as _, 0x007F /* WM_SETICON */, 1 /* ICON_BIG */, hicon_big as isize);
+                            }
+                            if !hicon_small.is_null() {
+                                SendMessageW(hwnd.0 as _, 0x007F /* WM_SETICON */, 0 /* ICON_SMALL */, hicon_small as isize);
+                            }
+                        }
+                    }
+                }
+            }
+
             let app_handle = app.handle().clone();
             let sup = supervisor.clone();
             std::thread::spawn(move || {
