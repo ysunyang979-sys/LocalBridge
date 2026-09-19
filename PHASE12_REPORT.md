@@ -3,7 +3,9 @@
 **Milestone**: Phase 12 — Security Hardening, Packaging, Installer & v1.0 Release  
 **Final Version**: `1.0.0` (Production General Availability)  
 **Baseline Commit**: `caff72d` (Phase 11) → Phase 12 Hardening  
-**Runtime Environment**: Node.js `v24.21.0`, pnpm `10.14.0`, Rust `1.85.0`, Tauri `2.x`, Vite `6.x`, Windows x64  
+**Runtime Environment**: Node.js `v24.21.0`, pnpm `10.14.0`, Rust `1.98.1` (cargo `1.98.1`), Tauri `2.11.5`, Vite `6.x`, Windows x64  
+**Workspaces**: 6 workspace packages/apps + 1 root workspace (7 total)  
+**Protocol Versions**: Runner RPC `1.0`, MCP `2026-07-28`  
 **Date**: September 19, 2026  
 
 ---
@@ -82,10 +84,11 @@ Ordinary Windows users can now download the installer, run the Desktop Control C
 ## 4. Verification Evidence & Quality Assurance
 
 ### 4.1 Automated Test Suite (`pnpm test`)
-- **Total Test Suites**: **74 passed** (74 total, 0 failed)
-- **Total Tests**: **440 passed** (440 total, 0 failed, 100% pass rate)
-- **Execution Time**: ~63.5s
-- **Security-Specific Test Suites**:
+- **Total Test Suites**: **75 passed** (75 total, 0 failed)
+- **Total Tests**: **450 passed** (450 total, 0 failed, 100% pass rate)
+- **Execution Time**: ~74.6s
+- **Security & Acceptance Test Suites**:
+  - `tests/final-release-acceptance.test.ts`: Passed (10 tests: permissions, tokens, read, write, jobs, pause, emergency stop, revoke, port conflict, 50 reconnect cycles)
   - `tests/security-audit-redaction.test.ts`: Passed (Canary test, zero leakage)
   - `tests/security-management-hardening.test.ts`: Passed (DNS rebinding, token domain cross-contamination)
   - `tests/security-sandbox-fuzz.test.ts`: Passed (6 path fuzzing checks)
@@ -93,7 +96,7 @@ Ordinary Windows users can now download the installer, run the Desktop Control C
   - `tests/security-xss-injection.test.ts`: Passed (2 XSS injection defense checks)
 
 ### 4.2 Static Type Checking (`pnpm typecheck`)
-- All 6 TypeScript packages and applications passed with **zero errors**:
+- All 6 workspace packages and applications passed with **zero errors**:
   - `@localbridge/protocol`: Clean
   - `@localbridge/shared`: Clean
   - `@localbridge/security`: Clean
@@ -106,8 +109,15 @@ Ordinary Windows users can now download the installer, run the Desktop Control C
 - Apps bundled (`@localbridge/server`, `@localbridge/runner` via `tsup`, `@localbridge/desktop` via `vite`): Clean
 - Desktop frontend asset compilation: Clean (224 KB gzipped bundle, 0 errors)
 
-### 4.4 Rust / Tauri Backend Check (`cargo check`)
-- Checked `apps/desktop/src-tauri` using Rust 1.85.0: Finished `dev` profile in 3.14s with 0 errors.
+### 4.4 Production Installer Build & Checksums
+- `LocalBridge_1.0.0_x64-setup.exe` (1,187,613 bytes / 1.13 MB, SHA256: `102c79c0cb54f763709a1c5a48e362049838c143f131452f1eec56d33a936bd0`)
+- `LocalBridge_1.0.0_x64_en-US.msi` (1,667,072 bytes / 1.59 MB, SHA256: `2af968eda31ba9a9ae208f3f086dc2f0ad1d2ab7cd3c672cbe26d9dc0bd8f60e`)
+- Authenticode Signature Status: `Unsigned` (Windows SmartScreen warning documented in Known Limitations)
+
+### 4.5 Rust / Tauri Backend Check & Audit
+- Checked `apps/desktop/src-tauri` using Rust 1.98.1: Finished `release` profile in 3m 09s with 0 errors.
+- `cargo audit`: 0 critical, 0 high, 7 allowed warnings (all transitive dependencies).
+- `pnpm audit`: 0 critical, 0 high, 2 moderate (vitest devDeps), 1 low (esbuild devDeps).
 
 ---
 

@@ -42,19 +42,19 @@ User-Authorized Projects (e.g. D:\Projects\my-app)
 
 ## Monorepo Layout
 
+The repository is configured as a `pnpm` monorepo containing **6 workspace packages/apps** plus **1 root workspace** (**7 workspace members total**):
+
 ```text
 localbridge/
 ├── apps/
-│   ├── server/           # Fastify MCP & API Server with SQLite persistence
-│   ├── runner/           # Local execution daemon (Phase 2+)
-│   └── desktop/          # Tauri 2 + React + Vite GUI (Phase 10+)
+│   ├── desktop/          # Tauri 2 + React + Vite Desktop Control Center
+│   ├── runner/           # Local execution daemon (Filesystem, Git, Commands, Jobs)
+│   └── server/           # Fastify MCP & API Server with SQLite persistence
 ├── packages/
 │   ├── protocol/         # Pure protocol definitions, JSON-RPC schemas & error codes
-│   ├── shared/           # Structured logger (Pino), config loader, crypto helpers
 │   ├── security/         # Sandboxing, path verification & command risk analyzer
-│   ├── mcp/              # MCP v2 tools and Streamable HTTP endpoint via @modelcontextprotocol/server (Phase 9)
-│   └── ui/               # Shared design system & components (Phase 10+)
-├── tests/                # Integration and end-to-end test suites
+│   └── shared/           # Structured logger (Pino), config loader, crypto helpers
+├── tests/                # Integration and end-to-end test suites (75 suites, 450 tests)
 ├── docs/                 # Architectural specifications and protocol documentation
 └── scripts/              # Build and development helper scripts
 ```
@@ -121,7 +121,7 @@ For headless server or developer workflows:
 # Typecheck all workspace packages
 pnpm typecheck
 
-# Execute the 74 test suites (440 automated tests)
+# Execute the 75 test suites (450 automated tests)
 pnpm test
 
 # Run Server standalone
@@ -491,7 +491,7 @@ LocalBridge v1.0 marks the formal Feature Freeze and production hardening of the
 - **Canary Redaction & Safe Audit Metadata**: Strict `SafeAuditMetadata` field whitelisting ensures no sensitive file patches, diffs, command arguments, stdout/stderr streams, or tokens are logged or stored in SQLite.
 - **Browser Pivot & Rebinding Defense**: Hardened loopback checks, `Host` header whitelisting, and blocking of cross-site browser fetches (`Sec-Fetch-Site: cross-site`).
 - **State Integrity & Crash Recovery**: Automatic pre-migration SQLite snapshots (`<dbPath>.pre-migration.bak`) and orphan temp file purges (`.localbridge-*.tmp`) ensure clean boot recovery.
-- **Verification Baseline**: 74 automated test suites comprising 440 tests passing with a 100% success rate.
+- **Verification Baseline**: 75 automated test suites comprising 450 tests passing with a 100% success rate.
 
 ### Security & Privacy Resources
 

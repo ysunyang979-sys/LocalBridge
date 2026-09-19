@@ -40,21 +40,21 @@ LocalBridge Runner (用户本地驻留 Node.js 守护进程)
 
 ---
 
-## 代码仓库结构 (Monorepo)
+### 代码仓库结构 (Monorepo)
+
+本代码仓库基于 `pnpm` 工作区组织，包含 **6 个工作区包/应用** 以及 **1 个根工作区**（共 **7 个工作区成员**）：
 
 ```text
 localbridge/
 ├── apps/
-│   ├── server/           # Fastify 服务端（MCP 端点、REST API、SQLite 状态存储）
-│   ├── runner/           # 本地执行守护进程（Phase 2+）
-│   └── desktop/          # Tauri 2 + React + Vite 极简桌面应用（Phase 10+）
+│   ├── desktop/          # Tauri 2 + React + Vite 桌面控制中心
+│   ├── runner/           # 本地执行守护进程（文件系统、Git、命令与长作业）
+│   └── server/           # Fastify 服务端（MCP 端点、REST API、SQLite 状态存储）
 ├── packages/
 │   ├── protocol/         # 纯协议定义层、JSON-RPC 2.0 模式、统一错误码
-│   ├── shared/           # Pino 结构化日志、多级配置加载器、加密工具
 │   ├── security/         # 路径逃逸检测、命令风险评估引擎接口
-│   ├── mcp/              # MCP v2 工具集成与 Streamable HTTP（基于 @modelcontextprotocol/server，Phase 9）
-│   └── ui/               # 共享 UI 组件与设计令牌（Phase 10+）
-├── tests/                # 单元测试与端到端测试套件
+│   └── shared/           # Pino 结构化日志、多级配置加载器、加密工具
+├── tests/                # 单元测试与端到端测试套件（75 套件，450 测试）
 ├── docs/                 # 详细架构与协议设计规范
 └── scripts/              # 构建与辅助脚本
 ```
@@ -121,7 +121,7 @@ LocalBridge 既可作为预打包的独立桌面应用（Tauri 安装包）运�
 # 执行类型检查
 pnpm typecheck
 
-# 运行全套 74 个测试套件（440 个自动化测试，100% 通过）
+# 运行全套 75 个测试套件（450 个自动化测试，100% 通过）
 pnpm test
 
 # 独立启动服务端
@@ -493,7 +493,7 @@ LocalBridge v1.0 标志着功能冻结（Feature Freeze）与生产级全方位�
 - **金丝雀脱敏与安全审计白名单**：实施 `SafeAuditMetadata` 字段白名单机制，敏感文件补丁、Diff 内容、执行命令参数、标准输入输出流（stdout/stderr）以及认证凭证绝不记录至审计日志与数据库中。
 - **浏览器跳板与 DNS 重绑定防御**：强制 Host 请求头白名单校验，拦截非本地 Origin，并直接阻断跨站浏览器请求（`Sec-Fetch-Site: cross-site`）。
 - **状态完整性与崩溃自动恢复**：数据库迁移前自动生成时间戳备份快照（`<dbPath>.pre-migration.bak`），Runner 启动时自动清理历史孤立临时文件（`.localbridge-*.tmp`）。
-- **全量测试基线**：74 个自动化测试套件共 440 个测试用例，达成 100% 通过率。
+- **全量测试基线**：75 个自动化测试套件共 450 个测试用例，达成 100% 通过率。
 
 ### 安全与隐私文档指引
 
