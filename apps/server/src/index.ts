@@ -3,7 +3,20 @@ import { buildApp } from "./app.js";
 
 async function main() {
   const config = loadConfig();
-  const { app, db, tokenService } = await buildApp({ config });
+  const managementSecret = process.env.LOCALBRIDGE_MANAGEMENT_TOKEN;
+  const requireManagementAuth =
+    Boolean(managementSecret) ||
+    process.env.LOCALBRIDGE_REQUIRE_MGMT_AUTH === "true";
+
+  const { app, db, tokenService } = await buildApp({
+    config,
+    managementSecret,
+    requireManagementAuth,
+  });
+
+  if (managementSecret) {
+    app.log.info("Management token authentication is active for local control center");
+  }
 
   // Handle bootstrap runner token if passed by Desktop Supervisor
   const bootstrapRunnerToken = process.env.LOCALBRIDGE_BOOTSTRAP_RUNNER_TOKEN;

@@ -23,6 +23,8 @@ struct SupervisorState {
     server_entry: Option<PathBuf>,
     runner_entry: Option<PathBuf>,
     runner_token: Option<String>,
+    management_token: Option<String>,
+    server_port: u16,
     data_dir: Option<PathBuf>,
 }
 
@@ -154,6 +156,440 @@ fn get_or_create_runner_token(node_exe: &Path, data_dir: &Path) -> String {
     fallback
 }
 
+fn get_or_create_management_token(node_exe: &Path, data_dir: &Path) -> String {
+    let key_file = data_dir.join("management-token.key");
+    if key_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&key_file) {
+            let trimmed = content.trim();
+            if trimmed.starts_with("lm_") && trimmed.len() >= 36 {
+                return trimmed.to_string();
+            }
+        }
+    }
+
+    // Generate high-entropy 256-bit token using bundled node's CSPRNG
+    let mut cmd = Command::new(node_exe);
+    cmd.args(["-e", "console.log('lm_' + require('crypto').randomBytes(32).toString('hex'))"]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    if let Ok(output) = cmd.output() {
+        let generated = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if generated.starts_with("lm_") {
+            let _ = std::fs::write(&key_file, &generated);
+            return generated;
+        }
+    }
+
+    // Fallback pseudo-random token if node eval somehow fails
+    let fallback = format!("lm_{:016x}{:016x}{:016x}{:016x}",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(54321),
+        std::process::id(),
+        0xfeedface_u64,
+        0xcafebabe_u64
+    );
+    let _ = std::fs::write(&key_file, &fallback);
+    fallback
+}
+
+fn get_management_token(state: &SupervisorState) -> String {
+    if let Some(ref t) = state.management_token {
+        return t.clone();
+    }
+    if let Some(ref dir) = state.data_dir {
+        let key_file = dir.join("management-token.key");
+        if let Ok(content) = std::fs::read_to_string(&key_file) {
+            let trimmed = content.trim();
+            if trimmed.starts_with("lm_") {
+                return trimmed.to_string();
+            }
+        }
+    }
+    let default_key = std::env::var("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("LocalBridge")
+        .join("data")
+        .join("management-token.key");
+    if let Ok(content) = std::fs::read_to_string(&default_key) {
+        let trimmed = content.trim();
+        if trimmed.starts_with("lm_") {
+            return trimmed.to_string();
+        }
+    }
+    String::new()
+}
+
+fn decode_chunked(body: &str) -> String {
+    let mut result = String::new();
+    let mut rem = body;
+    while let Some(pos) = rem.find("\r\n") {
+        let size_hex = rem[..pos].trim();
+        if let Ok(size) = usize::from_str_radix(size_hex, 16) {
+            if size == 0 {
+                break;
+            }
+            let chunk_start = pos + 2;
+            if chunk_start + size <= rem.len() {
+                result.push_str(&rem[chunk_start..chunk_start + size]);
+                let next = chunk_start + size;
+                rem = if next + 2 <= rem.len() && &rem[next..next + 2] == "\r\n" {
+                    &rem[next + 2..]
+                } else if next <= rem.len() {
+                    &rem[next..]
+                } else {
+                    ""
+                };
+            } else {
+                result.push_str(&rem[chunk_start..]);
+                break;
+            }
+        } else {
+            result.push_str(rem);
+            break;
+        }
+    }
+    result
+}
+
+fn loopback_management_request(
+    port: u16,
+    token: &str,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    use std::io::{Read, Write};
+
+    let body_str = body.map(|b| b.to_string()).unwrap_or_default();
+    let body_bytes = body_str.as_bytes();
+
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .map_err(|e| format!("Failed to connect to local server (127.0.0.1:{}): {}", port, e))?;
+
+    stream.set_read_timeout(Some(Duration::from_secs(15))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(15))).ok();
+
+    let mut header = format!(
+        "{} {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n",
+        method, path, port
+    );
+    if !token.is_empty() {
+        header.push_str(&format!("Authorization: Bearer {}\r\n", token));
+    }
+    if !body_bytes.is_empty() {
+        header.push_str("Content-Type: application/json\r\n");
+        header.push_str(&format!("Content-Length: {}\r\n", body_bytes.len()));
+    } else {
+        header.push_str("Content-Length: 0\r\n");
+    }
+    header.push_str("\r\n");
+
+    stream.write_all(header.as_bytes()).map_err(|e| format!("Write failed: {}", e))?;
+    if !body_bytes.is_empty() {
+        stream.write_all(body_bytes).map_err(|e| format!("Write body failed: {}", e))?;
+    }
+    stream.flush().ok();
+
+    let mut raw_response = Vec::new();
+    stream.read_to_end(&mut raw_response).map_err(|e| format!("Read failed: {}", e))?;
+
+    let response_str = String::from_utf8_lossy(&raw_response);
+    let mut parts = response_str.splitn(2, "\r\n\r\n");
+    let headers_part = parts.next().unwrap_or("");
+    let body_part = parts.next().unwrap_or("");
+
+    let status_line = headers_part.lines().next().unwrap_or("");
+    let status_code: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(500);
+
+    let clean_body = if headers_part.to_lowercase().contains("transfer-encoding: chunked") {
+        decode_chunked(body_part)
+    } else {
+        body_part.to_string()
+    };
+
+    if status_code >= 200 && status_code < 300 {
+        if clean_body.trim().is_empty() {
+            Ok(serde_json::json!({ "success": true }))
+        } else {
+            serde_json::from_str(&clean_body)
+                .map_err(|e| format!("JSON decode error: {} - body: {}", e, clean_body))
+        }
+    } else {
+        if let Ok(err_json) = serde_json::from_str::<serde_json::Value>(&clean_body) {
+            let msg = err_json.get("error")
+                .or_else(|| err_json.get("message"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(&clean_body);
+            Err(msg.to_string())
+        } else {
+            Err(format!("HTTP {}: {}", status_code, clean_body))
+        }
+    }
+}
+
+#[tauri::command]
+fn desktop_management_call(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    method: String,
+    path: String,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let (port, token) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        let port = if s.server_port > 0 { s.server_port } else { 18080 };
+        let token = get_management_token(&s);
+        (port, token)
+    };
+    loopback_management_request(port, &token, &method, &path, body.as_ref())
+}
+
+#[tauri::command]
+fn desktop_set_server_url(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    url: String,
+) -> Result<(), String> {
+    if let Ok(mut s) = state.lock() {
+        if let Some(pos) = url.rfind(':') {
+            if let Ok(port) = url[pos + 1..].trim_matches('/').parse::<u16>() {
+                s.server_port = port;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn desktop_authorize_project(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    path: String,
+    name: Option<String>,
+    access_mode: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "path": path,
+    });
+    if let Some(n) = name {
+        payload["name"] = serde_json::Value::String(n);
+    }
+    if let Some(m) = access_mode {
+        payload["accessMode"] = serde_json::Value::String(m);
+    }
+    desktop_management_call(state, "POST".into(), "/api/management/projects/authorize".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_set_project_access(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+    access_mode: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "accessMode": access_mode });
+    desktop_management_call(state, "POST".into(), format!("/api/management/projects/{}/access", project_id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_set_project_execution(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+    execution_mode: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "executionMode": execution_mode });
+    desktop_management_call(state, "POST".into(), format!("/api/management/projects/{}/execution", project_id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_enable_project(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), format!("/api/management/projects/{}/enable", project_id), None)
+}
+
+#[tauri::command]
+fn desktop_disable_project(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), format!("/api/management/projects/{}/disable", project_id), None)
+}
+
+#[tauri::command]
+fn desktop_remove_project(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "DELETE".into(), format!("/api/management/projects/{}", project_id), None)
+}
+
+#[tauri::command]
+fn desktop_create_token(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    name: String,
+    token_type: String,
+    scopes: Option<Vec<String>>,
+    expires_at: Option<i64>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "name": name,
+        "type": token_type,
+    });
+    if let Some(s) = scopes {
+        payload["scopes"] = serde_json::json!(s);
+    }
+    if let Some(exp) = expires_at {
+        payload["expiresAt"] = serde_json::json!(exp);
+    }
+    desktop_management_call(state, "POST".into(), "/api/tokens".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_revoke_token(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    token_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "DELETE".into(), format!("/api/tokens/{}", token_id), None)
+}
+
+#[tauri::command]
+fn desktop_list_tokens(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/tokens".into(), None)
+}
+
+#[tauri::command]
+fn desktop_list_approvals(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: Option<String>,
+    status: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut qs = Vec::new();
+    if let Some(p) = project_id {
+        qs.push(format!("projectId={}", p));
+    }
+    if let Some(s) = status {
+        qs.push(format!("status={}", s));
+    }
+    let path = if qs.is_empty() {
+        "/api/approvals".to_string()
+    } else {
+        format!("/api/approvals?{}", qs.join("&"))
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_resolve_approval(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    approval_id: String,
+    action: String,
+    resolved_by: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "action": action,
+        "resolvedBy": resolved_by.unwrap_or_else(|| "desktop-user".into()),
+    });
+    desktop_management_call(state, "POST".into(), format!("/api/approvals/{}/resolve", approval_id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_list_jobs(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: Option<String>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let mut qs = Vec::new();
+    if let Some(p) = project_id {
+        qs.push(format!("projectId={}", p));
+    }
+    if let Some(l) = limit {
+        qs.push(format!("limit={}", l));
+    }
+    let path = if qs.is_empty() {
+        "/api/jobs".to_string()
+    } else {
+        format!("/api/jobs?{}", qs.join("&"))
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_cancel_job(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    job_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), format!("/api/jobs/{}/cancel", job_id), None)
+}
+
+#[tauri::command]
+fn desktop_get_pause_state(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/pause".into(), None)
+}
+
+#[tauri::command]
+fn desktop_set_pause_state(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    paused: bool,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "paused": paused });
+    desktop_management_call(state, "POST".into(), "/api/pause".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_emergency_stop(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    reason: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "reason": reason.unwrap_or_else(|| "Emergency stop initiated from Desktop".into()),
+    });
+    desktop_management_call(state, "POST".into(), "/api/emergency-stop".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_list_audit(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let path = format!("/api/audit?limit={}", limit.unwrap_or(100));
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_list_projects(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/projects".into(), None)
+}
+
+#[tauri::command]
+fn desktop_get_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/status".into(), None)
+}
+
+#[tauri::command]
+fn desktop_get_mcp_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/mcp/status".into(), None)
+}
+
+#[tauri::command]
+fn desktop_list_runners(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/runners".into(), None)
+}
+
 fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorState>>) {
     // 1. Locate bundled node.exe
     let node_path = match resolve_resource_file(app, "runtime/node.exe") {
@@ -202,8 +638,9 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     let db_path = server_data_dir.join("localbridge.db");
     let projects_path = runner_data_dir.join("projects.json");
 
-    // 4. Retrieve or generate runner token
+    // 4. Retrieve or generate runner token and management token
     let runner_token = get_or_create_runner_token(&node_path, &data_dir);
+    let management_token = get_or_create_management_token(&node_path, &data_dir);
 
     // 5. Update state
     if let Ok(mut state) = supervisor.lock() {
@@ -211,6 +648,8 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         state.server_entry = Some(server_entry.clone());
         state.runner_entry = Some(runner_entry.clone());
         state.runner_token = Some(runner_token.clone());
+        state.management_token = Some(management_token.clone());
+        state.server_port = 18080;
         state.data_dir = Some(base_data_dir);
     }
 
@@ -225,6 +664,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         server_cmd.env("LOCALBRIDGE_SERVER_HOST", "127.0.0.1");
         server_cmd.env("LOCALBRIDGE_SERVER_DB_PATH", db_path.to_string_lossy().to_string());
         server_cmd.env("LOCALBRIDGE_BOOTSTRAP_RUNNER_TOKEN", &runner_token);
+        server_cmd.env("LOCALBRIDGE_MANAGEMENT_TOKEN", &management_token);
 
         #[cfg(target_os = "windows")]
         server_cmd.creation_flags(CREATE_NO_WINDOW);
@@ -288,7 +728,30 @@ fn main() {
         .manage(supervisor.clone())
         .invoke_handler(tauri::generate_handler![
             get_desktop_version,
-            check_desktop_health
+            check_desktop_health,
+            desktop_management_call,
+            desktop_authorize_project,
+            desktop_set_project_access,
+            desktop_set_project_execution,
+            desktop_enable_project,
+            desktop_disable_project,
+            desktop_remove_project,
+            desktop_create_token,
+            desktop_revoke_token,
+            desktop_list_tokens,
+            desktop_list_approvals,
+            desktop_resolve_approval,
+            desktop_list_jobs,
+            desktop_cancel_job,
+            desktop_get_pause_state,
+            desktop_set_pause_state,
+            desktop_emergency_stop,
+            desktop_list_audit,
+            desktop_list_projects,
+            desktop_get_status,
+            desktop_get_mcp_status,
+            desktop_list_runners,
+            desktop_set_server_url
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

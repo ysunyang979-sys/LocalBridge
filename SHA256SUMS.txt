@@ -1,9 +1,9 @@
-4c48f0d78a2793ef7d5741e8977110fe12f14744d1b36b8db4e49ede3e9ab83c  apps/desktop/src-tauri/target/release/bundle/nsis/LocalBridge_1.0.0_x64-setup.exe
-36b730d52dfa5803dacfa89554f03b46c64aaf83f9ae4cf13f6d7b15ce2d72bf  apps/desktop/src-tauri/target/release/bundle/msi/LocalBridge_1.0.0_x64_en-US.msi
-3d713d79603f4a9b14b22189a9f10175347871765f4f7e99c0b65b3e23c9ef27  apps/desktop/src-tauri/target/release/localbridge-desktop.exe
+29e414f6d2e6b4c9639e7ecb4e5d7a68dea66a16e575604f8d7a459550ab60e1  apps/desktop/src-tauri/target/release/bundle/nsis/LocalBridge_1.0.0_x64-setup.exe
+a080ca7ea701ef3b19efb263109157031607bca113a31c3dc8deca8fc87c35bf  apps/desktop/src-tauri/target/release/bundle/msi/LocalBridge_1.0.0_x64_en-US.msi
+fac02f3181fa7057bf8e14595223012129a0ef0bff963c3ddada196f161127a3  apps/desktop/src-tauri/target/release/localbridge-desktop.exe
 cee90574c8ed9b360fade0a40ff8b74ed37e1e17351b9e91f3818e877379c116  packages/protocol/dist/index.js
 370335226cebf2293fa1c8c443a5f18c978bd1da2b22d191c3fb6b98c37ad0e1  packages/security/dist/index.js
 189007f4e158d279e215db2d99640977a6a9c035f2087ea36088c4705f8c6697  packages/shared/dist/index.js
 0cdeca0d39607cc2e4df2efb2952a1b773c975318467edce8a988851fe5799b1  apps/runner/dist/index.js
-81c91cf52a42b5bb14ab0a24d48c9f23bc5b3fbd9962c9902eef528996547a33  apps/server/dist/index.js
-977b3bd4a12d11653d486461e1e31dd68343143a923a1a535cdd83cf341770aa  apps/desktop/dist/index.html
+1ca5941a760bf08766586d3f6166f74e9ba59b3bc462a87e744cb33038bf8286  apps/server/dist/index.js
+3a0fe5b318f705b6747082380d9316e581fa96d611ca5f38aaa3354501394d85  apps/desktop/dist/index.html
