@@ -19,7 +19,7 @@ export class ApprovalManager {
    * Helper to ensure expired pending requests are updated to "expired".
    */
   private checkExpiry(req: ApprovalRequest): ApprovalRequest {
-    if (req.status === "pending" && Date.now() > req.expiresAt) {
+    if ((req.status === "pending" || req.status === "approved") && Date.now() > req.expiresAt) {
       req.status = "expired";
       this.logger?.debug(
         { approvalId: req.id, projectId: req.projectId },

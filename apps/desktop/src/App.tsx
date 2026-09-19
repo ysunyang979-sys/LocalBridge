@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { OctagonAlert } from "lucide-react";
 import { Sidebar, type NavPage } from "./components/Sidebar.js";
 import { Header } from "./components/Header.js";
 import { OverviewPage } from "./pages/OverviewPage.js";
@@ -24,12 +25,14 @@ import type {
   Token,
   AuditEvent,
 } from "./types.js";
+import { applyServerPollResult } from "./polling-state.js";
 
 export const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<NavPage>("overview");
 
   // State
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
+  const [startupError, setStartupError] = useState<string | null>(null);
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -38,6 +41,9 @@ export const App: React.FC = () => {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSuccessfulRefresh, setLastSuccessfulRefresh] = useState<number | null>(null);
+  const lastSuccessfulRefreshRef = useRef<number | null>(null);
+  const refreshGeneration = useRef(0);
 
   // Modals
   const [isAuthorizeModalOpen, setIsAuthorizeModalOpen] = useState(false);
@@ -47,6 +53,7 @@ export const App: React.FC = () => {
 
   // Fetch all state
   const loadData = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     try {
       const [
         statusRes,
@@ -57,6 +64,7 @@ export const App: React.FC = () => {
         runRes,
         tokRes,
         audRes,
+        healthRes,
       ] = await Promise.allSettled([
         bridge.getStatus(),
         bridge.getMcpStatus(),
@@ -66,13 +74,33 @@ export const App: React.FC = () => {
         bridge.listRunners(),
         bridge.listTokens(),
         bridge.listAudit(),
+        bridge.getDesktopHealth(),
       ]);
 
-      if (statusRes.status === "fulfilled") setServerStatus(statusRes.value);
+      // A slower, older poll must never overwrite fresher state.
+      if (generation !== refreshGeneration.current) return;
+
+      if (healthRes.status === "fulfilled" && healthRes.value?.startup_error) {
+        setStartupError(healthRes.value.startup_error);
+      } else {
+        setStartupError(null);
+      }
+
+      const nextServer = applyServerPollResult(
+        { serverStatus: null, lastSuccessfulRefresh: lastSuccessfulRefreshRef.current },
+        statusRes
+      );
+      lastSuccessfulRefreshRef.current = nextServer.lastSuccessfulRefresh;
+      setServerStatus(nextServer.serverStatus);
+      setLastSuccessfulRefresh(nextServer.lastSuccessfulRefresh);
       if (mcpRes.status === "fulfilled") setMcpStatus(mcpRes.value);
+      else setMcpStatus(null);
       if (projRes.status === "fulfilled") setProjects(projRes.value.projects || []);
+      else setProjects([]);
       if (appRes.status === "fulfilled") setApprovals(appRes.value.approvals || []);
+      else setApprovals([]);
       if (jobsRes.status === "fulfilled") setJobs(jobsRes.value.jobs || []);
+      else setJobs([]);
       if (runRes.status === "fulfilled") {
         const val = runRes.value as any;
         const list = Array.isArray(val)
@@ -81,11 +109,22 @@ export const App: React.FC = () => {
             ? val.runners
             : [];
         setRunners(list);
-      }
+      } else setRunners([]);
       if (tokRes.status === "fulfilled") setTokens(tokRes.value.tokens || []);
+      else setTokens([]);
       if (audRes.status === "fulfilled") setAuditEvents(audRes.value.events || []);
+      else setAuditEvents([]);
     } catch {
-      // Ignored during polling
+      if (generation === refreshGeneration.current) {
+        setServerStatus(null);
+        setMcpStatus(null);
+        setProjects([]);
+        setApprovals([]);
+        setJobs([]);
+        setRunners([]);
+        setTokens([]);
+        setAuditEvents([]);
+      }
     }
   }, []);
 
@@ -98,7 +137,10 @@ export const App: React.FC = () => {
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      refreshGeneration.current++;
+      clearInterval(interval);
+    };
   }, [loadData]);
 
   // Toggle Global Pause
@@ -175,7 +217,16 @@ export const App: React.FC = () => {
           onTriggerEmergencyStop={() => setIsEmergencyStopModalOpen(true)}
           onRefreshAll={handleManualRefresh}
           isRefreshing={isRefreshing}
+          serverAvailable={serverStatus !== null}
+          lastSuccessfulRefresh={lastSuccessfulRefresh}
         />
+
+        {startupError && (
+          <div className="bg-red-500/10 border-b border-red-500/30 px-6 py-3 flex items-center gap-3 text-red-300 text-xs">
+            <OctagonAlert className="w-4 h-4 text-red-400 shrink-0" />
+            <span className="font-medium">{startupError}</span>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto">
           {currentPage === "overview" && (

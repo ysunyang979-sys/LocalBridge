@@ -1,11 +1,11 @@
 {
   "name": "@localbridge/desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && tsx ../../scripts/prepare-bundled-resources.ts",
+    "build": "tsc --noEmit && vite build && tsx ../../scripts/prepare-bundled-resources.ts && tsx ../../scripts/verify-bundled-resources.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit"

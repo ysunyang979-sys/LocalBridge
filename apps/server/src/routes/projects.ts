@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import { LocalBridgeErrorCode } from "@localbridge/protocol";
 import type { ServerProjectService } from "../runner/project-service.js";
+import { checkLoopbackAndSecurity, type ManagementSecurityOptions } from "./management.js";
 
-export interface ProjectsRouteOptions {
+export interface ProjectsRouteOptions extends ManagementSecurityOptions {
   projectService: ServerProjectService;
 }
 
@@ -10,6 +11,9 @@ export const projectsRoutes: FastifyPluginAsync<ProjectsRouteOptions> = async (
   fastify,
   opts
 ) => {
+  fastify.addHook("onRequest", async (request, reply) => {
+    if (!checkLoopbackAndSecurity(request, reply, opts)) return reply;
+  });
   const { projectService } = opts;
 
   // GET /api/projects - List public projects

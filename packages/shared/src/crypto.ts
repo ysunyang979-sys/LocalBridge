@@ -72,3 +72,22 @@ export function verifyToken(rawToken: string, expectedHash: string): boolean {
 export function sha256(data: string | Buffer): string {
   return crypto.createHash("sha256").update(data).digest("hex");
 }
+
+/** Deterministic JSON representation used when binding approvals to payloads. */
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
+}
+
+export function canonicalPayloadHash(value: unknown): string {
+  return sha256(canonicalJson(value));
+}

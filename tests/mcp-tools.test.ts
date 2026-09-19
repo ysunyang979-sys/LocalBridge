@@ -90,7 +90,7 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
     const createdMcp = serverInstance.tokenService.createToken({
       name: "mcp-tools-test",
       type: "mcp",
-      scopes: ["project:read", "project:write"],
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = createdMcp.token;
 

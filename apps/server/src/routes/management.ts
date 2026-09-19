@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import {
   LocalBridgeError,
@@ -13,6 +12,7 @@ import type { RunnerRegistry } from "../runner/registry.js";
 import type { RunnerRpcService } from "../runner/rpc-service.js";
 import type { ServerProjectService } from "../runner/project-service.js";
 import type { McpContext } from "../mcp/context.js";
+import { canonicalPayloadHash } from "@localbridge/shared";
 
 export interface ManagementRoutesOptions {
   tokenService: TokenService;
@@ -24,10 +24,15 @@ export interface ManagementRoutesOptions {
   requireManagementAuth?: boolean;
 }
 
-function checkLoopbackAndSecurity(
+export type ManagementSecurityOptions = Pick<
+  ManagementRoutesOptions,
+  "tokenService" | "managementSecret" | "requireManagementAuth"
+>;
+
+export function checkLoopbackAndSecurity(
   request: FastifyRequest,
   reply: FastifyReply,
-  opts: ManagementRoutesOptions
+  opts: ManagementSecurityOptions
 ): boolean {
   // 1. Loopback IP Check
   const clientIp = request.ip;
@@ -48,12 +53,16 @@ function checkLoopbackAndSecurity(
   // 2. Host Header Validation (DNS rebinding protection)
   const host = request.headers.host;
   if (host) {
-    const hostWithoutPort = host.split(":")[0]?.toLowerCase();
+    let hostWithoutPort: string;
+    try {
+      hostWithoutPort = new URL(`http://${host}`).hostname.toLowerCase();
+    } catch {
+      hostWithoutPort = "";
+    }
     const isAllowedHost =
       hostWithoutPort === "127.0.0.1" ||
       hostWithoutPort === "localhost" ||
-      hostWithoutPort === "[::1]" ||
-      hostWithoutPort === "::1";
+      hostWithoutPort === "[::1]" || hostWithoutPort === "::1";
     if (!isAllowedHost) {
       reply.status(403).send({
         error: "Forbidden: Host header validation failed",
@@ -61,6 +70,9 @@ function checkLoopbackAndSecurity(
       });
       return false;
     }
+  } else {
+    reply.status(403).send({ error: "Forbidden: Host header is required", code: "HOST_NOT_ALLOWED" });
+    return false;
   }
 
   // 3. Browser-Origin / CSRF Attack Defense
@@ -212,7 +224,8 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
           message: `Token "${id}" not found or already revoked`,
         });
       }
-      return reply.status(200).send({ success: true, id });
+      const closedRunnerConnections = runnerRegistry.closeByTokenId(id);
+      return reply.status(200).send({ success: true, id, closedRunnerConnections });
     }
   );
 
@@ -268,6 +281,21 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       });
     }
   );
+
+  fastify.post<{ Body?: { reason?: string } }>("/shutdown", async (request, reply) => {
+    mcpContext.setPaused(true);
+    const reason = request.body?.reason || "Desktop shutdown";
+    for (const runner of runnerRegistry.list()) {
+      try {
+        await rpcService.request(runner.id, RunnerRpcMethods.JobCancelAll, { reason });
+        await rpcService.request(runner.id, RunnerRpcMethods.SystemShutdown, { reason });
+      } catch (err) {
+        fastify.log.warn({ runnerId: runner.id, err }, "Graceful Runner shutdown failed");
+      }
+    }
+    setTimeout(() => { void fastify.close(); }, 100);
+    return reply.status(200).send({ shuttingDown: true });
+  });
 
   // ==========================================
   // 3. Project Management (/management/projects/*)
@@ -479,12 +507,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       });
     }
 
-    const computedHash =
-      payloadHash ||
-      crypto
-        .createHash("sha256")
-        .update(typeof payload === "string" ? payload : JSON.stringify(payload))
-        .digest("hex");
+    const computedHash = payloadHash || canonicalPayloadHash(payload);
 
     const project = projectService.getProject(projectId);
     const targetRunnerId = runnerId || project?.runnerId || getActiveRunnerId();

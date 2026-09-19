@@ -106,12 +106,12 @@ describe("Production Runtime Resolution & Negative PATH Verification", () => {
 
     serverProcess.stderr?.on("data", (d) => console.error("SERVER_STDERR:", d.toString()));
 
-    // Poll until server responds on /api/health
+    // Poll until server responds on minimal /health
     let ready = false;
     for (let i = 0; i < 60; i++) {
       await new Promise((r) => setTimeout(r, 250));
       try {
-        const res = await fetch(`http://127.0.0.1:${testPort}/api/health`);
+        const res = await fetch(`http://127.0.0.1:${testPort}/health`);
         if (res.ok) {
           ready = true;
           break;
@@ -202,7 +202,7 @@ describe("Production Runtime Resolution & Negative PATH Verification", () => {
     const tokenRes = await fetch(`http://127.0.0.1:${testPort}/api/tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Clean Env Client", type: "mcp" }),
+      body: JSON.stringify({ name: "Clean Env Client", type: "mcp", scopes: ["read", "write", "execute"] }),
     });
     expect(tokenRes.ok).toBe(true);
     const { token: mcpToken } = (await tokenRes.json()) as { token: string };

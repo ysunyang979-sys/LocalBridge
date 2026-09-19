@@ -16,16 +16,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Assert clean release checkout
+        shell: pwsh
+        run: |
+          if (git status --porcelain) { throw "Release checkout is not clean" }
+          $controlled = @(
+            "apps/desktop/src-tauri/resources/runtime",
+            "apps/desktop/src-tauri/resources/server",
+            "apps/desktop/src-tauri/resources/runner"
+          )
+          foreach ($path in $controlled) {
+            if (Test-Path -LiteralPath $path) { throw "Clean-checkout smoke failed: $path already exists" }
+          }
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
 
-      - name: Setup Node.js 24
+      - name: Setup Node.js 24.21.0
         uses: actions/setup-node@v4
         with:
-          node-version: 24.x
+          node-version: 24.21.0
           cache: "pnpm"
 
       - name: Setup Rust toolchain
@@ -34,8 +50,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare bundled production runtime
+        run: pnpm run bundle:runtime
+
+      - name: Verify bundled production runtime
+        run: pnpm vitest run tests/production-runtime-resolution.test.ts
+
       - name: Run verification test suite
         run: pnpm run test
+
+      - name: Typecheck all workspaces
+        run: pnpm run typecheck
+
+      - name: Verify generated SBOM
+        run: pnpm run sbom:check
 
       - name: Build monorepo packages
         run: pnpm run build
@@ -55,10 +83,16 @@ jobs:
       - name: Generate SHA256 Checksums
         shell: pwsh
         run: |
-          Get-ChildItem -Path apps/desktop/src-tauri/target/release/bundle -Recurse -Include *.exe,*.msi | ForEach-Object {
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $artifacts = Get-ChildItem -Path apps/desktop/src-tauri/target/release/bundle -Recurse -Include *.exe,*.msi |
+            Where-Object { $_.Name -like "*$version*" } |
+            Sort-Object FullName
+          if ($artifacts.Count -ne 2) { throw "Expected exactly two v$version installers, found $($artifacts.Count)" }
+          $lines = $artifacts | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)" | Out-File -Append -FilePath SHA256SUMS.txt -Encoding ascii
+            "$hash  $($_.Name)"
           }
+          $lines | Set-Content -Path SHA256SUMS.txt -Encoding ascii
 
       - name: Upload Release Checksums
         uses: softprops/action-gh-release@v2

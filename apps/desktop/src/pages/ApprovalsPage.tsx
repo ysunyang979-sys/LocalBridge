@@ -41,7 +41,7 @@ export const ApprovalsPage: React.FC<ApprovalsPageProps> = ({
         <div>
           <h2 className="text-xl font-bold text-slate-100">Human Approval Center</h2>
           <p className="text-xs text-slate-400">
-            Review and grant one-time execution approval for caution and dangerous operations.
+            Review and grant one-time execution approval for protected operations (v1.0.1: file.delete).
           </p>
         </div>
 

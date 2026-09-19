@@ -68,7 +68,7 @@ LocalBridge 既可作为预打包的独立桌面应用（Tauri 安装包）运�
 ### 5 步极简使用指南
 
 #### 第一步：安装或启动 LocalBridge
-- **安装包（推荐）**：下载并运行 `LocalBridge-Setup-1.0.0.exe` 或 `.msi` 安装向导。
+- **安装包（推荐）**：下载并运行 `LocalBridge-Setup-1.0.1.exe` 或 `.msi` 安装向导。
 - **源码启动**：
   ```powershell
   # 克隆并编译
@@ -477,9 +477,10 @@ LocalBridge Phase 11 建立了基于 Tauri 2 + React + TypeScript + Vite 的原�
 #### 人工审批中心 (Approval Center)
 - **全局唯一审批标识**：对敏感越权或代码执行操作动态生成 `approval_<UUIDv4>` 凭证。
 - **5 分钟自动超时**：任何未在 300 秒内获得人工决断的审批请求将自动失效，杜绝悬挂权限残留。
-- **SHA-256 参数完整性校验**：创建审批时对敏感参数（执行命令、目标路径、工作目录等）进行 SHA-256 哈希固化。决断时严格比对哈希值，一旦检测到参数被篡改立即阻断。
+- **SHA-256 参数完整性校验**：创建审批时对敏感参数（执行命令、目标路径、工作目录等）进行 SHA-256 哈希固化（`canonicalPayloadHash`）。决断时严格比对哈希值，一旦检测到参数被篡改立即阻断。
 - **单次使用即销毁 (Single-Use)**：每个审批凭证仅允许决断与执行一次，严防重放攻击。
 - **Runner 关机即刻销毁**：Runner 进程断开或重启时，所有未决审批立即失效。
+- **v1.0.1 保护操作范围**：在 LocalBridge v1.0.1 中，接入端到端校验与单次消耗（`verifyAndConsume`）执行链路的保护操作为 `file.delete`。
 
 #### 紧急熔断与访问冻结
 - **一键暂停 AI 访问 (Global Pause)**：桌面顶部控制栏提供实时开关，开启后所有进来的 AI MCP 请求将直接返回 HTTP 503 `Service Paused`，同时保持 Runner 进程及桌面程序正常运作。
@@ -509,4 +510,3 @@ LocalBridge v1.0 标志着功能冻结（Feature Freeze）与生产级全方位�
 ## 开源协议
 
 [MIT](LICENSE)
-

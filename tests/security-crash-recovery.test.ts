@@ -54,7 +54,7 @@ describe("Phase 12 - Crash Recovery, Approvals Expiration & State Integrity", ()
     expect(newManager.list({ status: "pending" })).toHaveLength(0);
   });
 
-  it("creates a pre-migration database backup (.pre-migration.bak) when initializing existing DB", () => {
+  it("creates a pre-migration database backup when a pending migration exists", () => {
     const dbPath = path.join(tmpDir, "localbridge.db");
 
     // 1. First initialization creates DB
@@ -65,8 +65,11 @@ describe("Phase 12 - Crash Recovery, Approvals Expiration & State Integrity", ()
     firstConn.db.exec("INSERT INTO custom_test (val) VALUES ('persisted_value')");
     firstConn.close();
 
-    // 2. Second initialization (simulating upgrade / migration restart)
-    const secondConn = initDatabase(dbPath);
+    // 2. Second initialization with a newly available migration
+    const futureMigrations = path.join(tmpDir, "future-migrations");
+    fs.cpSync(path.resolve("apps/server/src/db/migrations"), futureMigrations, { recursive: true });
+    fs.writeFileSync(path.join(futureMigrations, "0004_backup_test.sql"), "CREATE TABLE migration_backup_test (id INTEGER PRIMARY KEY);");
+    const secondConn = initDatabase(dbPath, futureMigrations);
     expect(secondConn.backupPath).toBeDefined();
     expect(fs.existsSync(secondConn.backupPath!)).toBe(true);
 

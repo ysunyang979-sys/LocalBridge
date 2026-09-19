@@ -58,6 +58,7 @@ export class TokenService {
   private readonly stmtUpdateLastUsed: Database.Statement;
   private readonly stmtListTokens: Database.Statement;
   private readonly stmtRevokeToken: Database.Statement;
+  private readonly stmtFindTokenById: Database.Statement;
 
   constructor(private readonly db: Database.Database) {
     this.stmtInsertToken = this.db.prepare(
@@ -84,6 +85,9 @@ export class TokenService {
     );
     this.stmtRevokeToken = this.db.prepare(
       "UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL"
+    );
+    this.stmtFindTokenById = this.db.prepare(
+      "SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at FROM tokens WHERE id = ?"
     );
   }
 
@@ -296,5 +300,15 @@ export class TokenService {
   revokeToken(id: string): boolean {
     const result = this.stmtRevokeToken.run(Date.now(), id);
     return result.changes > 0;
+  }
+
+  isTokenActive(id: string, expectedType?: "runner" | "mcp"): boolean {
+    const row = this.stmtFindTokenById.get(id) as TokenRow | undefined;
+    return Boolean(
+      row &&
+      (!expectedType || row.type === expectedType) &&
+      row.revoked_at === null &&
+      (row.expires_at === null || row.expires_at > Date.now())
+    );
   }
 }

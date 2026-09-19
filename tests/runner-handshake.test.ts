@@ -111,7 +111,7 @@ describe("Runner Handshake Protocol", () => {
     expect(response.result).toBeDefined();
     expect(response.result.accepted).toBe(true);
     expect(response.result.protocolVersion).toBe("1.0");
-    expect(response.result.serverVersion).toBe("1.0.0");
+    expect(response.result.serverVersion).toBe("1.0.1");
     expect(response.result.heartbeatIntervalMs).toBe(15000);
 
     // Verify registered in memory registry

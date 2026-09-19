@@ -1,6 +1,6 @@
 {
   "name": "localbridge-monorepo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Secure Model Context Protocol (MCP) Bridge for Local Development",
   "packageManager": "pnpm@10.14.0",
@@ -16,6 +16,9 @@
     "dev:server": "pnpm --filter @localbridge/server dev",
     "dev:runner": "pnpm --filter @localbridge/runner dev",
     "bundle:runtime": "tsx scripts/prepare-bundled-resources.ts",
+    "verify:resources": "tsx scripts/verify-bundled-resources.ts",
+    "sbom:generate": "tsx scripts/generate-sbom.ts",
+    "sbom:check": "tsx scripts/generate-sbom.ts --check",
     "clean": "pnpm -r run clean"
   },
   "devDependencies": {

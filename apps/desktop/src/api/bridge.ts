@@ -8,6 +8,7 @@ import type {
   Token,
   RunnerInfo,
   AuditEvent,
+  DesktopHealthStatus,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -52,6 +53,18 @@ class ApiBridge {
     }
 
     return (await res.json()) as T;
+  }
+
+  // Supervisor / Desktop Health
+  async getDesktopHealth(): Promise<DesktopHealthStatus | null> {
+    if (isTauri()) {
+      try {
+        return await invoke<DesktopHealthStatus>("check_desktop_health");
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 
   // System & MCP Status

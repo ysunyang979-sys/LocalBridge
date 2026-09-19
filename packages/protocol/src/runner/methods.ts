@@ -2,6 +2,7 @@ export const RunnerRpcMethods = {
   Hello: "runner.hello",
   SystemPing: "system.ping",
   SystemInfo: "system.info",
+  SystemShutdown: "system.shutdown",
   ProjectList: "project.list",
   ProjectInfo: "project.info",
   ProjectValidate: "project.validate",

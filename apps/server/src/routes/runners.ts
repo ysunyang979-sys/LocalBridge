@@ -2,8 +2,9 @@ import type { FastifyPluginAsync } from "fastify";
 import { RunnerRpcMethods } from "@localbridge/protocol";
 import type { RunnerRegistry } from "../runner/registry.js";
 import type { RunnerRpcService } from "../runner/rpc-service.js";
+import { checkLoopbackAndSecurity, type ManagementSecurityOptions } from "./management.js";
 
-export interface RunnersRouteOptions {
+export interface RunnersRouteOptions extends ManagementSecurityOptions {
   runnerRegistry: RunnerRegistry;
   rpcService: RunnerRpcService;
 }
@@ -12,6 +13,9 @@ export const runnersRoutes: FastifyPluginAsync<RunnersRouteOptions> = async (
   fastify,
   options
 ) => {
+  fastify.addHook("onRequest", async (request, reply) => {
+    if (!checkLoopbackAndSecurity(request, reply, options)) return reply;
+  });
   const { runnerRegistry, rpcService } = options;
 
   fastify.get("/runners", async (_request, reply) => {

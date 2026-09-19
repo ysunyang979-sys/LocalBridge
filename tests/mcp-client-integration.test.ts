@@ -70,7 +70,7 @@ describe("Phase 10 - Official MCP Client Integration (@modelcontextprotocol/clie
       const mcpTokenRecord = serverInstance.tokenService.createToken({
         type: "mcp",
         name: "mcp-integration-client",
-        scopes: ["project:read", "project:write"],
+        scopes: ["read", "write", "execute"],
       });
       mcpToken = mcpTokenRecord.token;
 

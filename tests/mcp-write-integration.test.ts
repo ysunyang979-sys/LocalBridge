@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { buildApp, type BuiltAppResult } from "../apps/server/src/app.js";
 import { LocalBridgeRunner } from "../apps/runner/src/runner.js";
 import { RunnerDaemonConfigSchema } from "../apps/runner/src/config/schema.js";
-import { AppConfigSchema, createLogger } from "@localbridge/shared";
+import { AppConfigSchema, canonicalPayloadHash, createLogger } from "@localbridge/shared";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -73,7 +73,7 @@ describe("Phase 10 - MCP Filesystem Write & Git Diff Workflow Integration", () =
     const mcpTokenRecord = serverInstance.tokenService.createToken({
       type: "mcp",
       name: "mcp-write-client",
-      scopes: ["project:read", "project:write"],
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = mcpTokenRecord.token;
 
@@ -252,12 +252,24 @@ describe("Phase 10 - MCP Filesystem Write & Git Diff Workflow Integration", () =
     expect(createParsed.newHash).toBeDefined();
 
     // 2. Delete file
+    const deletePayload = {
+      projectId,
+      path: "temp_created.txt",
+      expectedHash: createParsed.newHash,
+    };
+    const approval = runner.approvalManager.create({
+      projectId,
+      operation: "file.delete",
+      risk: "DANGEROUS",
+      summary: "Delete MCP integration test file",
+      payloadHash: canonicalPayloadHash(deletePayload),
+    });
+    runner.approvalManager.resolve({ approvalId: approval.id, action: "approve", resolvedBy: "test-user" });
     const deleteRes = await client.callTool({
       name: "localbridge_file_delete",
       arguments: {
-        projectId,
-        path: "temp_created.txt",
-        expectedHash: createParsed.newHash,
+        ...deletePayload,
+        approvalId: approval.id,
       },
     });
     expect(deleteRes.isError).toBeFalsy();

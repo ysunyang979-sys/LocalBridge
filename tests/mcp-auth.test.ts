@@ -43,7 +43,7 @@ describe("Phase 10 - MCP Authentication & Cross-Token Isolation", () => {
     const createdMcp = serverInstance.tokenService.createToken({
       name: "mcp-test-client",
       type: "mcp",
-      scopes: ["project:read", "project:write"],
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = createdMcp.token;
 

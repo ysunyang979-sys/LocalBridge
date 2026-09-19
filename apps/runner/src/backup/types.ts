@@ -7,6 +7,7 @@ export interface BackupMetadata {
   operation: BackupOperationType;
   createdAt: number;
   oldHash: string;
+  contentHash: string;
   newHash: string | null;
   size: number;
   mode: number;

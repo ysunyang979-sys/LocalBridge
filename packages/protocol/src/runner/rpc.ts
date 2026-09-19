@@ -3,6 +3,10 @@ import crypto from "node:crypto";
 import { RunnerRpcMethods } from "./methods.js";
 import { RunnerCapabilitiesSchema, RunnerToolsSchema } from "../models/runner.js";
 
+export const OperationIdSchema = z
+  .string()
+  .regex(/^op_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
 // Constraints
 export const MIN_RPC_TIMEOUT = 1000;
 export const MAX_RPC_TIMEOUT = 300000;
@@ -210,7 +214,7 @@ export type FileCreateParams = z.infer<typeof FileCreateParamsSchema>;
 
 export const FileCreateResultSchema = z
   .object({
-    operationId: z.string(),
+    operationId: OperationIdSchema,
     projectId: z.string(),
     path: z.string(),
     newHash: z.string(),
@@ -232,7 +236,7 @@ export type FileWriteParams = z.infer<typeof FileWriteParamsSchema>;
 
 export const FileWriteResultSchema = z
   .object({
-    operationId: z.string(),
+    operationId: OperationIdSchema,
     projectId: z.string(),
     path: z.string(),
     oldHash: z.string(),
@@ -265,7 +269,7 @@ export type FilePatchParams = z.infer<typeof FilePatchParamsSchema>;
 
 export const FilePatchResultSchema = z
   .object({
-    operationId: z.string(),
+    operationId: OperationIdSchema,
     projectId: z.string(),
     path: z.string(),
     oldHash: z.string(),
@@ -283,13 +287,14 @@ export const FileDeleteParamsSchema = z
     projectId: z.string(),
     path: z.string(),
     expectedHash: z.string(),
+    approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
   })
   .strict();
 export type FileDeleteParams = z.infer<typeof FileDeleteParamsSchema>;
 
 export const FileDeleteResultSchema = z
   .object({
-    operationId: z.string(),
+    operationId: OperationIdSchema,
     projectId: z.string(),
     path: z.string(),
     oldHash: z.string(),
@@ -303,14 +308,14 @@ export type FileDeleteResult = z.infer<typeof FileDeleteResultSchema>;
 export const FileRestoreParamsSchema = z
   .object({
     projectId: z.string(),
-    operationId: z.string(),
+    operationId: OperationIdSchema,
   })
   .strict();
 export type FileRestoreParams = z.infer<typeof FileRestoreParamsSchema>;
 
 export const FileRestoreResultSchema = z
   .object({
-    operationId: z.string(),
+    operationId: OperationIdSchema,
     projectId: z.string(),
     path: z.string(),
     restoredHash: z.string(),
@@ -915,6 +920,11 @@ export const JobCancelAllResultSchema = z
   .strict();
 export type JobCancelAllResult = z.infer<typeof JobCancelAllResultSchema>;
 
+export const SystemShutdownParamsSchema = z.object({ reason: z.string().optional() }).strict();
+export type SystemShutdownParams = z.infer<typeof SystemShutdownParamsSchema>;
+export const SystemShutdownResultSchema = z.object({ accepted: z.literal(true) }).strict();
+export type SystemShutdownResult = z.infer<typeof SystemShutdownResultSchema>;
+
 // Typed RPC Map
 export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemPing]: {
@@ -924,6 +934,10 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.SystemInfo]: {
     params: SystemInfoParams;
     result: SystemInfoResult;
+  };
+  [RunnerRpcMethods.SystemShutdown]: {
+    params: SystemShutdownParams;
+    result: SystemShutdownResult;
   };
   [RunnerRpcMethods.ProjectList]: {
     params: ProjectListParams;
@@ -1078,6 +1092,10 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.SystemInfo]: {
     params: SystemInfoParamsSchema,
     result: SystemInfoResultSchema,
+  },
+  [RunnerRpcMethods.SystemShutdown]: {
+    params: SystemShutdownParamsSchema,
+    result: SystemShutdownResultSchema,
   },
   [RunnerRpcMethods.ProjectList]: {
     params: ProjectListParamsSchema,

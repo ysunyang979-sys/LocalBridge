@@ -68,6 +68,7 @@ describe("Phase 12 - Security Audit Redaction & Parameter Policy", () => {
     const createdMcpToken = serverInstance.tokenService.createToken({
       name: "Test MCP Token",
       type: "mcp",
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = createdMcpToken.token;
 

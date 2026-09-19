@@ -39,16 +39,16 @@ describe("Server REST API", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("GET /api/health returns status ok", async () => {
+  it("GET /health returns minimal status", async () => {
     const response = await app.inject({
       method: "GET",
-      url: "/api/health",
+      url: "/health",
     });
 
     expect(response.statusCode).toBe(200);
     const json = JSON.parse(response.body);
     expect(json).toEqual({
-      status: "ok",
+      ok: true,
     });
   });
 
@@ -62,7 +62,7 @@ describe("Server REST API", () => {
     const json = JSON.parse(response.body);
     expect(json).toEqual({
       server: "LocalBridge Server",
-      version: "1.0.0",
+      version: "1.0.1",
       runners_connected: 0,
       mcp_active: true,
     });

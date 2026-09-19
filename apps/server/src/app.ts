@@ -151,21 +151,30 @@ export async function buildApp(
   const requireManagementAuth = options.requireManagementAuth ?? false;
 
   // Register REST API routes
-  await app.register(healthRoutes, { prefix: "/api" });
+  await app.register(healthRoutes);
   await app.register(statusRoutes, {
     prefix: "/api",
-    version: "1.0.0",
+    version: "1.0.1",
     getRunnersConnected: () => runnerRegistry.count(),
     isMcpActive: () => !mcpContext.isPaused(),
+    tokenService,
+    managementSecret,
+    requireManagementAuth,
   });
   await app.register(runnersRoutes, {
     prefix: "/api",
     runnerRegistry,
     rpcService,
+    tokenService,
+    managementSecret,
+    requireManagementAuth,
   });
   await app.register(projectsRoutes, {
     prefix: "/api",
     projectService,
+    tokenService,
+    managementSecret,
+    requireManagementAuth,
   });
   await app.register(managementRoutes, {
     prefix: "/api",
@@ -184,7 +193,7 @@ export async function buildApp(
     runnerRegistry,
     projectService,
     db: db.db,
-    serverVersion: "1.0.0",
+    serverVersion: "1.0.1",
     heartbeatIntervalMs: 15000,
   });
 
@@ -193,6 +202,8 @@ export async function buildApp(
     tokenService,
     mcpContext,
     rateLimiter,
+    managementSecret,
+    requireManagementAuth,
     allowedHosts: [
       "localhost",
       "127.0.0.1",

@@ -28,7 +28,6 @@ export interface RunnerWsOptions {
 declare module "fastify" {
   interface FastifyRequest {
     runnerTokenRecord?: TokenRow;
-    rawRunnerToken?: string;
   }
 }
 
@@ -97,25 +96,21 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
           {
             event: "runner_auth_success",
             tokenId: validation.tokenRecord.id,
-            tokenLast4: token.slice(-4),
           },
           "Runner token authenticated successfully"
         );
 
         request.runnerTokenRecord = validation.tokenRecord;
-        request.rawRunnerToken = token;
       },
     },
     (connection, request) => {
       const socket = connection as unknown as WebSocket;
       const tokenRecord = request.runnerTokenRecord!;
-      const tokenLast4 = request.rawRunnerToken?.slice(-4) ?? "****";
 
       fastify.log.info(
         {
           event: "runner_connected",
           tokenId: tokenRecord.id,
-          tokenLast4,
         },
         "Runner WebSocket connection established, awaiting handshake"
       );
@@ -256,6 +251,7 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
               lastSeenAt: now,
               missedPings: 0,
               logger: fastify.log,
+              isTokenActive: () => tokenService.isTokenActive(tokenRecord.id, "runner"),
             });
             runnerRegistry.register(activeConn);
 
@@ -304,6 +300,14 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
 
             // Start heartbeat ping cycle
             pingTimer = setInterval(() => {
+              if (!tokenService.isTokenActive(tokenRecord.id, "runner")) {
+                fastify.log.warn(
+                  { event: "runner_token_inactive", runnerId: activeRunnerId, tokenId: tokenRecord.id },
+                  "Closing runner connection because its token was revoked or expired"
+                );
+                socket.close(4003, "runner_token_inactive");
+                return;
+              }
               if (missedPings >= 3) {
                 fastify.log.warn(
                   { event: "runner_heartbeat_timeout", runnerId: activeRunnerId },

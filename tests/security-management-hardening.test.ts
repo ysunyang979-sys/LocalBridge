@@ -21,9 +21,12 @@ describe("Phase 12 - Security Management Hardening & Token Domain Isolation", ()
       cliArgs: ["--port", "0", "--db-path", dbPath],
     });
 
+    managementToken = `lm_${"a".repeat(64)}`;
     serverInstance = await buildApp({
       config: baseConfig,
       enableLogging: false,
+      managementSecret: managementToken,
+      requireManagementAuth: true,
     });
 
     // Create tokens for all three domains
@@ -39,7 +42,6 @@ describe("Phase 12 - Security Management Hardening & Token Domain Isolation", ()
     });
     runnerToken = runnerRes.token;
 
-    managementToken = serverInstance.managementSecret;
   });
 
   afterEach(async () => {
@@ -98,6 +100,7 @@ describe("Phase 12 - Security Management Hardening & Token Domain Isolation", ()
       url: "/api/tokens",
       headers: {
         origin: "tauri://localhost",
+        authorization: `Bearer ${managementToken}`,
       },
     });
 
@@ -109,10 +112,27 @@ describe("Phase 12 - Security Management Hardening & Token Domain Isolation", ()
       url: "/api/tokens",
       headers: {
         origin: "http://127.0.0.1:1420",
+        authorization: `Bearer ${managementToken}`,
       },
     });
 
     expect(localOriginRes.statusCode).toBe(200);
+  });
+
+  it("requires lm_ authentication on management read APIs", async () => {
+    for (const url of ["/api/status", "/api/runners", "/api/projects"]) {
+      const missing = await serverInstance.app.inject({ method: "GET", url });
+      expect(missing.statusCode, url).toBe(401);
+      const valid = await serverInstance.app.inject({
+        method: "GET",
+        url,
+        headers: { authorization: `Bearer ${managementToken}` },
+      });
+      expect(valid.statusCode, url).toBe(200);
+    }
+    const health = await serverInstance.app.inject({ method: "GET", url: "/health" });
+    expect(health.statusCode).toBe(200);
+    expect(JSON.parse(health.body)).toEqual({ ok: true });
   });
 
   it("enforces strict three-domain token isolation (lb_, lbr_, lm_ cannot be swapped)", async () => {

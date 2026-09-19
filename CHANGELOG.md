@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.0.1] - 2026-09-19
+
+### Security and release hardening
+
+- Enforced exact MCP `read`, `write`, and `execute` scopes at the central dispatch boundary; empty scopes deny all tool calls.
+- Bound protected `file.delete` execution to approved one-time requests using canonical payload hashes.
+- Added immediate Runner disconnect on token revocation and expiry checks on heartbeat and RPC dispatch.
+- Protected Desktop management read APIs with loopback, Host, browser-origin, and `lm_` authentication checks.
+- Replaced Desktop token fallbacks with Rust OS CSPRNG generation and atomic token-file writes.
+- Added single-instance Desktop behavior, owned-child authenticated readiness checks, and process-tree shutdown cleanup.
+- Replaced unsafe SQLite file copying with verified SQLite-consistent pre-migration backups, including WAL data.
+- Made bundled resources deterministic and rejected database artifacts before packaging.
+- Hardened backup restore identifiers, containment, metadata, size, and content-integrity validation.
+- Pinned release Node.js to 24.21.0, added clean-checkout/runtime/typecheck gates, deterministic checksums, and generated SBOM drift checks.
+- Cleared stale Desktop polling state and prevented older refreshes from overwriting newer results.
+
+---
+
 ## [1.0.0] - 2026-09-19
 
 ### Milestone: v1.0.0 Production Release & Phase 12 Security Hardening

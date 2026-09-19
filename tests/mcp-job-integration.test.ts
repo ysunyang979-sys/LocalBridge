@@ -83,7 +83,7 @@ describe("Phase 10 - MCP Background Build/Test & Job System Integration", () => 
     const mcpTokenRecord = serverInstance.tokenService.createToken({
       type: "mcp",
       name: "mcp-jobs-client",
-      scopes: ["project:read", "project:write"],
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = mcpTokenRecord.token;
 

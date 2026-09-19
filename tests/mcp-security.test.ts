@@ -72,7 +72,7 @@ describe("Phase 10 - MCP Security, Access Modes & Path Privacy", () => {
     const mcpTokenRecord = serverInstance.tokenService.createToken({
       type: "mcp",
       name: "mcp-sec-client",
-      scopes: ["project:read", "project:write"],
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = mcpTokenRecord.token;
 

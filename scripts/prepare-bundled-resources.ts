@@ -8,8 +8,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 
-const EXPECTED_NODE_VERSION = "v24.21.0";
-const EXPECTED_NODE_SHA256 = "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32";
+const nodeMetadata = JSON.parse(
+  fs.readFileSync(path.resolve(rootDir, "scripts/bundled-node.json"), "utf-8")
+) as { version: string; platform: string; arch: string; sha256: string };
+const EXPECTED_NODE_VERSION = `v${nodeMetadata.version}`;
+const EXPECTED_NODE_SHA256 = nodeMetadata.sha256;
 
 const resourcesDir = path.resolve(rootDir, "apps/desktop/src-tauri/resources");
 const runtimeDir = path.join(resourcesDir, "runtime");
@@ -39,13 +42,43 @@ function findPnpmPackage(packageName: string, preferredVersion?: string): string
   return pkgPath;
 }
 
+function getEsbuildRunner(): string {
+  try {
+    const esbuildPkg = findPnpmPackage("esbuild");
+    const esbuildBin = path.join(esbuildPkg, "bin/esbuild");
+    if (fs.existsSync(esbuildBin)) {
+      return `node "${esbuildBin}"`;
+    }
+  } catch {}
+  return "npx esbuild";
+}
+
 async function main() {
   console.log("=== LocalBridge Bundled Runtime Preparation ===");
 
-  // 1. Prepare target directories
+  // 1. Clean only the controlled build outputs. This makes preparation
+  // deterministic and prevents stale runtime or database files being shipped.
+  for (const controlledDir of [runtimeDir, serverDir, runnerDir]) {
+    const relative = path.relative(resourcesDir, controlledDir);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(`Refusing to clean uncontrolled resource path: ${controlledDir}`);
+    }
+    fs.rmSync(controlledDir, { recursive: true, force: true });
+  }
+
+  // Prepare target directories
   fs.mkdirSync(runtimeDir, { recursive: true });
   fs.mkdirSync(serverDir, { recursive: true });
   fs.mkdirSync(runnerDir, { recursive: true });
+
+  // Ensure workspace packages are built before bundling server/runner
+  const sharedDist = path.resolve(rootDir, "packages/shared/dist/index.js");
+  const protocolDist = path.resolve(rootDir, "packages/protocol/dist/index.js");
+  const securityDist = path.resolve(rootDir, "packages/security/dist/index.js");
+  if (!fs.existsSync(sharedDist) || !fs.existsSync(protocolDist) || !fs.existsSync(securityDist)) {
+    console.log("Building workspace packages first...");
+    child_process.execSync("pnpm -r --filter=./packages/* run build", { cwd: rootDir, stdio: "inherit" });
+  }
 
   // 2. Locate and verify Node.js binary
   const nodeSrc = process.execPath;
@@ -72,9 +105,10 @@ async function main() {
   console.log("\nBundling @localbridge/server...");
   const serverEntry = path.resolve(rootDir, "apps/server/src/index.ts");
   const serverOut = path.join(serverDir, "index.js");
+  const esbuildCmd = getEsbuildRunner();
 
   child_process.execSync(
-    `npx esbuild "${serverEntry}" --bundle --platform=node --format=esm --target=node24 --external:better-sqlite3 --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="${serverOut}"`,
+    `${esbuildCmd} "${serverEntry}" --bundle --platform=node --format=esm --target=node24 --external:better-sqlite3 --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="${serverOut}"`,
     { cwd: rootDir, stdio: "inherit" }
   );
 
@@ -149,7 +183,7 @@ async function main() {
   const runnerOut = path.join(runnerDir, "index.js");
 
   child_process.execSync(
-    `npx esbuild "${runnerEntry}" --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="${runnerOut}"`,
+    `${esbuildCmd} "${runnerEntry}" --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="${runnerOut}"`,
     { cwd: rootDir, stdio: "inherit" }
   );
 
@@ -173,10 +207,24 @@ async function main() {
   }
 
   // 6. Test starting server import with bundled node.exe
-  const serverImportTest = child_process.execFileSync(destNodeExe, [
-    "-e",
-    "import('./index.js'); setTimeout(() => { console.log('SERVER_IMPORT_OK'); process.exit(0); }, 500);",
-  ], { cwd: serverDir, env: { ...process.env, LOCALBRIDGE_SERVER_PORT: "0", LOCALBRIDGE_LOG_LEVEL: "silent" } }).toString().trim();
+  const selfTestDir = fs.mkdtempSync(path.join(fs.realpathSync.native(path.resolve(process.env.TEMP || process.cwd())), "localbridge-resource-selftest-"));
+  let serverImportTest: string;
+  try {
+    serverImportTest = child_process.execFileSync(destNodeExe, [
+      "-e",
+      "import('./index.js'); setTimeout(() => { console.log('SERVER_IMPORT_OK'); process.exit(0); }, 500);",
+    ], {
+      cwd: serverDir,
+      env: {
+        ...process.env,
+        LOCALBRIDGE_SERVER_PORT: "0",
+        LOCALBRIDGE_SERVER_DB_PATH: path.join(selfTestDir, "selftest.db"),
+        LOCALBRIDGE_LOG_LEVEL: "silent",
+      },
+    }).toString().trim();
+  } finally {
+    fs.rmSync(selfTestDir, { recursive: true, force: true });
+  }
 
   console.log(`Server import verification: ${serverImportTest}`);
 
@@ -187,6 +235,12 @@ async function main() {
   ], { cwd: runnerDir, env: { ...process.env, LOCALBRIDGE_RUNNER_TOKEN: "lbr_test_test_test_test_test_test_123", LOCALBRIDGE_SERVER_URL: "ws://127.0.0.1:1/ignore", LOCALBRIDGE_LOG_LEVEL: "silent" } }).toString().trim();
 
   console.log(`Runner import verification: ${runnerImportTest}`);
+
+  const forbidden = fs.readdirSync(resourcesDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && /(?:\.db|\.db-wal|\.db-shm|\.bak)$/i.test(entry.name));
+  if (forbidden.length > 0) {
+    throw new Error(`Forbidden database artifact found in packaged resources: ${forbidden[0]!.name}`);
+  }
 
   console.log("\n=== Self-Contained Runtime Resources Successfully Prepared! ===");
 }

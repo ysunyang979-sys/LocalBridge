@@ -39,7 +39,7 @@ describe("Phase 10 - MCP Protocol Compliance & Transport Hardening", () => {
     const createdMcp = serverInstance.tokenService.createToken({
       name: "mcp-protocol-test",
       type: "mcp",
-      scopes: ["project:read", "project:write"],
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = createdMcp.token;
   });
@@ -77,7 +77,7 @@ describe("Phase 10 - MCP Protocol Compliance & Transport Hardening", () => {
     expect(data).toEqual({
       mcpActive: true,
       paused: false,
-      version: "1.0.0",
+      version: "1.0.1",
       protocolVersion: "2026-07-28",
       toolsCount: 23,
     });

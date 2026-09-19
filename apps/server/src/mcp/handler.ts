@@ -9,12 +9,16 @@ import {
   MCP_PROTOCOL_VERSION,
   type McpPrincipal,
 } from "./types.js";
+import { hasToolScope, requiredScopeForTool } from "./scope-policy.js";
+import { checkLoopbackAndSecurity } from "../routes/management.js";
 
 export interface McpRoutesOptions {
   tokenService: TokenService;
   mcpContext: McpContext;
   rateLimiter?: McpRateLimiter;
   allowedHosts?: string[];
+  managementSecret?: string;
+  requireManagementAuth?: boolean;
 }
 
 export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
@@ -42,24 +46,16 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
 
   // 1. Loopback-only MCP Status Endpoint
   fastify.get("/api/mcp/status", async (request: FastifyRequest, reply: FastifyReply) => {
-    const clientIp = request.ip;
-    const isLoopback =
-      clientIp === "127.0.0.1" ||
-      clientIp === "::1" ||
-      clientIp === "::ffff:127.0.0.1" ||
-      clientIp === "localhost";
-
-    if (!isLoopback) {
-      return reply.status(403).send({
-        error: "Forbidden: Management API is only accessible via loopback",
-        code: "LOOPBACK_ONLY",
-      });
-    }
+    if (!checkLoopbackAndSecurity(request, reply, {
+      tokenService,
+      managementSecret: options.managementSecret,
+      requireManagementAuth: options.requireManagementAuth,
+    })) return reply;
 
     return reply.status(200).send({
       mcpActive: !mcpContext.isPaused(),
       paused: mcpContext.isPaused(),
-      version: "1.0.0",
+      version: "1.0.1",
       protocolVersion: MCP_PROTOCOL_VERSION,
       toolsCount: 23,
     });
@@ -238,6 +234,28 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
         scopes,
         tokenId: tokenRecord.id,
       };
+
+      // Scope authorization is deliberately centralized before MCP dispatch so
+      // no tool implementation can accidentally bypass it. Scopes are exact:
+      // execute never implies write, and an empty scope set permits no tool.
+      if (body?.method === "tools/call") {
+        const toolName = body.params?.name;
+        const requiredScope =
+          typeof toolName === "string" ? requiredScopeForTool(toolName) : undefined;
+        if (!requiredScope || !hasToolScope(principal.scopes, toolName)) {
+          return reply.status(403).send({
+            jsonrpc: "2.0",
+            error: {
+              code: -32003,
+              message: requiredScope
+                ? `Forbidden: tool "${toolName}" requires scope "${requiredScope}"`
+                : "Forbidden: unknown tool has no authorized scope mapping",
+              data: { code: "MCP_SCOPE_DENIED", requiredScope },
+            },
+            id: body.id ?? null,
+          });
+        }
+      }
 
       // 3.7 Rate Limiting & Concurrency Tracking
       const rateLimitResult = rateLimiter.acquire(principal.id);

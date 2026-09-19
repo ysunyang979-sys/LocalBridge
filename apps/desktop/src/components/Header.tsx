@@ -10,6 +10,8 @@ interface HeaderProps {
   onTriggerEmergencyStop: () => void;
   onRefreshAll: () => void;
   isRefreshing?: boolean;
+  serverAvailable: boolean;
+  lastSuccessfulRefresh: number | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,6 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
   onTriggerEmergencyStop,
   onRefreshAll,
   isRefreshing,
+  serverAvailable,
+  lastSuccessfulRefresh,
 }) => {
   const isPaused = mcpStatus?.paused ?? false;
 
@@ -31,6 +35,12 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-3">
+        <span
+          className={`text-[11px] ${serverAvailable ? "text-emerald-400" : "text-red-400"}`}
+          title={lastSuccessfulRefresh ? `Last successful refresh: ${new Date(lastSuccessfulRefresh).toLocaleString()}` : "No successful refresh yet"}
+        >
+          {serverAvailable ? "Online" : "Unavailable"}
+        </span>
         {/* Refresh button */}
         <button
           onClick={onRefreshAll}

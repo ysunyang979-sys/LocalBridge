@@ -97,6 +97,7 @@ describe("Final Release Acceptance Pass - Comprehensive System Verification", ()
     const createdMcp = serverInstance.tokenService.createToken({
       name: "MCP Acceptance Token",
       type: "mcp",
+      scopes: ["read", "write", "execute"],
     });
     mcpToken = createdMcp.token;
 

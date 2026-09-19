@@ -68,7 +68,7 @@ LocalBridge can be run either as a standalone desktop application via the Tauri 
 ### 5-Step Quick Start
 
 #### Step 1: Install or Launch LocalBridge
-- **Installer (Recommended)**: Download and run the `LocalBridge-Setup-1.0.0.exe` or `.msi` Windows installer.
+- **Installer (Recommended)**: Download and run the `LocalBridge-Setup-1.0.1.exe` or `.msi` Windows installer.
 - **From Source**:
   ```powershell
   # Clone and install dependencies
@@ -475,9 +475,10 @@ LocalBridge Phase 11 establishes a full GUI desktop control center (`apps/deskto
 #### Human-in-the-Loop Approval Center
 - **Unique Request Identifiers**: `approval_<UUIDv4>` generated for sensitive actions requiring human elevation.
 - **5-Minute Auto-Expiry**: Requests automatically expire after 300 seconds if not reviewed.
-- **SHA-256 Parameter Hash Binding**: Sensitive parameters (commands, script names, target paths) are hashed upon creation. Resolution validates that arguments have not been altered or substituted.
+- **SHA-256 Parameter Hash Binding**: Sensitive parameters (commands, script names, target paths) are hashed upon creation (`canonicalPayloadHash`). Resolution validates that arguments have not been altered or substituted.
 - **Single-Use Guarantee**: Approvals can be resolved exactly once; replay attempts fail immediately with `APPROVAL_ALREADY_RESOLVED`.
 - **Runner Teardown Invalidation**: When the runner process terminates or restarts, all unconsumed approvals are expired.
+- **v1.0.1 Protected Operation**: In LocalBridge v1.0.1, the protected approval operation with end-to-end execution verification is `file.delete`.
 
 #### Emergency Kill Switches
 - **Global Pause (`Pause AI Access`)**: One-click toggle instantly returns HTTP 503 `Service Paused` to all inbound AI MCP requests without disconnecting the Runner daemon or GUI.
@@ -507,4 +508,3 @@ LocalBridge v1.0 marks the formal Feature Freeze and production hardening of the
 ## License
 
 [MIT](LICENSE)
-

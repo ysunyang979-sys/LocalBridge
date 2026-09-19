@@ -15,6 +15,129 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(target_os = "windows")]
+mod job_object {
+    use std::os::windows::io::AsRawHandle;
+    use std::process::Child;
+
+    type HANDLE = *mut std::ffi::c_void;
+    type BOOL = i32;
+    type DWORD = u32;
+
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: DWORD = 0x00002000;
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: u32 = 9;
+
+    #[repr(C)]
+    struct IO_COUNTERS {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: DWORD,
+        minimum_working_set_size: usize,
+        maximum_working_set_size: usize,
+        active_process_limit: DWORD,
+        affinity: usize,
+        priority_class: DWORD,
+        scheduling_class: DWORD,
+    }
+
+    #[repr(C)]
+    struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        basic_limit_information: JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        io_info: IO_COUNTERS,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_limit: usize,
+        peak_job_memory_limit: usize,
+    }
+
+    extern "system" {
+        fn CreateJobObjectW(lpJobAttributes: *mut std::ffi::c_void, lpName: *const u16) -> HANDLE;
+        fn SetInformationJobObject(
+            hJob: HANDLE,
+            JobObjectInformationClass: u32,
+            lpJobObjectInformation: *const std::ffi::c_void,
+            cbJobObjectInformationLength: DWORD,
+        ) -> BOOL;
+        fn AssignProcessToJobObject(hJob: HANDLE, hProcess: HANDLE) -> BOOL;
+        fn CloseHandle(hObject: HANDLE) -> BOOL;
+    }
+
+    pub struct JobObjectGuard {
+        handle: HANDLE,
+    }
+
+    unsafe impl Send for JobObjectGuard {}
+    unsafe impl Sync for JobObjectGuard {}
+
+    impl JobObjectGuard {
+        pub fn create() -> Option<Self> {
+            unsafe {
+                let handle = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+                if handle.is_null() {
+                    return None;
+                }
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.basic_limit_information.limit_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let res = SetInformationJobObject(
+                    handle,
+                    JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                    &info as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as DWORD,
+                );
+                if res == 0 {
+                    CloseHandle(handle);
+                    return None;
+                }
+                Some(JobObjectGuard { handle })
+            }
+        }
+
+        pub fn assign_child(&self, child: &Child) -> bool {
+            unsafe {
+                let proc_handle = child.as_raw_handle() as HANDLE;
+                AssignProcessToJobObject(self.handle, proc_handle) != 0
+            }
+        }
+    }
+
+    impl Drop for JobObjectGuard {
+        fn drop(&mut self) {
+            unsafe {
+                if !self.handle.is_null() {
+                    CloseHandle(self.handle);
+                }
+            }
+        }
+    }
+}
+
+fn terminate_owned_process_tree(child: &mut Child) {
+    let pid = child.id();
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &pid.to_string(), "/T", "/F"]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        let _ = command.status();
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = child.kill();
+    #[cfg(target_os = "windows")]
+    let _ = child.kill();
+    let _ = child.try_wait();
+    let _ = child.wait();
+}
+
 #[derive(Default)]
 struct SupervisorState {
     server_process: Option<Child>,
@@ -26,15 +149,44 @@ struct SupervisorState {
     management_token: Option<String>,
     server_port: u16,
     data_dir: Option<PathBuf>,
+    startup_error: Option<String>,
+    #[cfg(target_os = "windows")]
+    job_object: Option<job_object::JobObjectGuard>,
 }
 
 impl SupervisorState {
     fn shutdown(&mut self) {
+        let port = if self.server_port == 0 { 18080 } else { self.server_port };
+        let token = get_management_token(self);
+        if !token.is_empty() {
+            let _ = loopback_management_request(
+                port,
+                &token,
+                "POST",
+                "/api/pause",
+                Some(&serde_json::json!({ "paused": true })),
+            );
+            let _ = loopback_management_request(
+                port,
+                &token,
+                "POST",
+                "/api/emergency-stop",
+                Some(&serde_json::json!({ "reason": "Desktop shutdown" })),
+            );
+            let _ = loopback_management_request(
+                port,
+                &token,
+                "POST",
+                "/api/shutdown",
+                Some(&serde_json::json!({ "reason": "Desktop shutdown" })),
+            );
+        }
+        std::thread::sleep(Duration::from_millis(750));
         if let Some(mut runner) = self.runner_process.take() {
-            let _ = runner.kill();
+            terminate_owned_process_tree(&mut runner);
         }
         if let Some(mut server) = self.server_process.take() {
-            let _ = server.kill();
+            terminate_owned_process_tree(&mut server);
         }
     }
 }
@@ -47,6 +199,7 @@ pub struct SystemStatus {
     pub bundled_runtime: bool,
     pub server_running: bool,
     pub runner_running: bool,
+    pub startup_error: Option<String>,
 }
 
 #[tauri::command]
@@ -56,22 +209,23 @@ fn get_desktop_version() -> &'static str {
 
 #[tauri::command]
 fn check_desktop_health(state: tauri::State<Arc<Mutex<SupervisorState>>>) -> SystemStatus {
-    let (bundled, server_active, runner_active) = match state.lock() {
-        Ok(s) => (
-            s.bundled_node.is_some(),
-            s.server_process.is_some() || is_port_open(18080),
-            s.runner_process.is_some(),
-        ),
-        Err(_) => (false, false, false),
+    let (bundled, server_active, runner_active, startup_error) = match state.lock() {
+        Ok(mut s) => {
+            let server_active = s.server_process.as_mut().is_some_and(|p| p.try_wait().ok().flatten().is_none());
+            let runner_active = s.runner_process.as_mut().is_some_and(|p| p.try_wait().ok().flatten().is_none());
+            (s.bundled_node.is_some(), server_active, runner_active, s.startup_error.clone())
+        },
+        Err(_) => (false, false, false, Some("Supervisor state is unavailable".into())),
     };
 
     SystemStatus {
-        ready: true,
+        ready: startup_error.is_none() && server_active && runner_active,
         version: env!("CARGO_PKG_VERSION").to_string(),
         platform: std::env::consts::OS.to_string(),
         bundled_runtime: bundled,
         server_running: server_active,
         runner_running: runner_active,
+        startup_error,
     }
 }
 
@@ -120,76 +274,41 @@ fn resolve_resource_file(app: &tauri::AppHandle, relative_path: &str) -> Option<
     None
 }
 
-fn get_or_create_runner_token(node_exe: &Path, data_dir: &Path) -> String {
-    let key_file = data_dir.join("runner-token.key");
+fn get_or_create_token(prefix: &str, filename: &str, data_dir: &Path) -> Result<String, String> {
+    let key_file = data_dir.join(filename);
     if key_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&key_file) {
-            let trimmed = content.trim();
-            if trimmed.starts_with("lbr_") && trimmed.len() >= 36 {
-                return trimmed.to_string();
-            }
+        let content = std::fs::read_to_string(&key_file)
+            .map_err(|e| format!("Cannot read token file {}: {}", key_file.display(), e))?;
+        let trimmed = content.trim();
+        if trimmed.starts_with(prefix)
+            && trimmed.len() == prefix.len() + 64
+            && trimmed[prefix.len()..].bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Ok(trimmed.to_string());
         }
+        return Err(format!("Token file {} is invalid", key_file.display()));
     }
 
-    // Generate high-entropy 256-bit token using bundled node's CSPRNG
-    let mut cmd = Command::new(node_exe);
-    cmd.args(["-e", "console.log('lbr_' + require('crypto').randomBytes(32).toString('hex'))"]);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).map_err(|e| format!("OS CSPRNG failure: {}", e))?;
+    let mut token = String::with_capacity(prefix.len() + 64);
+    token.push_str(prefix);
+    for byte in bytes { token.push_str(&format!("{:02x}", byte)); }
 
-    if let Ok(output) = cmd.output() {
-        let generated = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if generated.starts_with("lbr_") {
-            let _ = std::fs::write(&key_file, &generated);
-            return generated;
-        }
+    let temp_file = data_dir.join(format!(".{}.{}.tmp", filename, std::process::id()));
+    use std::io::Write;
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temp_file)?;
+        file.write_all(token.as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&temp_file, &key_file)?;
+        Ok(())
+    })();
+    if let Err(error) = write_result {
+        let _ = std::fs::remove_file(&temp_file);
+        return Err(format!("Atomic token file write failed for {}: {}", key_file.display(), error));
     }
-
-    // Fallback pseudo-random token if node eval somehow fails
-    let fallback = format!("lbr_{:016x}{:016x}{:016x}{:016x}",
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(12345),
-        std::process::id(),
-        0xfeedface_u64,
-        0xdeadbeef_u64
-    );
-    let _ = std::fs::write(&key_file, &fallback);
-    fallback
-}
-
-fn get_or_create_management_token(node_exe: &Path, data_dir: &Path) -> String {
-    let key_file = data_dir.join("management-token.key");
-    if key_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&key_file) {
-            let trimmed = content.trim();
-            if trimmed.starts_with("lm_") && trimmed.len() >= 36 {
-                return trimmed.to_string();
-            }
-        }
-    }
-
-    // Generate high-entropy 256-bit token using bundled node's CSPRNG
-    let mut cmd = Command::new(node_exe);
-    cmd.args(["-e", "console.log('lm_' + require('crypto').randomBytes(32).toString('hex'))"]);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    if let Ok(output) = cmd.output() {
-        let generated = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if generated.starts_with("lm_") {
-            let _ = std::fs::write(&key_file, &generated);
-            return generated;
-        }
-    }
-
-    // Fallback pseudo-random token if node eval somehow fails
-    let fallback = format!("lm_{:016x}{:016x}{:016x}{:016x}",
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(54321),
-        std::process::id(),
-        0xfeedface_u64,
-        0xcafebabe_u64
-    );
-    let _ = std::fs::write(&key_file, &fallback);
-    fallback
+    Ok(token)
 }
 
 fn get_management_token(state: &SupervisorState) -> String {
@@ -332,7 +451,8 @@ fn loopback_management_request(
     }
 }
 
-#[tauri::command]
+// Private Rust loopback helper for typed IPC commands.
+// Not exposed directly to the WebView context.
 fn desktop_management_call(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     method: String,
@@ -643,11 +763,38 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     let db_path = server_data_dir.join("localbridge.db");
     let projects_path = runner_data_dir.join("projects.json");
 
-    // 4. Retrieve or generate runner token and management token
-    let runner_token = get_or_create_runner_token(&node_path, &data_dir);
-    let management_token = get_or_create_management_token(&node_path, &data_dir);
+    // Never trust or authenticate to an unknown listener. A second Desktop
+    // instance is handled by the single-instance plugin; any remaining port
+    // occupant is a hard startup error.
+    if is_port_open(18080) {
+        let message = "LocalBridge cannot start safely because 127.0.0.1:18080 is already in use by an unknown process. Close the conflicting process and restart LocalBridge.".to_string();
+        eprintln!("[LocalBridge Supervisor] {}", message);
+        if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+        return;
+    }
+
+    // 4. Retrieve or generate tokens using the operating system CSPRNG.
+    let runner_token = match get_or_create_token("lbr_", "runner-token.key", &data_dir) {
+        Ok(token) => token,
+        Err(message) => {
+            eprintln!("[LocalBridge Supervisor] {}", message);
+            if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+            return;
+        }
+    };
+    let management_token = match get_or_create_token("lm_", "management-token.key", &data_dir) {
+        Ok(token) => token,
+        Err(message) => {
+            eprintln!("[LocalBridge Supervisor] {}", message);
+            if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+            return;
+        }
+    };
 
     // 5. Update state
+    #[cfg(target_os = "windows")]
+    let job_guard = job_object::JobObjectGuard::create();
+
     if let Ok(mut state) = supervisor.lock() {
         state.bundled_node = Some(node_path.clone());
         state.server_entry = Some(server_entry.clone());
@@ -655,12 +802,11 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         state.runner_token = Some(runner_token.clone());
         state.management_token = Some(management_token.clone());
         state.server_port = 18080;
-        state.data_dir = Some(base_data_dir);
+        state.data_dir = Some(data_dir.clone());
     }
 
-    // 6. Start Server if port 18080 is not already responding
-    let server_already_running = is_port_open(18080);
-    if !server_already_running {
+    // 6. Start the owned Server and require authenticated readiness.
+    {
         let server_cwd = server_entry.parent().unwrap_or(&server_entry);
         let mut server_cmd = Command::new(&node_path);
         server_cmd.arg(&server_entry);
@@ -674,21 +820,27 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         #[cfg(target_os = "windows")]
         server_cmd.creation_flags(CREATE_NO_WINDOW);
 
-        match server_cmd.spawn() {
-            Ok(child) => {
-                if let Ok(mut state) = supervisor.lock() {
-                    state.server_process = Some(child);
-                }
-            }
+        let mut server_child = match server_cmd.spawn() {
+            Ok(child) => child,
             Err(e) => {
-                eprintln!("[LocalBridge Supervisor] Failed to spawn Server: {}", e);
+                let message = format!("Failed to spawn bundled LocalBridge Server: {}", e);
+                eprintln!("[LocalBridge Supervisor] {}", message);
+                if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+                return;
             }
+        };
+
+        #[cfg(target_os = "windows")]
+        if let Some(ref job) = job_guard {
+            job.assign_child(&server_child);
         }
 
-        // Wait up to 10 seconds for Server port to open
+        // Port-open alone is not readiness. The owned child must still be alive
+        // and answer an lm_-authenticated management request.
         let mut ready = false;
         for _ in 0..50 {
-            if is_port_open(18080) {
+            if server_child.try_wait().ok().flatten().is_some() { break; }
+            if loopback_management_request(18080, &management_token, "GET", "/api/status", None).is_ok() {
                 ready = true;
                 break;
             }
@@ -696,7 +848,14 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         }
 
         if !ready {
-            eprintln!("[LocalBridge Supervisor] Warning: Server did not respond within timeout.");
+            terminate_owned_process_tree(&mut server_child);
+            let message = "Bundled LocalBridge Server failed authenticated readiness; Runner was not started.".to_string();
+            eprintln!("[LocalBridge Supervisor] {}", message);
+            if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+            return;
+        }
+        if let Ok(mut state) = supervisor.lock() {
+            state.server_process = Some(server_child);
         }
     }
 
@@ -712,15 +871,51 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     #[cfg(target_os = "windows")]
     runner_cmd.creation_flags(CREATE_NO_WINDOW);
 
-    match runner_cmd.spawn() {
-        Ok(child) => {
+    let mut runner_child = match runner_cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            let message = format!("Failed to spawn bundled LocalBridge Runner: {}", e);
+            eprintln!("[LocalBridge Supervisor] {}", message);
             if let Ok(mut state) = supervisor.lock() {
-                state.runner_process = Some(child);
+                state.startup_error = Some(message);
+                state.shutdown();
+            }
+            return;
+        }
+    };
+
+    #[cfg(target_os = "windows")]
+    if let Some(ref job) = job_guard {
+        job.assign_child(&runner_child);
+    }
+
+    let mut runner_ready = false;
+    for _ in 0..50 {
+        if runner_child.try_wait().ok().flatten().is_some() { break; }
+        if let Ok(value) = loopback_management_request(18080, &management_token, "GET", "/api/runners", None) {
+            if value.as_array().is_some_and(|items| !items.is_empty()) {
+                runner_ready = true;
+                break;
             }
         }
-        Err(e) => {
-            eprintln!("[LocalBridge Supervisor] Failed to spawn Runner: {}", e);
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    if !runner_ready {
+        terminate_owned_process_tree(&mut runner_child);
+        let message = "Bundled LocalBridge Runner failed authenticated registration.".to_string();
+        if let Ok(mut state) = supervisor.lock() {
+            state.startup_error = Some(message.clone());
+            state.shutdown();
         }
+        eprintln!("[LocalBridge Supervisor] {}", message);
+        return;
+    }
+    if let Ok(mut state) = supervisor.lock() {
+        #[cfg(target_os = "windows")]
+        {
+            state.job_object = job_guard;
+        }
+        state.runner_process = Some(runner_child);
     }
 }
 
@@ -729,12 +924,18 @@ fn main() {
     let supervisor_exit_clone = supervisor.clone();
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(supervisor.clone())
         .invoke_handler(tauri::generate_handler![
             get_desktop_version,
             check_desktop_health,
-            desktop_management_call,
             desktop_authorize_project,
             desktop_set_project_access,
             desktop_set_project_execution,

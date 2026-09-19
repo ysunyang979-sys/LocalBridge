@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { buildApp, type BuiltAppResult } from "../apps/server/src/app.js";
 import { LocalBridgeRunner } from "../apps/runner/src/runner.js";
 import { RunnerDaemonConfigSchema } from "../apps/runner/src/config/schema.js";
-import { AppConfigSchema, createLogger } from "@localbridge/shared";
+import { AppConfigSchema, canonicalPayloadHash, createLogger } from "@localbridge/shared";
 import {
   RunnerRpcMethods,
   LocalBridgeErrorCode,
@@ -194,13 +194,25 @@ describe("Filesystem Modifications RPC End-to-End Integration (Phase 6)", () => 
     );
 
     // 5. file.delete over Server RPC
+    const deletePayload = {
+      projectId: sampleProjectId,
+      path: "src/config.ts",
+      expectedHash: patchResult.newHash,
+    };
+    const approval = runner.approvalManager.create({
+      projectId: sampleProjectId,
+      operation: "file.delete",
+      risk: "DANGEROUS",
+      summary: "Delete RPC integration test file",
+      payloadHash: canonicalPayloadHash(deletePayload),
+    });
+    runner.approvalManager.resolve({ approvalId: approval.id, action: "approve", resolvedBy: "test-user" });
     const deleteResult: FileDeleteResult = await serverInstance.rpcService.request(
       connectedRunnerId,
       RunnerRpcMethods.FileDelete,
       {
-        projectId: sampleProjectId,
-        path: "src/config.ts",
-        expectedHash: patchResult.newHash,
+        ...deletePayload,
+        approvalId: approval.id,
       }
     );
 

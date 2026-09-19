@@ -91,6 +91,12 @@ export class FilesystemService {
     }
   }
 
+  /** Validate authorization before consuming a protected-action approval. */
+  assertDeleteAuthorized(projectId: string): void {
+    const project = this.getAuthorizedProject(projectId);
+    this.assertReadWriteAccess(project);
+  }
+
   /**
    * List single-level directory contents (non-recursive).
    */

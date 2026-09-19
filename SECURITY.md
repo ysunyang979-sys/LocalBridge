@@ -41,8 +41,8 @@ LocalBridge is engineered for local-first execution with strict defense-in-depth
    - Sensitive file contents, patches, unified diffs, raw command arguments, stdout/stderr streams, environment variables, and authentication tokens are strictly stripped and never written to audit buffers or database records.
 
 6. **Human-in-the-Loop Approvals**:
-   - High-risk operations (such as running project code or modifying system configurations) require explicit user confirmation through the Desktop Control Center.
-   - Approvals are cryptographically bound to parameters via SHA-256 digest verification, expire in 300 seconds, and are strictly one-time consumable.
+   - In LocalBridge v1.0.1, the protected approval operation with end-to-end execution verification and consumption is `file.delete`.
+   - Approvals are cryptographically bound to parameters via SHA-256 digest verification (`canonicalPayloadHash`), expire in 300 seconds, and are strictly one-time consumable (`verifyAndConsume`).
 
 ---
 

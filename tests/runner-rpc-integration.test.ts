@@ -120,7 +120,7 @@ describe("Server ↔ Runner RPC Integration & Concurrency", () => {
     );
 
     expect(result.runnerId).toBe(connectedRunnerId);
-    expect(result.runnerVersion).toBe("1.0.0");
+    expect(result.runnerVersion).toBe("1.0.1");
     expect(result.protocolVersion).toBe("1.0");
     expect(result.platform).toBe(process.platform);
     expect(result.arch).toBe(process.arch);
@@ -212,7 +212,7 @@ describe("Server ↔ Runner RPC Integration & Concurrency", () => {
     expect(infoRes.statusCode).toBe(200);
     const infoBody = JSON.parse(infoRes.body);
     expect(infoBody.runnerId).toBe(connectedRunnerId);
-    expect(infoBody.runnerVersion).toBe("1.0.0");
+    expect(infoBody.runnerVersion).toBe("1.0.1");
 
     // 3. Offline runner test -> 404 RUNNER_OFFLINE
     const offlineRes = await serverInstance.app.inject({

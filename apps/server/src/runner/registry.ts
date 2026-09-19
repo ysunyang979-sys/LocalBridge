@@ -59,6 +59,7 @@ export interface RunnerConnectionOptions {
   lastSeenAt?: number;
   missedPings?: number;
   logger?: CompatibleLogger;
+  isTokenActive?: () => boolean;
 }
 
 export interface RunnerConnection {
@@ -113,6 +114,7 @@ export class ActiveRunnerConnection implements RunnerConnection {
   };
 
   private readonly logger?: CompatibleLogger;
+  private readonly isTokenActive?: () => boolean;
 
   constructor(options: RunnerConnectionOptions) {
     this.runnerId = options.runnerId;
@@ -129,6 +131,7 @@ export class ActiveRunnerConnection implements RunnerConnection {
     this.lastSeenAt = options.lastSeenAt ?? Date.now();
     this.missedPings = options.missedPings ?? 0;
     this.logger = options.logger;
+    this.isTokenActive = options.isTokenActive;
   }
 
   async request<M extends keyof RunnerRpcMap>(
@@ -136,6 +139,13 @@ export class ActiveRunnerConnection implements RunnerConnection {
     params: RunnerRpcMap[M]["params"],
     options?: RpcRequestOptions
   ): Promise<RunnerRpcMap[M]["result"]> {
+    if (this.isTokenActive && !this.isTokenActive()) {
+      try { this.socket.close(4003, "runner_token_inactive"); } catch {}
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.UNAUTHORIZED,
+        `Runner "${this.runnerId}" token is revoked or expired`
+      );
+    }
     // 1. Validate params against schema
     const methodSchemas = RunnerRpcSchemas[method];
     if (methodSchemas?.params) {
@@ -611,5 +621,17 @@ export class RunnerRegistry {
       }
     }
     this.connections.clear();
+  }
+
+  closeByTokenId(tokenId: string): number {
+    let closed = 0;
+    for (const [runnerId, conn] of Array.from(this.connections.entries())) {
+      if (conn.tokenRecord.id !== tokenId) continue;
+      this.connections.delete(runnerId);
+      conn.dispose();
+      try { conn.socket.close(4003, "runner_token_revoked"); } catch {}
+      closed++;
+    }
+    return closed;
   }
 }

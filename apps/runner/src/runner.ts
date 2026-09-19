@@ -67,7 +67,7 @@ import {
 } from "./process/index.js";
 import { JobManager } from "./jobs/index.js";
 
-export const RUNNER_VERSION = "1.0.0";
+export const RUNNER_VERSION = "1.0.1";
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -194,6 +194,11 @@ export class LocalBridgeRunner {
       })
     );
 
+    this.rpcRouter.register(RunnerRpcMethods.SystemShutdown, async () => {
+      setTimeout(() => { void this.stop(); }, 50);
+      return { accepted: true as const };
+    });
+
     this.rpcRouter.register(
       RunnerRpcMethods.ProjectList,
       createProjectListHandler(this.projectRegistry)
@@ -241,7 +246,7 @@ export class LocalBridgeRunner {
 
     this.rpcRouter.register(
       RunnerRpcMethods.FileDelete,
-      createFileDeleteHandler(this.filesystemService)
+      createFileDeleteHandler(this.filesystemService, this.approvalManager)
     );
 
     this.rpcRouter.register(

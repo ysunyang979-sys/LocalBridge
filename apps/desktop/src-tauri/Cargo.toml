@@ -1,6 +1,6 @@
 [package]
 name = "localbridge-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "LocalBridge Desktop Control Center"
 authors = ["LocalBridge Team"]
 edition = "2021"
@@ -11,8 +11,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+getrandom = "0.3"
 
 [profile.release]
 panic = "abort"

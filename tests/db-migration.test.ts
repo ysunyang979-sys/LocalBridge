@@ -131,4 +131,30 @@ describe("Database Migrations & Persistence", () => {
 
     conn2.close();
   });
+
+  it("creates an openable, integrity-checked backup containing committed WAL data", () => {
+    const writer = initDatabase(dbFilePath, migrationsDir);
+    writer.db.pragma("wal_autocheckpoint = 0");
+    writer.db.exec("CREATE TABLE wal_canary (value TEXT NOT NULL)");
+    writer.db.prepare("INSERT INTO wal_canary (value) VALUES (?)").run("committed-in-wal");
+    expect(fs.existsSync(`${dbFilePath}-wal`)).toBe(true);
+
+    const futureMigrations = path.join(tmpDir, "future-migrations");
+    fs.cpSync(migrationsDir, futureMigrations, { recursive: true });
+    fs.writeFileSync(path.join(futureMigrations, "0004_wal_backup_test.sql"), "CREATE TABLE migration_four (id INTEGER PRIMARY KEY);");
+    const conn = initDatabase(dbFilePath, futureMigrations);
+    try {
+      expect(conn.backupPath).toBeDefined();
+      const backup = new (writer.db.constructor as any)(conn.backupPath!, { readonly: true });
+      try {
+        expect(backup.pragma("integrity_check")).toEqual([{ integrity_check: "ok" }]);
+        expect(backup.prepare("SELECT value FROM wal_canary").get()).toEqual({ value: "committed-in-wal" });
+      } finally {
+        backup.close();
+      }
+    } finally {
+      conn.close();
+      writer.close();
+    }
+  });
 });

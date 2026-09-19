@@ -7,6 +7,16 @@ import type { BackupMetadata, BackupOperationType } from "./types.js";
 
 export const MAX_BACKUPS_PER_PROJECT = 100;
 export const MAX_BACKUP_BYTES_PER_PROJECT = 100 * 1024 * 1024; // 100 MiB
+const OPERATION_ID_RE = /^op_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function assertSafePathSegment(value: string, label: string): void {
+  if (!value || value.includes("/") || value.includes("\\") || value.includes("..") || value.includes(":")) {
+    throw new LocalBridgeError(
+      LocalBridgeErrorCode.BACKUP_NOT_FOUND,
+      `Invalid ${label}`
+    );
+  }
+}
 
 export class BackupService {
   constructor(
@@ -36,7 +46,17 @@ export class BackupService {
    * Get the directory for a specific backup operation.
    */
   private getBackupDir(projectId: string, operationId: string): string {
-    return path.join(this.baseDir, projectId, operationId);
+    assertSafePathSegment(projectId, "projectId");
+    if (!OPERATION_ID_RE.test(operationId)) {
+      throw new LocalBridgeError(LocalBridgeErrorCode.BACKUP_NOT_FOUND, "Invalid operationId");
+    }
+    const base = path.resolve(this.baseDir);
+    const target = path.resolve(base, projectId, operationId);
+    const relative = path.relative(base, target);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new LocalBridgeError(LocalBridgeErrorCode.BACKUP_NOT_FOUND, "Backup path escaped its root");
+    }
+    return target;
   }
 
   /**
@@ -67,6 +87,7 @@ export class BackupService {
       operation,
       createdAt: Date.now(),
       oldHash,
+      contentHash: `sha256:${crypto.createHash("sha256").update(oldContent).digest("hex")}`,
       newHash,
       size: oldContent.length,
       mode,
@@ -109,6 +130,19 @@ export class BackupService {
       const metaJson = fs.readFileSync(metaPath, "utf-8");
       const metadata = JSON.parse(metaJson) as BackupMetadata;
       const content = fs.readFileSync(contentPath);
+      const contentHash = `sha256:${crypto.createHash("sha256").update(content).digest("hex")}`;
+      if (
+        metadata.projectId !== projectId ||
+        metadata.operationId !== operationId ||
+        metadata.contentHash !== contentHash ||
+        metadata.oldHash !== contentHash ||
+        metadata.size !== content.length
+      ) {
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.BACKUP_NOT_FOUND,
+          `Backup for operation "${operationId}" failed metadata integrity validation`
+        );
+      }
       return { metadata, content };
     } catch (err) {
       if (err instanceof LocalBridgeError) throw err;
@@ -204,4 +238,3 @@ export class BackupService {
     }
   }
 }
-

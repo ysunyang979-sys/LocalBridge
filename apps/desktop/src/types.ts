@@ -94,3 +94,13 @@ export interface AuditEvent {
   resultStatus?: "success" | "error";
   errorCode?: string;
 }
+
+export interface DesktopHealthStatus {
+  ready: boolean;
+  version: string;
+  platform: string;
+  bundled_runtime: boolean;
+  server_running: boolean;
+  runner_running: boolean;
+  startup_error: string | null;
+}
