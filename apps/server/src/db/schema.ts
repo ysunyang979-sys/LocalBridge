@@ -141,3 +141,20 @@ export interface WorkflowSessionFileRow {
   patch_count: number;
   delete_count: number;
 }
+
+export interface ManagedWorktreeRow {
+  id: string;
+  project_id: string;
+  session_id: string | null;
+  repository_root: string;
+  worktree_path: string;
+  branch_name: string;
+  base_ref: string;
+  base_commit: string;
+  head_commit: string;
+  state: string;
+  created_at: number;
+  updated_at: number;
+  removed_at: number | null;
+  created_by: string;
+}

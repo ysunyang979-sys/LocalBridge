@@ -835,6 +835,21 @@ class ApiBridge {
       }
     );
   }
+
+  async removeWorktree(worktreeId: string): Promise<{ worktreeId: string; removed: boolean }> {
+    return this.fetchJson<{ worktreeId: string; removed: boolean }>(
+      `/api/management/worktrees/${worktreeId}/remove`,
+      {
+        method: "POST",
+      }
+    );
+  }
+
+  async getWorktreeDiff(worktreeId: string): Promise<{ worktreeId: string; diff: string }> {
+    return this.fetchJson<{ worktreeId: string; diff: string }>(
+      `/api/management/worktrees/${worktreeId}/diff`
+    );
+  }
 }
 
 export interface TunnelSaveConfigInput {

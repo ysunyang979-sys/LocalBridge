@@ -13,3 +13,4 @@ export * from "./models/job.js";
 
 export * from "./code/index.js";
 export * from "./session/index.js";
+export * from "./worktree/index.js";

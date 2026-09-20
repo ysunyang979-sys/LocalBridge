@@ -212,6 +212,22 @@ export type WorkflowSessionEventKind =
   | "lsp_impact"
   | "security_event";
 
+export type ResolvedWorkspace =
+  | {
+      mode: "primary";
+      projectRoot: string;
+    }
+  | {
+      mode: "worktree";
+      worktreeId: string;
+      worktreeRoot: string;
+      branchName: string;
+      baseBranch?: string;
+      baseCommit?: string;
+      headCommit?: string;
+      isClean?: boolean;
+    };
+
 export interface WorkflowSession {
   id: string;
   projectId: string;
@@ -225,6 +241,7 @@ export interface WorkflowSession {
   finishedAt: number | null;
   finishReason: string | null;
   finishNotes: string | null;
+  workspace?: ResolvedWorkspace;
 }
 
 export interface WorkflowCheckpoint {
@@ -264,6 +281,7 @@ export interface WorkflowHandoffPacket {
     finishReason: string | null;
     finishNotes: string | null;
   };
+  workspace?: ResolvedWorkspace;
   latestCheckpoint: WorkflowCheckpoint | null;
   recentCheckpoints: WorkflowCheckpoint[];
   currentStatus: {

@@ -58,6 +58,11 @@ export const RunnerRpcMethods = {
   LspStatus: "lsp.status",
   LspRestart: "lsp.restart",
   LspStop: "lsp.stop",
+  WorktreeCreate: "worktree.create",
+  WorktreeList: "worktree.list",
+  WorktreeStatus: "worktree.status",
+  WorktreeDiff: "worktree.diff",
+  WorktreeRemove: "worktree.remove",
 } as const;
 
 export type RunnerRpcMethod =
@@ -91,6 +96,11 @@ export const RunnerMethod = {
   JOB_LIST: RunnerRpcMethods.JobList,
   BUILD_START: RunnerRpcMethods.BuildStart,
   TEST_START: RunnerRpcMethods.TestStart,
+  WORKTREE_CREATE: RunnerRpcMethods.WorktreeCreate,
+  WORKTREE_LIST: RunnerRpcMethods.WorktreeList,
+  WORKTREE_STATUS: RunnerRpcMethods.WorktreeStatus,
+  WORKTREE_DIFF: RunnerRpcMethods.WorktreeDiff,
+  WORKTREE_REMOVE: RunnerRpcMethods.WorktreeRemove,
 } as const;
 
 export type RunnerMethod = (typeof RunnerMethod)[keyof typeof RunnerMethod];

@@ -30,6 +30,7 @@ import {
 } from "@localbridge/security";
 import type { Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
+import type { WorkspaceResolver } from "../worktree/resolver.js";
 import { GitProcessRunner, MAX_GIT_DIFF_BYTES } from "./process.js";
 import { validateRepository } from "./repository.js";
 import { parsePorcelainV2 } from "./parsers/porcelain-v2.js";
@@ -57,6 +58,7 @@ export function sanitizeDiffOutput(diff: string, canonicalRoot: string): string 
  */
 export class GitService {
   private readonly processRunner: GitProcessRunner;
+  private workspaceResolver?: WorkspaceResolver;
 
   constructor(
     private readonly projectRegistry: ProjectRegistry,
@@ -69,6 +71,19 @@ export class GitService {
       this.logger = processRunnerOrLogger as Logger | undefined;
       this.processRunner = new GitProcessRunner(this.logger);
     }
+  }
+
+  setWorkspaceResolver(resolver: WorkspaceResolver): void {
+    this.workspaceResolver = resolver;
+  }
+
+  private getEffectiveRoot(projectId: string, sessionId?: string): string {
+    if (this.workspaceResolver) {
+      const resolved = this.workspaceResolver.resolve(projectId, sessionId);
+      return resolved.workspaceRoot;
+    }
+    const project = this.getAuthorizedProject(projectId);
+    return project.canonicalRoot;
   }
 
   getProcessRunner(): GitProcessRunner {
@@ -102,11 +117,12 @@ export class GitService {
    * git.info: inspect repository metadata (branch, detached, HEAD, upstream).
    */
   async getInfo(params: GitInfoParams): Promise<GitInfoResult> {
-    const project = this.getAuthorizedProject(params.projectId);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     // Validate repository boundary
     try {
-      await validateRepository(this.processRunner, project.canonicalRoot);
+      await validateRepository(this.processRunner, canonicalRoot);
     } catch (err) {
       if (
         err instanceof LocalBridgeError &&
@@ -130,7 +146,7 @@ export class GitService {
     }
 
     const result = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["status", "--porcelain=v2", "--branch", "-z"],
     });
 
@@ -165,11 +181,12 @@ export class GitService {
    * git.status: inspect working tree and index status.
    */
   async getStatus(params: GitStatusParams): Promise<GitStatusResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     const result = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["status", "--porcelain=v2", "--branch", "-uall", "-z"],
     });
 
@@ -204,8 +221,9 @@ export class GitService {
    * git.diff: inspect unified diff for unstaged or staged changes.
    */
   async getDiff(params: GitDiffParams): Promise<GitDiffResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     const scope = params.scope ?? "unstaged";
     const contextLines = params.contextLines ?? 3;
@@ -224,7 +242,7 @@ export class GitService {
 
     if (params.path !== undefined && params.path.trim().length > 0) {
       // Single-file diff path
-      const resolved = resolveProjectPath(project.canonicalRoot, params.path, {
+      const resolved = resolveProjectPath(canonicalRoot, params.path, {
         allowSensitive: true,
         mustExist: false,
       });
@@ -251,7 +269,7 @@ export class GitService {
 
       // Check index mode for symlink or submodule
       const lsResult = await this.processRunner.exec({
-        cwd: project.canonicalRoot,
+        cwd: canonicalRoot,
         args: ["ls-files", "-s", "-z", "--", resolved.relativePath],
       });
       const lsEntry = lsResult.stdout.split("\0")[0] || "";
@@ -270,13 +288,13 @@ export class GitService {
 
       const diffArgs = [...baseDiffArgs, "--", resolved.relativePath];
       const diffResult = await this.processRunner.exec({
-        cwd: project.canonicalRoot,
+        cwd: canonicalRoot,
         args: diffArgs,
         maxBufferBytes: MAX_GIT_DIFF_BYTES,
         isDiff: true,
       });
 
-      const sanitizedDiff = sanitizeDiffOutput(diffResult.stdout, project.canonicalRoot);
+      const sanitizedDiff = sanitizeDiffOutput(diffResult.stdout, canonicalRoot);
       const files = sanitizedDiff.trim().length > 0 ? [resolved.relativePath] : [];
 
       this.logger?.info(
@@ -304,7 +322,7 @@ export class GitService {
     // Project-wide diff: discover changed files first
     const nameArgs = scope === "staged" ? ["diff", "--name-only", "--staged", "-z"] : ["diff", "--name-only", "-z"];
     const nameResult = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: nameArgs,
     });
 
@@ -319,7 +337,7 @@ export class GitService {
     const indexModes = new Map<string, string>();
     if (changedFiles.length > 0) {
       const lsResult = await this.processRunner.exec({
-        cwd: project.canonicalRoot,
+        cwd: canonicalRoot,
         args: ["ls-files", "-s", "-z", "--", ...changedFiles],
       });
       const entries = lsResult.stdout.split("\0").filter(Boolean);
@@ -351,7 +369,7 @@ export class GitService {
       }
 
       // Check filesystem symlink
-      const fullPath = path.join(project.canonicalRoot, file);
+      const fullPath = path.join(canonicalRoot, file);
       try {
         if (fs.existsSync(fullPath) && fs.lstatSync(fullPath).isSymbolicLink()) {
           symlinkEntriesFiltered = true;
@@ -378,13 +396,13 @@ export class GitService {
 
     const diffArgs = [...baseDiffArgs, "--", ...safeFiles];
     const diffResult = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: diffArgs,
       maxBufferBytes: MAX_GIT_DIFF_BYTES,
       isDiff: true,
     });
 
-    const sanitizedDiff = sanitizeDiffOutput(diffResult.stdout, project.canonicalRoot);
+    const sanitizedDiff = sanitizeDiffOutput(diffResult.stdout, canonicalRoot);
 
     this.logger?.info(
       {
@@ -415,22 +433,23 @@ export class GitService {
    * git.log: retrieve recent commit history.
    */
   async getLog(params: GitLogParams): Promise<GitLogResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
     const args = ["log", "-n", String(limit), "-z", "--format=%H%x00%h%x00%an%x00%at%x00%s"];
 
     let scopedPath: string | undefined;
     if (params.path !== undefined && params.path.trim().length > 0) {
-      const resolved = resolveProjectPath(project.canonicalRoot, params.path, {
+      const resolved = resolveProjectPath(canonicalRoot, params.path, {
         allowSensitive: true,
         mustExist: false,
       });
       if (isSensitiveFile(resolved.relativePath)) {
         throw new LocalBridgeError(
           LocalBridgeErrorCode.GIT_SENSITIVE_PATH_BLOCKED,
-          `Log on sensitive file "${resolved.relativePath}" is blocked`
+          `Path "${params.path}" points to a sensitive file and cannot be inspected`
         );
       }
       scopedPath = resolved.relativePath;
@@ -439,7 +458,7 @@ export class GitService {
 
     try {
       const result = await this.processRunner.exec({
-        cwd: project.canonicalRoot,
+        cwd: canonicalRoot,
         args,
       });
 
@@ -476,11 +495,12 @@ export class GitService {
   }
 
   /**
-   * git.stage: add specified paths to git index.
+   * git.stage: stage specified file paths into git index.
    */
   async stage(params: GitStageParams): Promise<GitStageResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     const canonicalPaths = canonicalizeGitPaths(params.paths);
 
@@ -496,7 +516,7 @@ export class GitService {
 
     try {
       await this.processRunner.exec({
-        cwd: project.canonicalRoot,
+        cwd: canonicalRoot,
         args: ["add", "--", ...canonicalPaths],
       });
 
@@ -531,15 +551,16 @@ export class GitService {
    * git.unstage: remove specified paths from git index while preserving working tree modifications.
    */
   async unstage(params: GitUnstageParams): Promise<GitUnstageResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     const canonicalPaths = canonicalizeGitPaths(params.paths);
 
     try {
       // Use "git restore --staged -- <paths>" to unstage without altering working tree
       await this.processRunner.exec({
-        cwd: project.canonicalRoot,
+        cwd: canonicalRoot,
         args: ["restore", "--staged", "--", ...canonicalPaths],
       });
 
@@ -571,17 +592,18 @@ export class GitService {
   }
 
   /**
-   * git.branchCreate: create a new local git branch.
+   * git.branchCreate: create a new local branch.
    */
   async branchCreate(params: GitBranchCreateParams): Promise<GitBranchCreateResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     const branchName = validateBranchNameFormat(params.branchName);
 
     // Validate with git check-ref-format
     const checkRes = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["check-ref-format", "--branch", branchName],
       allowNonZeroExit: true,
     });
@@ -594,7 +616,7 @@ export class GitService {
 
     // Check if local branch already exists
     const showRef = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`],
       allowNonZeroExit: true,
     });
@@ -619,12 +641,12 @@ export class GitService {
     }
 
     await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: branchArgs,
     });
 
     const hashRes = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["rev-parse", "--verify", `refs/heads/${branchName}`],
     });
     const commitHash = hashRes.stdout.trim();
@@ -650,14 +672,15 @@ export class GitService {
    * git.branchSwitch: switch to an existing local branch.
    */
   async branchSwitch(params: GitBranchSwitchParams): Promise<GitBranchSwitchResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     const branchName = validateBranchNameFormat(params.branchName);
 
     // Get current branch
     const currentRes = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["rev-parse", "--abbrev-ref", "HEAD"],
     });
     const previousBranch = currentRes.stdout.trim();
@@ -672,7 +695,7 @@ export class GitService {
 
     // Verify local branch exists
     const showRef = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`],
       allowNonZeroExit: true,
     });
@@ -687,7 +710,7 @@ export class GitService {
     // Execute switch without force
     try {
       await this.processRunner.exec({
-        cwd: project.canonicalRoot,
+        cwd: canonicalRoot,
         args: ["switch", "--", branchName],
       });
     } catch (err: any) {
@@ -729,8 +752,9 @@ export class GitService {
    * git.commit: create a new commit from staged changes.
    */
   async commit(params: GitCommitParams): Promise<GitCommitResult> {
-    const project = this.getAuthorizedProject(params.projectId);
-    await validateRepository(this.processRunner, project.canonicalRoot);
+    this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+    await validateRepository(this.processRunner, canonicalRoot);
 
     if (!params.message || !params.message.trim()) {
       throw new LocalBridgeError(
@@ -748,7 +772,7 @@ export class GitService {
 
     // Check if staged changes exist via git diff --cached --quiet
     const diffCheck = await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["diff", "--cached", "--quiet"],
       allowNonZeroExit: true,
     });
@@ -762,15 +786,15 @@ export class GitService {
 
     // Direct git commit with message argument
     await this.processRunner.exec({
-      cwd: project.canonicalRoot,
+      cwd: canonicalRoot,
       args: ["commit", "-m", params.message],
     });
 
     const [hashRes, shortHashRes, branchRes, summaryRes] = await Promise.all([
-      this.processRunner.exec({ cwd: project.canonicalRoot, args: ["rev-parse", "HEAD"] }),
-      this.processRunner.exec({ cwd: project.canonicalRoot, args: ["rev-parse", "--short", "HEAD"] }),
-      this.processRunner.exec({ cwd: project.canonicalRoot, args: ["rev-parse", "--abbrev-ref", "HEAD"] }),
-      this.processRunner.exec({ cwd: project.canonicalRoot, args: ["log", "-1", "--format=%s"] }),
+      this.processRunner.exec({ cwd: canonicalRoot, args: ["rev-parse", "HEAD"] }),
+      this.processRunner.exec({ cwd: canonicalRoot, args: ["rev-parse", "--short", "HEAD"] }),
+      this.processRunner.exec({ cwd: canonicalRoot, args: ["rev-parse", "--abbrev-ref", "HEAD"] }),
+      this.processRunner.exec({ cwd: canonicalRoot, args: ["log", "-1", "--format=%s"] }),
     ]);
 
     const commitHash = hashRes.stdout.trim();

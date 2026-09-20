@@ -87,6 +87,12 @@ import { createCodeImpactHandler } from "./rpc/handlers/code-impact.js";
 import { createLspStatusHandler } from "./rpc/handlers/lsp-status.js";
 import { createLspRestartHandler } from "./rpc/handlers/lsp-restart.js";
 import { createLspStopHandler } from "./rpc/handlers/lsp-stop.js";
+import { ManagedWorktreeService, WorkspaceResolver } from "./worktree/index.js";
+import { createWorktreeCreateHandler } from "./rpc/handlers/worktree-create.js";
+import { createWorktreeListHandler } from "./rpc/handlers/worktree-list.js";
+import { createWorktreeStatusHandler } from "./rpc/handlers/worktree-status.js";
+import { createWorktreeDiffHandler } from "./rpc/handlers/worktree-diff.js";
+import { createWorktreeRemoveHandler } from "./rpc/handlers/worktree-remove.js";
 
 export const RUNNER_VERSION = "1.1.0";
 
@@ -112,6 +118,8 @@ export class LocalBridgeRunner {
   readonly jobManager: JobManager;
   readonly approvalManager: ApprovalManager;
   readonly lspManager: LspManager;
+  readonly worktreeService: ManagedWorktreeService;
+  readonly workspaceResolver: WorkspaceResolver;
   readonly runnerStateDir: string;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
@@ -146,6 +154,18 @@ export class LocalBridgeRunner {
 
     this.backupService = new BackupService(backupDir, this.logger);
 
+    this.worktreeService = new ManagedWorktreeService({
+      runnerStateDir,
+      projectRegistry: this.projectRegistry,
+      logger: this.logger,
+    });
+
+    this.workspaceResolver = new WorkspaceResolver(
+      this.projectRegistry,
+      this.worktreeService,
+      this.logger
+    );
+
     this.reconnectController = new ReconnectController({
       enabled: config.reconnect.enabled,
       initialDelayMs: config.reconnect.initialDelayMs,
@@ -168,11 +188,13 @@ export class LocalBridgeRunner {
       this.backupService,
       this.logger
     );
+    this.filesystemService.setWorkspaceResolver(this.workspaceResolver);
 
     this.gitService = new GitService(
       this.projectRegistry,
       this.logger
     );
+    this.gitService.setWorkspaceResolver(this.workspaceResolver);
 
     this.executableRegistry = new ExecutableRegistry(this.logger);
     this.processRunner = new ProcessRunner(this.logger);
@@ -186,6 +208,7 @@ export class LocalBridgeRunner {
       this.logger,
       this.approvalManager
     );
+    this.commandExecutionService.setWorkspaceResolver(this.workspaceResolver);
 
     this.jobManager = new JobManager(
       this.projectRegistry,
@@ -195,12 +218,14 @@ export class LocalBridgeRunner {
       this.approvalManager,
       { enableQueue: true, persistState: true }
     );
+    this.jobManager.setWorkspaceResolver(this.workspaceResolver);
 
     this.lspManager = new LspManager(
       this.projectRegistry,
       runnerStateDir,
       this.logger
     );
+    this.lspManager.setWorkspaceResolver(this.workspaceResolver);
 
     this.filesystemService.onFileChange((projectId, path, content) => {
       this.lspManager.onFileModified(projectId, path, content).catch(() => {});
@@ -535,6 +560,36 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.LspStop,
       createLspStopHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.WorktreeCreate,
+      createWorktreeCreateHandler(this.worktreeService, this.approvalManager, this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.WorktreeList,
+      createWorktreeListHandler(this.worktreeService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.WorktreeStatus,
+      createWorktreeStatusHandler(this.worktreeService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.WorktreeDiff,
+      createWorktreeDiffHandler(this.worktreeService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.WorktreeRemove,
+      createWorktreeRemoveHandler(
+        this.worktreeService,
+        this.approvalManager,
+        this.projectRegistry,
+        this.lspManager
+      )
     );
   }
 

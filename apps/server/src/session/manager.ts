@@ -26,6 +26,7 @@ import type {
   WorkflowSessionEventRow,
   WorkflowSessionCheckpointRow,
   JobRow,
+  ManagedWorktreeRow,
 } from "../db/schema.js";
 import type { Logger } from "@localbridge/shared";
 import type { ServerProjectService } from "../runner/project-service.js";
@@ -411,6 +412,32 @@ export class WorkflowSessionManager {
       createdAt: j.created_at,
     }));
 
+    // Resolve workspace (managed worktree or primary project root)
+    const wtRow = this.db
+      .prepare(
+        "SELECT * FROM managed_worktrees WHERE session_id = ? AND state != 'removed' LIMIT 1"
+      )
+      .get(session.id) as ManagedWorktreeRow | undefined;
+
+    const project = this.projectService.getProject(session.projectId);
+    const workspace: any = wtRow
+      ? {
+          mode: "worktree",
+          worktreeId: wtRow.id,
+          worktreePath: wtRow.worktree_path,
+          worktreeRoot: wtRow.worktree_path,
+          branchName: wtRow.branch_name,
+          baseRef: wtRow.base_ref ?? undefined,
+          baseBranch: wtRow.base_ref ?? undefined,
+          baseCommit: wtRow.base_commit ?? undefined,
+          headCommit: wtRow.head_commit ?? undefined,
+          isClean: true,
+        }
+      : {
+          mode: "primary",
+          projectRoot: (project as any)?.canonicalRoot ?? "",
+        };
+
     const sessionObj = {
       id: session.id,
       sessionId: session.id,
@@ -439,6 +466,7 @@ export class WorkflowSessionManager {
       checkpointCount: cpCountRow.count,
       latestCheckpoint,
       activeJobs: activeJobs.length > 0 ? activeJobs : undefined,
+      workspace,
       session: sessionObj,
       activeSession: session.state === "active" ? sessionObj : null,
     };
@@ -898,12 +926,43 @@ export class WorkflowSessionManager {
     };
 
     const goalsList = (session as any).goals || (session.goal ? [session.goal] : []);
+
+    // Resolve workspace (managed worktree or primary project root)
+    const wtRow = this.db
+      .prepare(
+        "SELECT * FROM managed_worktrees WHERE session_id = ? AND state != 'removed' LIMIT 1"
+      )
+      .get(session.id) as ManagedWorktreeRow | undefined;
+
+    const workspace: any = wtRow
+      ? {
+          mode: "worktree",
+          worktreeId: wtRow.id,
+          worktreePath: wtRow.worktree_path,
+          worktreeRoot: wtRow.worktree_path,
+          branchName: wtRow.branch_name,
+          baseRef: wtRow.base_ref ?? undefined,
+          baseBranch: wtRow.base_ref ?? undefined,
+          baseCommit: wtRow.base_commit ?? undefined,
+          headCommit: wtRow.head_commit ?? undefined,
+          isClean: true,
+        }
+      : {
+          mode: "primary",
+          projectRoot: (project as any)?.canonicalRoot ?? "",
+        };
+
     const promptLines: string[] = [
       "# Nexus Workflow Session Context",
       `Session ID: ${session.id}`,
       `Project: ${projectInfo.projectName} (${projectInfo.projectId})`,
       `Title: ${session.title || "Untitled Workflow"}`,
       `State: ${session.state}`,
+      "",
+      "## Workspace:",
+      workspace.mode === "worktree"
+        ? `- Mode: Managed Worktree (isolated)\n- Branch: ${workspace.branchName}\n- Path: ${workspace.worktreeRoot}`
+        : "- Mode: Primary Project Root",
       "",
       "## Session Goals:",
       ...(goalsList.length > 0 ? goalsList.map((g: string) => `- ${g}`) : [`- ${session.goal}`]),
@@ -948,6 +1007,7 @@ export class WorkflowSessionManager {
       },
       project: projectInfo,
       git: gitInfo,
+      workspace,
       currentStatus,
       files: {
         touchedFiles,

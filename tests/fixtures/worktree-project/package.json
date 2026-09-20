@@ -1,0 +1,9 @@
+{
+  "name": "worktree-project",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test"
+  }
+}

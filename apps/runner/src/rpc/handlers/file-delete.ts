@@ -81,6 +81,9 @@ export function createFileDeleteHandler(
       });
     }
 
-    return fsService.deleteFile(payload);
+    return fsService.deleteFile({
+      ...payload,
+      sessionId: params.sessionId,
+    });
   };
 }

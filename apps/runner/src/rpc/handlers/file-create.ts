@@ -88,6 +88,9 @@ export function createFileCreateHandler(
       });
     }
 
-    return fsService.createFile(payload);
+    return fsService.createFile({
+      ...payload,
+      sessionId: params.sessionId,
+    });
   };
 }

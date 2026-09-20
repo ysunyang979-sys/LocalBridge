@@ -89,6 +89,9 @@ export function createFilePatchHandler(
       });
     }
 
-    return fsService.patchFile(payload);
+    return fsService.patchFile({
+      ...payload,
+      sessionId: params.sessionId,
+    });
   };
 }

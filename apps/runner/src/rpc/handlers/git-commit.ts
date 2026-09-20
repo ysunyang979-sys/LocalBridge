@@ -91,6 +91,7 @@ export function createGitCommitHandler(
     return gitService.commit({
       projectId: params.projectId,
       message,
+      sessionId: params.sessionId,
     });
   };
 }

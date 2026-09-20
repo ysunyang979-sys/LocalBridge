@@ -12,7 +12,8 @@ export function createCodeCallHierarchyHandler(lspManager: LspManager) {
       params.line,
       params.character,
       params.direction,
-      params.depth
+      params.depth,
+      params.sessionId
     );
   };
 }

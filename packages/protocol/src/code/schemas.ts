@@ -19,6 +19,11 @@ export const CodeDocumentSymbolsParamsSchema = z
   .object({
     projectId: z.string().min(1).describe("Target project identifier"),
     path: z.string().min(1).describe("Relative path to source file inside project"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -36,6 +41,11 @@ export const CodeWorkspaceSymbolsParamsSchema = z
       .default(50)
       .optional()
       .describe("Maximum number of symbols to return (max 200, default 50)"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -47,6 +57,11 @@ export const CodeDefinitionParamsSchema = z
     path: z.string().min(1).describe("Relative path to source file inside project"),
     line: z.number().int().min(0).describe("0-based line index"),
     character: z.number().int().min(0).describe("0-based character offset"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -71,6 +86,11 @@ export const CodeReferencesParamsSchema = z
       .default(100)
       .optional()
       .describe("Maximum number of references to return (max 500, default 100)"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -82,6 +102,11 @@ export const CodeHoverParamsSchema = z
     path: z.string().min(1).describe("Relative path to source file inside project"),
     line: z.number().int().min(0).describe("0-based line index"),
     character: z.number().int().min(0).describe("0-based character offset"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -103,6 +128,11 @@ export const CodeDiagnosticsParamsSchema = z
       .default(100)
       .optional()
       .describe("Maximum number of diagnostics to return (max 500, default 100)"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -125,6 +155,11 @@ export const CodeCallHierarchyParamsSchema = z
       .default(1)
       .optional()
       .describe("Call hierarchy traversal depth (1 to 3, default 1)"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -136,6 +171,11 @@ export const CodeImpactParamsSchema = z
     path: z.string().min(1).describe("Relative path to source file inside project"),
     line: z.number().int().min(0).describe("0-based line index"),
     character: z.number().int().min(0).describe("0-based character offset"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -144,6 +184,11 @@ export type CodeImpactParams = z.infer<typeof CodeImpactParamsSchema>;
 export const LspStatusParamsSchema = z
   .object({
     projectId: z.string().min(1).optional().describe("Optional project identifier filter"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -152,6 +197,11 @@ export type LspStatusParams = z.infer<typeof LspStatusParamsSchema>;
 export const LspRestartParamsSchema = z
   .object({
     projectId: z.string().min(1).describe("Target project identifier"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 
@@ -160,6 +210,11 @@ export type LspRestartParams = z.infer<typeof LspRestartParamsSchema>;
 export const LspStopParamsSchema = z
   .object({
     projectId: z.string().min(1).describe("Target project identifier"),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional session identifier to resolve worktree context"),
   })
   .strict();
 

@@ -77,6 +77,7 @@ export function createGitUnstageHandler(
     return gitService.unstage({
       projectId: params.projectId,
       paths: canonicalPaths,
+      sessionId: params.sessionId,
     });
   };
 }

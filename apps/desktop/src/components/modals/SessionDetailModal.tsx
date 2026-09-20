@@ -44,6 +44,12 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
 
+  // Worktree state
+  const [worktreeDiff, setWorktreeDiff] = useState<string | null>(null);
+  const [showWorktreeDiff, setShowWorktreeDiff] = useState(false);
+  const [loadingDiff, setLoadingDiff] = useState(false);
+  const [removingWorktree, setRemovingWorktree] = useState(false);
+
   // Checkpoint creation form
   const [showCheckpointForm, setShowCheckpointForm] = useState(false);
   const [summary, setSummary] = useState("");
@@ -207,6 +213,108 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                 <li key={i}>{g}</li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Worktree Workspace Banner */}
+        {handoff?.workspace?.mode === "worktree" && (
+          <div className="px-6 py-2.5 bg-amber-500/5 border-b border-amber-500/10 text-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <GitBranch className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span className="font-semibold text-amber-400">
+                  Isolated Worktree: {handoff.workspace.branchName}
+                </span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                    handoff.workspace.isClean
+                      ? "bg-emerald-500/10 text-emerald-400"
+                      : "bg-amber-500/10 text-amber-400"
+                  }`}
+                >
+                  {handoff.workspace.isClean ? "clean" : "modified"}
+                </span>
+              </div>
+              <div className="text-[11px] text-theme-muted font-mono truncate max-w-xl">
+                {handoff.workspace.worktreeRoot}
+              </div>
+              {handoff.workspace.baseBranch && (
+                <div className="text-[10px] text-theme-muted">
+                  Base: {handoff.workspace.baseBranch}{" "}
+                  {handoff.workspace.baseCommit ? `(${handoff.workspace.baseCommit.slice(0, 7)})` : ""}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!handoff?.workspace || handoff.workspace.mode !== "worktree") return;
+                  if (showWorktreeDiff) {
+                    setShowWorktreeDiff(false);
+                    return;
+                  }
+                  setLoadingDiff(true);
+                  try {
+                    const diffRes = await bridge.getWorktreeDiff(handoff.workspace.worktreeId);
+                    setWorktreeDiff(diffRes.diff || "No changes detected against base branch.");
+                    setShowWorktreeDiff(true);
+                  } catch (err: any) {
+                    setError(translateError(err.code, err.message));
+                  } finally {
+                    setLoadingDiff(false);
+                  }
+                }}
+                className="px-2.5 py-1 bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle rounded text-xs transition"
+              >
+                {loadingDiff ? "Loading Diff..." : showWorktreeDiff ? "Hide Diff" : "View Diff"}
+              </button>
+              <button
+                type="button"
+                disabled={removingWorktree}
+                onClick={async () => {
+                  if (!handoff?.workspace || handoff.workspace.mode !== "worktree") return;
+                  if (
+                    !confirm(
+                      `Are you sure you want to remove worktree "${handoff.workspace.branchName}"? The branch will be preserved. Worktree cannot be removed if dirty, running jobs, or unmerged commits exist.`
+                    )
+                  )
+                    return;
+                  setRemovingWorktree(true);
+                  setError(null);
+                  try {
+                    await bridge.removeWorktree(handoff.workspace.worktreeId);
+                    await fetchSessionData();
+                    onRefresh();
+                  } catch (err: any) {
+                    setError(translateError(err.code, err.message));
+                  } finally {
+                    setRemovingWorktree(false);
+                  }
+                }}
+                className="px-2.5 py-1 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded text-xs font-medium transition disabled:opacity-50"
+              >
+                {removingWorktree ? "Removing..." : "Remove Worktree"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Worktree Diff Viewer */}
+        {showWorktreeDiff && worktreeDiff !== null && (
+          <div className="mx-6 my-2 p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-theme-muted font-medium">
+              <span>Worktree Diff</span>
+              <button
+                onClick={() => setShowWorktreeDiff(false)}
+                className="text-theme-muted hover:text-theme-primary"
+              >
+                Close
+              </button>
+            </div>
+            <pre className="p-2.5 bg-black/40 rounded font-mono text-[11px] text-theme-secondary overflow-x-auto max-h-64 whitespace-pre-wrap">
+              {worktreeDiff}
+            </pre>
           </div>
         )}
 

@@ -17,12 +17,15 @@ import {
 } from "@localbridge/security";
 import { canonicalPayloadHash, type Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
+import type { WorkspaceResolver } from "../worktree/resolver.js";
 import type { ExecutableRegistry } from "./executable-registry.js";
 import type { ProcessRunner } from "./runner.js";
 import { buildSafeProcessEnv } from "./environment.js";
 import type { ApprovalManager } from "../approvals/index.js";
 
 export class CommandExecutionService {
+  private workspaceResolver?: WorkspaceResolver;
+
   constructor(
     private readonly projectRegistry: ProjectRegistry,
     private readonly executableRegistry: ExecutableRegistry,
@@ -31,6 +34,10 @@ export class CommandExecutionService {
     private readonly logger?: Logger,
     private readonly approvalManager?: ApprovalManager
   ) {}
+
+  setWorkspaceResolver(resolver: WorkspaceResolver): void {
+    this.workspaceResolver = resolver;
+  }
 
   /**
    * Classify the risk profile of a command specification without executing it.
@@ -168,11 +175,13 @@ export class CommandExecutionService {
     }
 
     // 4. Resolve working directory
-    let workingDir = project.canonicalRoot;
+    const workspace = this.workspaceResolver?.resolve(params.projectId, (params as any).sessionId);
+    const effectiveRoot = workspace?.workspaceRoot ?? project.canonicalRoot;
+    let workingDir = effectiveRoot;
     const specifiedCwd = "cwd" in params ? params.cwd : undefined;
     if (specifiedCwd && specifiedCwd.trim() !== "" && specifiedCwd !== ".") {
       try {
-        const resolved = resolveProjectPath(project.canonicalRoot, specifiedCwd, {
+        const resolved = resolveProjectPath(effectiveRoot, specifiedCwd, {
           mustExist: true,
           allowSensitive: false,
         });
@@ -216,7 +225,7 @@ export class CommandExecutionService {
       case "node-script": {
         let scriptCanonicalPath: string;
         try {
-          const resolved = resolveProjectPath(project.canonicalRoot, params.path, {
+          const resolved = resolveProjectPath(effectiveRoot, params.path, {
             mustExist: true,
             allowSensitive: false,
           });
@@ -267,7 +276,7 @@ export class CommandExecutionService {
       case "python-script": {
         let scriptCanonicalPath: string;
         try {
-          const resolved = resolveProjectPath(project.canonicalRoot, params.path, {
+          const resolved = resolveProjectPath(effectiveRoot, params.path, {
             mustExist: true,
             allowSensitive: false,
           });

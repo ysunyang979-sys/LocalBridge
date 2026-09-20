@@ -9,6 +9,7 @@ import type { RunnerRegistry } from "../runner/registry.js";
 import type { RunnerRpcService } from "../runner/rpc-service.js";
 import type { ServerProjectService } from "../runner/project-service.js";
 import { WorkflowSessionManager } from "../session/manager.js";
+import { ManagedWorktreeManager } from "../worktree/manager.js";
 import type { McpPrincipal } from "./types.js";
 
 export interface McpContextDeps {
@@ -18,6 +19,7 @@ export interface McpContextDeps {
   db?: Database.Database;
   logger?: Logger;
   workflowSessionManager?: WorkflowSessionManager;
+  worktreeManager?: ManagedWorktreeManager;
 }
 
 export interface SafeAuditMetadata {
@@ -47,6 +49,7 @@ export class McpContext {
   public readonly db?: Database.Database;
   public readonly logger?: Logger;
   public readonly workflowSessionManager?: WorkflowSessionManager;
+  public readonly worktreeManager?: ManagedWorktreeManager;
 
   // In-memory mapping from jobId to runnerId for background jobs
   private readonly jobToRunnerMap = new Map<string, string>();
@@ -72,6 +75,19 @@ export class McpContext {
             projectService: deps.projectService,
             runnerRegistry: deps.runnerRegistry,
             rpcService: deps.rpcService,
+            logger: deps.logger,
+          })
+        : undefined);
+
+    this.worktreeManager =
+      deps.worktreeManager ??
+      (deps.db
+        ? new ManagedWorktreeManager({
+            db: deps.db,
+            projectService: deps.projectService,
+            runnerRegistry: deps.runnerRegistry,
+            rpcService: deps.rpcService,
+            workflowSessionManager: this.workflowSessionManager,
             logger: deps.logger,
           })
         : undefined);

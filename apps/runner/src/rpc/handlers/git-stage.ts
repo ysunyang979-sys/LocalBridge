@@ -77,6 +77,7 @@ export function createGitStageHandler(
     return gitService.stage({
       projectId: params.projectId,
       paths: canonicalPaths,
+      sessionId: params.sessionId,
     });
   };
 }

@@ -50,4 +50,11 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   localbridge_session_start: { readOnlyHint: false, destructiveHint: false },
   localbridge_session_checkpoint: { readOnlyHint: false, destructiveHint: false },
   localbridge_session_finish: { readOnlyHint: false, destructiveHint: false },
+
+  // Managed Worktree tools
+  localbridge_worktree_list: { readOnlyHint: true },
+  localbridge_worktree_status: { readOnlyHint: true },
+  localbridge_worktree_diff: { readOnlyHint: true },
+  localbridge_worktree_create: { readOnlyHint: false, destructiveHint: false },
+  localbridge_worktree_remove: { readOnlyHint: false, destructiveHint: true },
 };

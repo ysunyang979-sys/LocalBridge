@@ -1385,5 +1385,72 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     });
     return reply.status(200).send(res);
   });
+
+  // ==========================================
+  // Managed Worktree Management Endpoints
+  // ==========================================
+  fastify.get<{ Params: { id: string } }>(
+    "/management/projects/:id/worktrees",
+    async (request, reply) => {
+      if (!mcpContext.worktreeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ManagedWorktreeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.worktreeManager.listWorktrees({
+        projectId: request.params.id,
+      });
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    "/management/worktrees/:id",
+    async (request, reply) => {
+      if (!mcpContext.worktreeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ManagedWorktreeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.worktreeManager.getWorktreeStatus({
+        worktreeId: request.params.id,
+      });
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    "/management/worktrees/:id/diff",
+    async (request, reply) => {
+      if (!mcpContext.worktreeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ManagedWorktreeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.worktreeManager.getWorktreeDiff({
+        worktreeId: request.params.id,
+      });
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.post<{ Params: { id: string } }>(
+    "/management/worktrees/:id/remove",
+    async (request, reply) => {
+      if (!mcpContext.worktreeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ManagedWorktreeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.worktreeManager.removeWorktree({
+        worktreeId: request.params.id,
+      });
+      return reply.status(200).send(res);
+    }
+  );
 };
 

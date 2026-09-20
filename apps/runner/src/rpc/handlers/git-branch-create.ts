@@ -79,6 +79,7 @@ export function createGitBranchCreateHandler(
       projectId: params.projectId,
       branchName,
       startPoint: params.startPoint,
+      sessionId: params.sessionId,
     });
   };
 }

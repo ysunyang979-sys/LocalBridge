@@ -77,6 +77,7 @@ export function createGitBranchSwitchHandler(
     return gitService.branchSwitch({
       projectId: params.projectId,
       branchName,
+      sessionId: params.sessionId,
     });
   };
 }

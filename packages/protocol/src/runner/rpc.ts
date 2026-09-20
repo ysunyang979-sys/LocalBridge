@@ -48,6 +48,28 @@ import {
   type LspRestartResult,
   type LspStopResult,
 } from "../code/index.js";
+import {
+  WorktreeCreateParamsSchema,
+  WorktreeCreateResultSchema,
+  WorktreeListParamsSchema,
+  WorktreeListResultSchema,
+  WorktreeStatusParamsSchema,
+  WorktreeStatusResultSchema,
+  WorktreeDiffParamsSchema,
+  WorktreeDiffResultSchema,
+  WorktreeRemoveParamsSchema,
+  WorktreeRemoveResultSchema,
+  type WorktreeCreateParams,
+  type WorktreeCreateResult,
+  type WorktreeListParams,
+  type WorktreeListResult,
+  type WorktreeStatusParams,
+  type WorktreeStatusResult,
+  type WorktreeDiffParams,
+  type WorktreeDiffResult,
+  type WorktreeRemoveParams,
+  type WorktreeRemoveResult,
+} from "../worktree/index.js";
 
 export const OperationIdSchema = z
   .string()
@@ -166,6 +188,7 @@ export const DirectoryListParamsSchema = z
     path: z.string().default("."),
     limit: z.number().int().min(1).max(200).default(100),
     cursor: z.string().nullable().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type DirectoryListParams = z.infer<typeof DirectoryListParamsSchema>;
@@ -198,6 +221,7 @@ export const FileStatParamsSchema = z
     projectId: z.string(),
     path: z.string(),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type FileStatParams = z.infer<typeof FileStatParamsSchema>;
@@ -223,6 +247,7 @@ export const FileReadParamsSchema = z
     startLine: z.number().int().min(1).default(1),
     maxLines: z.number().int().min(1).max(500).default(300),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type FileReadParams = z.infer<typeof FileReadParamsSchema>;
@@ -257,6 +282,7 @@ export const FileCreateParamsSchema = z
     path: z.string(),
     content: z.string(),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type FileCreateParams = z.infer<typeof FileCreateParamsSchema>;
@@ -280,6 +306,7 @@ export const FileWriteParamsSchema = z
     expectedHash: z.string(),
     content: z.string(),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type FileWriteParams = z.infer<typeof FileWriteParamsSchema>;
@@ -314,6 +341,7 @@ export const FilePatchParamsSchema = z
     expectedHash: z.string(),
     replacements: z.array(PatchReplacementSchema).min(1, "At least one replacement is required"),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type FilePatchParams = z.infer<typeof FilePatchParamsSchema>;
@@ -339,6 +367,7 @@ export const FileDeleteParamsSchema = z
     path: z.string(),
     expectedHash: z.string(),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type FileDeleteParams = z.infer<typeof FileDeleteParamsSchema>;
@@ -360,6 +389,7 @@ export const FileRestoreParamsSchema = z
   .object({
     projectId: z.string(),
     operationId: OperationIdSchema,
+    sessionId: z.string().optional(),
   })
   .strict();
 export type FileRestoreParams = z.infer<typeof FileRestoreParamsSchema>;
@@ -379,6 +409,7 @@ export type FileRestoreResult = z.infer<typeof FileRestoreResultSchema>;
 export const GitInfoParamsSchema = z
   .object({
     projectId: z.string(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitInfoParams = z.infer<typeof GitInfoParamsSchema>;
@@ -422,6 +453,7 @@ export type GitStatusEntry = z.infer<typeof GitStatusEntrySchema>;
 export const GitStatusParamsSchema = z
   .object({
     projectId: z.string(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitStatusParams = z.infer<typeof GitStatusParamsSchema>;
@@ -451,6 +483,7 @@ export const GitDiffParamsSchema = z
     scope: GitDiffScopeSchema.default("unstaged"),
     path: z.string().optional(),
     contextLines: z.number().int().min(0).max(20).default(3),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitDiffParams = z.infer<typeof GitDiffParamsSchema>;
@@ -485,6 +518,7 @@ export const GitLogParamsSchema = z
     projectId: z.string(),
     limit: z.number().int().min(1).max(100).default(20),
     path: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitLogParams = z.infer<typeof GitLogParamsSchema>;
@@ -505,6 +539,7 @@ export const GitStageParamsSchema = z
     projectId: z.string(),
     paths: z.array(z.string().min(1)).min(1).max(128),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitStageParams = z.infer<typeof GitStageParamsSchema>;
@@ -529,6 +564,10 @@ export const GitStageToolInputSchema = z
       .string()
       .optional()
       .describe("Optional approval identifier used to execute an approved stage request"),
+    sessionId: z
+      .string()
+      .optional()
+      .describe("Optional workflow session ID to execute within bound worktree"),
   })
   .strict();
 
@@ -538,6 +577,7 @@ export const GitUnstageParamsSchema = z
     projectId: z.string(),
     paths: z.array(z.string().min(1)).min(1).max(128),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitUnstageParams = z.infer<typeof GitUnstageParamsSchema>;
@@ -562,6 +602,10 @@ export const GitUnstageToolInputSchema = z
       .string()
       .optional()
       .describe("Optional approval identifier used to execute an approved unstage request"),
+    sessionId: z
+      .string()
+      .optional()
+      .describe("Optional workflow session ID to execute within bound worktree"),
   })
   .strict();
 
@@ -572,6 +616,7 @@ export const GitBranchCreateParamsSchema = z
     branchName: z.string().min(1).max(255),
     startPoint: z.string().max(128).optional(),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitBranchCreateParams = z.infer<typeof GitBranchCreateParamsSchema>;
@@ -598,6 +643,10 @@ export const GitBranchCreateToolInputSchema = z
       .string()
       .optional()
       .describe("Optional approval identifier used to execute an approved branch creation request"),
+    sessionId: z
+      .string()
+      .optional()
+      .describe("Optional workflow session ID to execute within bound worktree"),
   })
   .strict();
 
@@ -607,6 +656,7 @@ export const GitBranchSwitchParamsSchema = z
     projectId: z.string(),
     branchName: z.string().min(1).max(255),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitBranchSwitchParams = z.infer<typeof GitBranchSwitchParamsSchema>;
@@ -628,6 +678,10 @@ export const GitBranchSwitchToolInputSchema = z
       .string()
       .optional()
       .describe("Optional approval identifier used to execute an approved branch switch request"),
+    sessionId: z
+      .string()
+      .optional()
+      .describe("Optional workflow session ID to execute within bound worktree"),
   })
   .strict();
 
@@ -637,6 +691,7 @@ export const GitCommitParamsSchema = z
     projectId: z.string(),
     message: z.string().min(1).max(4096),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type GitCommitParams = z.infer<typeof GitCommitParamsSchema>;
@@ -660,6 +715,10 @@ export const GitCommitToolInputSchema = z
       .string()
       .optional()
       .describe("Optional approval identifier used to execute an approved commit request"),
+    sessionId: z
+      .string()
+      .optional()
+      .describe("Optional workflow session ID to execute within bound worktree"),
   })
   .strict();
 
@@ -697,6 +756,7 @@ export const ToolVersionCommandSchema = z
     projectId: z.string(),
     tool: z.enum(["node", "npm", "pnpm", "python"]),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type ToolVersionCommand = z.infer<typeof ToolVersionCommandSchema>;
@@ -710,6 +770,7 @@ export const NodeScriptCommandSchema = z
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type NodeScriptCommand = z.infer<typeof NodeScriptCommandSchema>;
@@ -723,6 +784,7 @@ export const PythonScriptCommandSchema = z
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type PythonScriptCommand = z.infer<typeof PythonScriptCommandSchema>;
@@ -737,6 +799,7 @@ export const PackageScriptCommandSchema = z
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type PackageScriptCommand = z.infer<typeof PackageScriptCommandSchema>;
@@ -792,6 +855,10 @@ export const CommandSpecToolSchema = z.object({
     .max(300000)
     .default(60000)
     .describe("Command timeout in milliseconds"),
+  sessionId: z
+    .string()
+    .optional()
+    .describe("Optional workflow session ID to execute within bound worktree"),
 });
 export type CommandSpecTool = z.infer<typeof CommandSpecToolSchema>;
 
@@ -819,6 +886,10 @@ export const JobStartToolInputSchema = z.object({
     .string()
     .optional()
     .describe("Optional approval identifier used to retry an approved job request."),
+  sessionId: z
+    .string()
+    .optional()
+    .describe("Optional workflow session ID to execute within bound worktree"),
 });
 export type JobStartToolInput = z.infer<typeof JobStartToolInputSchema>;
 
@@ -835,6 +906,9 @@ export function sanitizeCommandSpec(raw: any): any {
   };
   if (raw.approvalId !== undefined && raw.approvalId !== null && raw.approvalId !== "") {
     base.approvalId = raw.approvalId;
+  }
+  if (raw.sessionId !== undefined && raw.sessionId !== null && raw.sessionId !== "") {
+    base.sessionId = raw.sessionId;
   }
   if (kind === "tool-version") {
     if (raw.tool !== undefined && raw.tool !== null) base.tool = raw.tool;
@@ -912,6 +986,7 @@ export const JobStartParamsSchema = z
     command: CommandSpecSchema,
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .strict();
 export type JobStartParams = z.infer<typeof JobStartParamsSchema>;
@@ -1688,6 +1763,26 @@ export interface RunnerRpcMap {
     params: LspStopParams;
     result: LspStopResult;
   };
+  [RunnerRpcMethods.WorktreeCreate]: {
+    params: WorktreeCreateParams;
+    result: WorktreeCreateResult;
+  };
+  [RunnerRpcMethods.WorktreeList]: {
+    params: WorktreeListParams;
+    result: WorktreeListResult;
+  };
+  [RunnerRpcMethods.WorktreeStatus]: {
+    params: WorktreeStatusParams;
+    result: WorktreeStatusResult;
+  };
+  [RunnerRpcMethods.WorktreeDiff]: {
+    params: WorktreeDiffParams;
+    result: WorktreeDiffResult;
+  };
+  [RunnerRpcMethods.WorktreeRemove]: {
+    params: WorktreeRemoveParams;
+    result: WorktreeRemoveResult;
+  };
 }
 
 export type RunnerRpcMethodName = keyof RunnerRpcMap;
@@ -1925,5 +2020,25 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.LspStop]: {
     params: LspStopParamsSchema,
     result: LspStopResultSchema,
+  },
+  [RunnerRpcMethods.WorktreeCreate]: {
+    params: WorktreeCreateParamsSchema,
+    result: WorktreeCreateResultSchema,
+  },
+  [RunnerRpcMethods.WorktreeList]: {
+    params: WorktreeListParamsSchema,
+    result: WorktreeListResultSchema,
+  },
+  [RunnerRpcMethods.WorktreeStatus]: {
+    params: WorktreeStatusParamsSchema,
+    result: WorktreeStatusResultSchema,
+  },
+  [RunnerRpcMethods.WorktreeDiff]: {
+    params: WorktreeDiffParamsSchema,
+    result: WorktreeDiffResultSchema,
+  },
+  [RunnerRpcMethods.WorktreeRemove]: {
+    params: WorktreeRemoveParamsSchema,
+    result: WorktreeRemoveResultSchema,
   },
 } as const;

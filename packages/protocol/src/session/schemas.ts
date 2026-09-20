@@ -117,6 +117,22 @@ export const SessionStatusResultSchema = z
       .optional(),
     activeSession: z.record(z.unknown()).nullable().optional(),
     session: z.record(z.unknown()).nullable().optional(),
+    workspace: z
+      .object({
+        mode: z.enum(["direct", "managed-worktree", "worktree", "primary"]),
+        worktreeId: z.string().optional(),
+        worktreePath: z.string().optional(),
+        worktreeRoot: z.string().optional(),
+        branchName: z.string().optional(),
+        baseRef: z.string().optional(),
+        baseBranch: z.string().optional(),
+        baseCommit: z.string().optional(),
+        headCommit: z.string().optional(),
+        isClean: z.boolean().optional(),
+        dirty: z.boolean().optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -226,6 +242,22 @@ export const SessionHandoffResultSchema = z
         untrackedCount: z.number().optional(),
       })
       .passthrough(),
+    workspace: z
+      .object({
+        mode: z.enum(["direct", "managed-worktree", "worktree", "primary"]),
+        worktreeId: z.string().optional(),
+        worktreePath: z.string().optional(),
+        worktreeRoot: z.string().optional(),
+        branchName: z.string().optional(),
+        baseRef: z.string().optional(),
+        baseBranch: z.string().optional(),
+        baseCommit: z.string().optional(),
+        headCommit: z.string().optional(),
+        isClean: z.boolean().optional(),
+        dirty: z.boolean().optional(),
+      })
+      .passthrough()
+      .optional(),
     currentStatus: z.record(z.unknown()).optional(),
     files: z
       .object({

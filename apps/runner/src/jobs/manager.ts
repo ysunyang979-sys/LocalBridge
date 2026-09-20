@@ -29,6 +29,7 @@ import {
 } from "@localbridge/security";
 import { canonicalPayloadHash, type Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
+import type { WorkspaceResolver } from "../worktree/resolver.js";
 import type { ExecutableRegistry } from "../process/executable-registry.js";
 import { buildSafeProcessEnv } from "../process/environment.js";
 import { killProcessTree } from "../process/kill-tree.js";
@@ -55,6 +56,7 @@ export class JobManager {
   private readonly queuedJobIds: string[] = [];
   private readonly startTimestamps: number[] = [];
   private readonly persistencePath: string;
+  private workspaceResolver?: WorkspaceResolver;
 
   constructor(
     private readonly projectRegistry: ProjectRegistry,
@@ -67,6 +69,10 @@ export class JobManager {
     this.persistencePath = path.join(this.runnerStateDir, "jobs-state.json");
     this.wireProjectRegistryEvents();
     this.recoverPersistedJobs();
+  }
+
+  setWorkspaceResolver(resolver: WorkspaceResolver): void {
+    this.workspaceResolver = resolver;
   }
 
   /**
@@ -363,11 +369,13 @@ export class JobManager {
     }
 
     // 6. Preflight checks: resolve working directory and validate scripts BEFORE consuming approval
-    let workingDir = project.canonicalRoot;
+    const workspace = this.workspaceResolver?.resolve(command.projectId, (command as any).sessionId);
+    const effectiveRoot = workspace?.workspaceRoot ?? project.canonicalRoot;
+    let workingDir = effectiveRoot;
     const specifiedCwd = "cwd" in command ? command.cwd : undefined;
     if (specifiedCwd && specifiedCwd.trim() !== "" && specifiedCwd !== ".") {
       try {
-        const resolved = resolveProjectPath(project.canonicalRoot, specifiedCwd, {
+        const resolved = resolveProjectPath(effectiveRoot, specifiedCwd, {
           mustExist: true,
           allowSensitive: false,
         });
@@ -410,7 +418,7 @@ export class JobManager {
       case "node-script": {
         let scriptCanonicalPath: string;
         try {
-          const resolved = resolveProjectPath(project.canonicalRoot, command.path, {
+          const resolved = resolveProjectPath(effectiveRoot, command.path, {
             mustExist: true,
             allowSensitive: false,
           });
@@ -461,7 +469,7 @@ export class JobManager {
       case "python-script": {
         let scriptCanonicalPath: string;
         try {
-          const resolved = resolveProjectPath(project.canonicalRoot, command.path, {
+          const resolved = resolveProjectPath(effectiveRoot, command.path, {
             mustExist: true,
             allowSensitive: false,
           });
@@ -544,7 +552,7 @@ export class JobManager {
           const parts = scriptValue.slice(5).trim().split(/\s+/);
           const entryFile = parts[0];
           if (entryFile) {
-            const resolvedPath = resolveProjectPath(project.canonicalRoot, entryFile, {
+            const resolvedPath = resolveProjectPath(effectiveRoot, entryFile, {
               mustExist: true,
               allowSensitive: false,
             });
@@ -654,7 +662,7 @@ export class JobManager {
         exitCode: null,
         signal: null,
         logs,
-        canonicalProjectRoot: project.canonicalRoot,
+        canonicalProjectRoot: effectiveRoot,
         approvalId: params.approvalId,
         commandSpec: command,
         targetTool,
@@ -662,6 +670,8 @@ export class JobManager {
         workingDir,
         safeEnv,
         timeoutMs,
+        workspaceMode: workspace?.workspaceMode ?? "direct",
+        worktreeId: workspace?.worktreeId,
       };
 
       this.jobs.set(jobId, queuedRecord);
@@ -693,7 +703,7 @@ export class JobManager {
       exitCode: null,
       signal: null,
       logs,
-      canonicalProjectRoot: project.canonicalRoot,
+      canonicalProjectRoot: effectiveRoot,
       approvalId: params.approvalId,
       commandSpec: command,
       targetTool,
@@ -701,6 +711,8 @@ export class JobManager {
       workingDir,
       safeEnv,
       timeoutMs,
+      workspaceMode: workspace?.workspaceMode ?? "direct",
+      worktreeId: workspace?.worktreeId,
     };
 
     this.jobs.set(jobId, jobRecord);
@@ -1088,10 +1100,12 @@ export class JobManager {
       );
     }
 
+    const workspace = this.workspaceResolver?.resolve(params.projectId, (params as any).sessionId);
+    const effectiveRoot = workspace?.workspaceRoot ?? project.canonicalRoot;
     const scriptName = params.script || "build";
     const workingDir = params.cwd && params.cwd !== "."
-      ? resolveProjectPath(project.canonicalRoot, params.cwd, { mustExist: true, allowSensitive: false }).canonicalPath
-      : project.canonicalRoot;
+      ? resolveProjectPath(effectiveRoot, params.cwd, { mustExist: true, allowSensitive: false }).canonicalPath
+      : effectiveRoot;
 
     const pkgJsonPath = path.join(workingDir, "package.json");
     if (!fs.existsSync(pkgJsonPath)) {
@@ -1153,10 +1167,12 @@ export class JobManager {
       );
     }
 
+    const workspace = this.workspaceResolver?.resolve(params.projectId, (params as any).sessionId);
+    const effectiveRoot = workspace?.workspaceRoot ?? project.canonicalRoot;
     const scriptName = params.script || "test";
     const workingDir = params.cwd && params.cwd !== "."
-      ? resolveProjectPath(project.canonicalRoot, params.cwd, { mustExist: true, allowSensitive: false }).canonicalPath
-      : project.canonicalRoot;
+      ? resolveProjectPath(effectiveRoot, params.cwd, { mustExist: true, allowSensitive: false }).canonicalPath
+      : effectiveRoot;
 
     const pkgJsonPath = path.join(workingDir, "package.json");
     if (!fs.existsSync(pkgJsonPath)) {

@@ -12,7 +12,8 @@ export function createCodeReferencesHandler(lspManager: LspManager) {
       params.line,
       params.character,
       params.includeDeclaration,
-      params.limit
+      params.limit,
+      params.sessionId
     );
   };
 }

@@ -24,6 +24,7 @@ import { resolveProjectPath } from "@localbridge/security";
 import type { Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
 import { buildSafeProcessEnv } from "../process/environment.js";
+import type { WorkspaceResolver } from "../worktree/resolver.js";
 import { LspClient } from "./client.js";
 import {
   detectLanguageFromPath,
@@ -43,6 +44,7 @@ interface ManagedServer {
   projectId: string;
   language: string;
   serverKind: string;
+  worktreeId?: string;
   startedAt: number;
   restartHistory: number[];
   lastError?: string;
@@ -51,6 +53,7 @@ interface ManagedServer {
 export class LspManager {
   private servers = new Map<string, ManagedServer>();
   private fileMtimes = new Map<string, number>();
+  private workspaceResolver?: WorkspaceResolver;
 
   constructor(
     private readonly projectRegistry: ProjectRegistry,
@@ -58,8 +61,12 @@ export class LspManager {
     private readonly logger?: Logger
   ) {}
 
-  private getServerKey(projectId: string, serverKind: string): string {
-    return `${projectId}:${serverKind}`;
+  setWorkspaceResolver(resolver: WorkspaceResolver): void {
+    this.workspaceResolver = resolver;
+  }
+
+  private getServerKey(projectId: string, serverKind: string, worktreeId?: string): string {
+    return `${projectId}:${worktreeId ?? "root"}:${serverKind}`;
   }
 
   private mapSymbolKind(kindNumber: number): SymbolKindString {
@@ -100,10 +107,15 @@ export class LspManager {
     return !relative.startsWith("..") && !path.isAbsolute(relative);
   }
 
-  private resolveValidatedPath(projectId: string, relativePath: string): {
+  private resolveValidatedPath(
+    projectId: string,
+    relativePath: string,
+    sessionId?: string
+  ): {
     projectRoot: string;
     resolvedPath: string;
     canonicalRelative: string;
+    worktreeId?: string;
   } {
     const project = this.projectRegistry.get(projectId);
     if (!project) {
@@ -119,19 +131,25 @@ export class LspManager {
       );
     }
 
-    const resolved = resolveProjectPath(project.canonicalRoot, relativePath, {
+    const resolvedWs = this.workspaceResolver?.resolve(projectId, sessionId);
+    const effectiveRoot = resolvedWs?.workspaceRoot ?? project.canonicalRoot;
+    const worktreeId = resolvedWs?.workspaceMode === "managed-worktree" ? resolvedWs.worktreeId : undefined;
+
+    const resolved = resolveProjectPath(effectiveRoot, relativePath, {
       mustExist: false,
     });
     return {
-      projectRoot: project.canonicalRoot,
+      projectRoot: effectiveRoot,
       resolvedPath: resolved.canonicalPath || resolved.absolutePath,
       canonicalRelative: resolved.relativePath,
+      worktreeId,
     };
   }
 
   async getOrStartClient(
     projectId: string,
-    filePath?: string
+    filePath?: string,
+    sessionId?: string
   ): Promise<{ client: LspClient; projectRoot: string }> {
     const project = this.projectRegistry.get(projectId);
     if (!project) {
@@ -147,9 +165,13 @@ export class LspManager {
       );
     }
 
+    const resolvedWs = this.workspaceResolver?.resolve(projectId, sessionId);
+    const effectiveRoot = resolvedWs?.workspaceRoot ?? project.canonicalRoot;
+    const worktreeId = resolvedWs?.workspaceMode === "managed-worktree" ? resolvedWs.worktreeId : undefined;
+
     // Determine language from file or project
     let lang = filePath ? detectLanguageFromPath(filePath) : null;
-    if (!lang && isTypeScriptProject(project.canonicalRoot)) {
+    if (!lang && isTypeScriptProject(effectiveRoot)) {
       lang = "typescript";
     }
     if (!lang) {
@@ -157,14 +179,14 @@ export class LspManager {
     }
 
     const serverKind = "typescript";
-    const key = this.getServerKey(projectId, serverKind);
+    const key = this.getServerKey(projectId, serverKind, worktreeId);
     const existing = this.servers.get(key);
 
     const now = Date.now();
 
     if (existing) {
       if (existing.client.isRunning && existing.client.initialized) {
-        return { client: existing.client, projectRoot: project.canonicalRoot };
+        return { client: existing.client, projectRoot: effectiveRoot };
       }
 
       // Check restart limits
@@ -186,7 +208,7 @@ export class LspManager {
     }
 
     // Resolve language server
-    const resolution = resolveTypeScriptLanguageServer(project.canonicalRoot);
+    const resolution = resolveTypeScriptLanguageServer(effectiveRoot);
     if (!resolution) {
       throw new LocalBridgeError(
         LocalBridgeErrorCode.LSP_NOT_AVAILABLE,
@@ -198,7 +220,7 @@ export class LspManager {
     const client = new LspClient({
       executable: resolution.executable,
       args: resolution.args,
-      projectRoot: project.canonicalRoot,
+      projectRoot: effectiveRoot,
       runnerStateDir: this.runnerStateDir,
       safeEnv,
       logger: this.logger,
@@ -212,6 +234,7 @@ export class LspManager {
       projectId,
       language: lang,
       serverKind,
+      worktreeId,
       startedAt: now,
       restartHistory,
     };
@@ -224,7 +247,7 @@ export class LspManager {
 
     try {
       await client.start();
-      return { client, projectRoot: project.canonicalRoot };
+      return { client, projectRoot: effectiveRoot };
     } catch (err) {
       this.servers.delete(key);
       throw err;
@@ -260,15 +283,23 @@ export class LspManager {
   /**
    * Called when file is created, written, patched or deleted by Nexus
    */
-  async onFileModified(projectId: string, relativePath: string, content?: string): Promise<void> {
-    const key = this.getServerKey(projectId, "typescript");
+  async onFileModified(
+    projectId: string,
+    relativePath: string,
+    content?: string,
+    sessionId?: string
+  ): Promise<void> {
+    const resolvedWs = this.workspaceResolver?.resolve(projectId, sessionId);
+    const worktreeId = resolvedWs?.workspaceMode === "managed-worktree" ? resolvedWs.worktreeId : undefined;
+    const key = this.getServerKey(projectId, "typescript", worktreeId);
     const managed = this.servers.get(key);
     if (!managed || !managed.client.isRunning) return;
 
     try {
       const { canonicalRelative, resolvedPath } = this.resolveValidatedPath(
         projectId,
-        relativePath
+        relativePath,
+        sessionId
       );
 
       const fileContent =
@@ -294,13 +325,15 @@ export class LspManager {
   // ==========================================
   async getDocumentSymbols(
     projectId: string,
-    relativePath: string
+    relativePath: string,
+    sessionId?: string
   ): Promise<DocumentSymbolsResult> {
     const { projectRoot, canonicalRelative, resolvedPath } = this.resolveValidatedPath(
       projectId,
-      relativePath
+      relativePath,
+      sessionId
     );
-    const { client } = await this.getOrStartClient(projectId, resolvedPath);
+    const { client } = await this.getOrStartClient(projectId, resolvedPath, sessionId);
     await this.ensureDocumentSynced(client, projectRoot, canonicalRelative);
 
     const uri = pathToFileURL(resolvedPath).href;
@@ -352,7 +385,8 @@ export class LspManager {
   async getWorkspaceSymbols(
     projectId: string,
     query: string,
-    limit = 50
+    limit = 50,
+    sessionId?: string
   ): Promise<WorkspaceSymbolsResult> {
     const project = this.projectRegistry.get(projectId);
     if (!project || !project.enabled) {
@@ -362,7 +396,7 @@ export class LspManager {
       );
     }
 
-    const { client, projectRoot } = await this.getOrStartClient(projectId);
+    const { client, projectRoot } = await this.getOrStartClient(projectId, undefined, sessionId);
     const effectiveLimit = Math.min(Math.max(1, limit), MAX_SYMBOLS_LIMIT);
 
     const rawSymbols = await client.request<any[]>(
@@ -415,7 +449,8 @@ export class LspManager {
     projectId: string,
     relativePath: string,
     line: number,
-    character: number
+    character: number,
+    sessionId?: string
   ): Promise<DefinitionResult> {
     if (line < 0 || character < 0) {
       throw new LocalBridgeError(
@@ -426,9 +461,10 @@ export class LspManager {
 
     const { projectRoot, canonicalRelative, resolvedPath } = this.resolveValidatedPath(
       projectId,
-      relativePath
+      relativePath,
+      sessionId
     );
-    const { client } = await this.getOrStartClient(projectId, resolvedPath);
+    const { client } = await this.getOrStartClient(projectId, resolvedPath, sessionId);
     await this.ensureDocumentSynced(client, projectRoot, canonicalRelative);
 
     const uri = pathToFileURL(resolvedPath).href;
@@ -493,7 +529,8 @@ export class LspManager {
     line: number,
     character: number,
     includeDeclaration = false,
-    limit = 100
+    limit = 100,
+    sessionId?: string
   ): Promise<ReferencesResult> {
     if (line < 0 || character < 0) {
       throw new LocalBridgeError(
@@ -504,9 +541,10 @@ export class LspManager {
 
     const { projectRoot, canonicalRelative, resolvedPath } = this.resolveValidatedPath(
       projectId,
-      relativePath
+      relativePath,
+      sessionId
     );
-    const { client } = await this.getOrStartClient(projectId, resolvedPath);
+    const { client } = await this.getOrStartClient(projectId, resolvedPath, sessionId);
     await this.ensureDocumentSynced(client, projectRoot, canonicalRelative);
 
     const uri = pathToFileURL(resolvedPath).href;
@@ -561,7 +599,8 @@ export class LspManager {
     projectId: string,
     relativePath: string,
     line: number,
-    character: number
+    character: number,
+    sessionId?: string
   ): Promise<HoverResult> {
     if (line < 0 || character < 0) {
       throw new LocalBridgeError(
@@ -572,9 +611,10 @@ export class LspManager {
 
     const { projectRoot, canonicalRelative, resolvedPath } = this.resolveValidatedPath(
       projectId,
-      relativePath
+      relativePath,
+      sessionId
     );
-    const { client } = await this.getOrStartClient(projectId, resolvedPath);
+    const { client } = await this.getOrStartClient(projectId, resolvedPath, sessionId);
     await this.ensureDocumentSynced(client, projectRoot, canonicalRelative);
 
     const uri = pathToFileURL(resolvedPath).href;
@@ -623,7 +663,8 @@ export class LspManager {
   async getDiagnostics(
     projectId: string,
     relativePath?: string,
-    limit = 100
+    limit = 100,
+    sessionId?: string
   ): Promise<DiagnosticsResult> {
     const project = this.projectRegistry.get(projectId);
     if (!project || !project.enabled) {
@@ -633,12 +674,12 @@ export class LspManager {
       );
     }
 
-    const { client } = await this.getOrStartClient(projectId, relativePath);
+    const { client, projectRoot } = await this.getOrStartClient(projectId, relativePath, sessionId);
     const effectiveLimit = Math.min(Math.max(1, limit), MAX_DIAGNOSTICS_LIMIT);
 
     if (relativePath) {
-      const { canonicalRelative } = this.resolveValidatedPath(projectId, relativePath);
-      await this.ensureDocumentSynced(client, project.canonicalRoot, canonicalRelative);
+      const { canonicalRelative } = this.resolveValidatedPath(projectId, relativePath, sessionId);
+      await this.ensureDocumentSynced(client, projectRoot, canonicalRelative);
 
       // Poll for diagnostics to arrive from language server
       let items = client.getDiagnosticsForFile(canonicalRelative);
@@ -677,7 +718,8 @@ export class LspManager {
     line: number,
     character: number,
     direction: "incoming" | "outgoing",
-    depth = 1
+    depth = 1,
+    sessionId?: string
   ): Promise<CallHierarchyResult> {
     if (line < 0 || character < 0) {
       throw new LocalBridgeError(
@@ -689,9 +731,10 @@ export class LspManager {
     const effectiveDepth = Math.min(Math.max(1, depth), MAX_CALL_DEPTH);
     const { projectRoot, canonicalRelative, resolvedPath } = this.resolveValidatedPath(
       projectId,
-      relativePath
+      relativePath,
+      sessionId
     );
-    const { client } = await this.getOrStartClient(projectId, resolvedPath);
+    const { client } = await this.getOrStartClient(projectId, resolvedPath, sessionId);
     await this.ensureDocumentSynced(client, projectRoot, canonicalRelative);
 
     const uri = pathToFileURL(resolvedPath).href;
@@ -785,15 +828,16 @@ export class LspManager {
     projectId: string,
     relativePath: string,
     line: number,
-    character: number
+    character: number,
+    sessionId?: string
   ): Promise<CodeImpactResult> {
-    this.resolveValidatedPath(projectId, relativePath);
+    this.resolveValidatedPath(projectId, relativePath, sessionId);
 
     // 1. Definition
     let defItem: DefinitionItem | undefined;
     let targetSymbol = "";
     try {
-      const defRes = await this.getDefinition(projectId, relativePath, line, character);
+      const defRes = await this.getDefinition(projectId, relativePath, line, character, sessionId);
       if (defRes.definitions.length > 0) {
         defItem = defRes.definitions[0];
       }
@@ -801,7 +845,7 @@ export class LspManager {
 
     // 2. Hover for symbol name
     try {
-      const hover = await this.getHover(projectId, relativePath, line, character);
+      const hover = await this.getHover(projectId, relativePath, line, character, sessionId);
       if (hover.symbol) {
         targetSymbol = hover.symbol;
       } else if (hover.signature) {
@@ -825,7 +869,8 @@ export class LspManager {
         line,
         character,
         false,
-        500
+        500,
+        sessionId
       );
       references = refRes.references;
     } catch {}
@@ -846,7 +891,8 @@ export class LspManager {
         line,
         character,
         "incoming",
-        1
+        1,
+        sessionId
       );
       callers = incoming.calls.length;
       for (const c of incoming.calls) {
@@ -861,7 +907,8 @@ export class LspManager {
         line,
         character,
         "outgoing",
-        1
+        1,
+        sessionId
       );
       callees = outgoing.calls.length;
     } catch {}
@@ -915,8 +962,10 @@ export class LspManager {
     return list;
   }
 
-  async restartServer(projectId: string): Promise<LspServerStatus> {
-    const key = this.getServerKey(projectId, "typescript");
+  async restartServer(projectId: string, sessionId?: string): Promise<LspServerStatus> {
+    const resolvedWs = this.workspaceResolver?.resolve(projectId, sessionId);
+    const worktreeId = resolvedWs?.workspaceMode === "managed-worktree" ? resolvedWs.worktreeId : undefined;
+    const key = this.getServerKey(projectId, "typescript", worktreeId);
     const existing = this.servers.get(key);
     const prevHistory = existing ? existing.restartHistory : [];
     if (existing) {
@@ -924,7 +973,7 @@ export class LspManager {
       this.servers.delete(key);
     }
 
-    await this.getOrStartClient(projectId);
+    await this.getOrStartClient(projectId, undefined, sessionId);
     const managed = this.servers.get(key);
     if (managed) {
       managed.restartHistory = [...prevHistory, Date.now()];
@@ -932,7 +981,7 @@ export class LspManager {
 
     const statuses = this.getStatus(projectId);
     return (
-      statuses[0] ?? {
+      statuses.find((s) => s.projectId === projectId) ?? {
         projectId,
         language: "typescript",
         serverKind: "typescript",
@@ -940,6 +989,19 @@ export class LspManager {
         restartCount: prevHistory.length,
       }
     );
+  }
+
+  async stopWorktreeServers(projectId: string, worktreeId: string): Promise<void> {
+    for (const [key, server] of this.servers.entries()) {
+      if (key.startsWith(`${projectId}:${worktreeId}:`)) {
+        try {
+          await server.client.stop();
+        } catch (err) {
+          this.logger?.warn({ key, error: (err as any)?.message }, "Failed to stop worktree LSP server");
+        }
+        this.servers.delete(key);
+      }
+    }
   }
 
   async stopProject(projectId: string): Promise<boolean> {

@@ -31,6 +31,8 @@ export interface JobRecord {
   workingDir?: string;
   safeEnv?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  workspaceMode?: "direct" | "managed-worktree";
+  worktreeId?: string;
 }
 
 export const MAX_RUNNING_JOBS_PER_RUNNER = 4;

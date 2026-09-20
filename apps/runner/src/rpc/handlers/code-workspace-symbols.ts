@@ -6,6 +6,6 @@ import type { LspManager } from "../../lsp/manager.js";
 
 export function createCodeWorkspaceSymbolsHandler(lspManager: LspManager) {
   return async (params: CodeWorkspaceSymbolsParams): Promise<WorkspaceSymbolsResult> => {
-    return lspManager.getWorkspaceSymbols(params.projectId, params.query, params.limit);
+    return lspManager.getWorkspaceSymbols(params.projectId, params.query, params.limit, params.sessionId);
   };
 }

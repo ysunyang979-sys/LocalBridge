@@ -22,6 +22,7 @@ import {
 } from "@localbridge/protocol";
 import type { Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
+import type { WorkspaceResolver } from "../worktree/resolver.js";
 import { BackupService } from "../backup/service.js";
 import { listDirectory } from "./directory.js";
 import { statFile } from "./file-stat.js";
@@ -41,6 +42,7 @@ export class FilesystemService {
   private readonly backupService: BackupService;
   private readonly logger?: Logger;
   private readonly fileChangeListeners: Array<(projectId: string, path: string, content?: string) => void> = [];
+  private workspaceResolver?: WorkspaceResolver;
 
   constructor(
     private readonly projectRegistry: ProjectRegistry,
@@ -55,6 +57,19 @@ export class FilesystemService {
       const defaultBackupDir = path.join(os.tmpdir(), "localbridge-backups");
       this.backupService = new BackupService(defaultBackupDir, this.logger);
     }
+  }
+
+  setWorkspaceResolver(resolver: WorkspaceResolver): void {
+    this.workspaceResolver = resolver;
+  }
+
+  private getEffectiveRoot(projectId: string, sessionId?: string): string {
+    if (this.workspaceResolver) {
+      const resolved = this.workspaceResolver.resolve(projectId, sessionId);
+      return resolved.workspaceRoot;
+    }
+    const project = this.getAuthorizedProject(projectId);
+    return project.canonicalRoot;
   }
 
   onFileChange(listener: (projectId: string, path: string, content?: string) => void): void {
@@ -125,9 +140,11 @@ export class FilesystemService {
       `Listing directory "${params.path ?? "."}" in project "${params.projectId}"`
     );
 
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
+
     return listDirectory({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       projectRelativePath: params.path,
       limit: params.limit,
       cursor: params.cursor,
@@ -139,6 +156,7 @@ export class FilesystemService {
    */
   async stat(params: FileStatParams): Promise<FileStatResult> {
     const project = this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     this.logger?.debug(
       {
@@ -151,7 +169,7 @@ export class FilesystemService {
 
     return statFile({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       projectRelativePath: params.path,
     });
   }
@@ -161,6 +179,7 @@ export class FilesystemService {
    */
   async readText(params: FileReadParams): Promise<FileReadResult> {
     const project = this.getAuthorizedProject(params.projectId);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     this.logger?.debug(
       {
@@ -175,7 +194,7 @@ export class FilesystemService {
 
     return readTextFile({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       projectRelativePath: params.path,
       startLine: params.startLine,
       maxLines: params.maxLines,
@@ -188,6 +207,7 @@ export class FilesystemService {
   async createFile(params: FileCreateParams): Promise<FileCreateResult> {
     const project = this.getAuthorizedProject(params.projectId);
     this.assertReadWriteAccess(project);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     this.logger?.info(
       {
@@ -200,7 +220,7 @@ export class FilesystemService {
 
     const result = await createFile({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       projectRelativePath: params.path,
       content: params.content,
     });
@@ -214,6 +234,7 @@ export class FilesystemService {
   async writeFile(params: FileWriteParams): Promise<FileWriteResult> {
     const project = this.getAuthorizedProject(params.projectId);
     this.assertReadWriteAccess(project);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     this.logger?.info(
       {
@@ -226,7 +247,7 @@ export class FilesystemService {
 
     const result = await writeFile({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       projectRelativePath: params.path,
       expectedHash: params.expectedHash,
       content: params.content,
@@ -242,6 +263,7 @@ export class FilesystemService {
   async patchFile(params: FilePatchParams): Promise<FilePatchResult> {
     const project = this.getAuthorizedProject(params.projectId);
     this.assertReadWriteAccess(project);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     this.logger?.info(
       {
@@ -255,7 +277,7 @@ export class FilesystemService {
 
     const result = await patchFile({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       projectRelativePath: params.path,
       expectedHash: params.expectedHash,
       replacements: params.replacements,
@@ -271,6 +293,7 @@ export class FilesystemService {
   async deleteFile(params: FileDeleteParams): Promise<FileDeleteResult> {
     const project = this.getAuthorizedProject(params.projectId);
     this.assertReadWriteAccess(project);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     this.logger?.info(
       {
@@ -283,7 +306,7 @@ export class FilesystemService {
 
     const result = await deleteFile({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       projectRelativePath: params.path,
       expectedHash: params.expectedHash,
       backupService: this.backupService,
@@ -298,6 +321,7 @@ export class FilesystemService {
   async restoreFile(params: FileRestoreParams): Promise<FileRestoreResult> {
     const project = this.getAuthorizedProject(params.projectId);
     this.assertReadWriteAccess(project);
+    const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
 
     this.logger?.info(
       {
@@ -310,7 +334,7 @@ export class FilesystemService {
 
     return restoreFile({
       projectId: project.id,
-      canonicalRoot: project.canonicalRoot,
+      canonicalRoot,
       operationId: params.operationId,
       backupService: this.backupService,
     });

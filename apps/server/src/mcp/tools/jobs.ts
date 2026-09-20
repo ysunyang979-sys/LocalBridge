@@ -44,6 +44,7 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
           command: sanitizedCommand as any,
           timeoutMs: args.timeoutMs,
           approvalId: approvalId && approvalId.trim() !== "" ? approvalId : undefined,
+          sessionId: args.sessionId || args.command?.sessionId,
         };
 
         const result = await context.request(

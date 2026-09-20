@@ -87,6 +87,9 @@ export function createFileRestoreHandler(
       });
     }
 
-    return fsService.restoreFile(payload);
+    return fsService.restoreFile({
+      ...payload,
+      sessionId: (params as any).sessionId,
+    });
   };
 }

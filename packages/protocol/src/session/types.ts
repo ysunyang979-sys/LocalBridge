@@ -138,6 +138,19 @@ export interface WorkflowHandoffPacket {
     unstagedCount?: number;
     untrackedCount?: number;
   };
+  workspace?: {
+    mode: "direct" | "managed-worktree" | "worktree" | "primary";
+    worktreeId?: string;
+    worktreePath?: string;
+    worktreeRoot?: string;
+    branchName?: string;
+    baseRef?: string;
+    baseBranch?: string;
+    baseCommit?: string;
+    headCommit?: string;
+    isClean?: boolean;
+    dirty?: boolean;
+  };
   currentStatus: {
     git: {
       isRepository: boolean;
@@ -277,6 +290,20 @@ export interface SessionStatusResult {
     state: string;
     createdAt: number;
   }>;
+  workspace?: {
+    mode: "direct" | "managed-worktree" | "worktree" | "primary";
+    worktreeId?: string;
+    worktreePath?: string;
+    worktreeRoot?: string;
+    branchName?: string;
+    baseRef?: string;
+    baseBranch?: string;
+    baseCommit?: string;
+    headCommit?: string;
+    isClean?: boolean;
+    dirty?: boolean;
+    projectRoot?: string;
+  };
   activeSession?: any;
   session?: any;
 }

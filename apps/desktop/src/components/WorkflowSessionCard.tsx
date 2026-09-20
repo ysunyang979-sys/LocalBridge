@@ -137,15 +137,22 @@ export const WorkflowSessionCard: React.FC<WorkflowSessionCardProps> = ({
       {/* Active Session Info */}
       {activeSession && (
         <div className="pt-2 border-t border-theme-subtle/50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-theme-muted">
-          <div className="min-w-0">
+          <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
             <span className="font-medium text-theme-secondary truncate">
               {activeSession.title || `Session ${activeSession.id.slice(0, 8)}`}
             </span>
-            <span className="mx-2">&bull;</span>
+            {activeSession.workspace?.mode === "worktree" ? (
+              <span className="badge badge-amber text-[10px] flex items-center gap-1">
+                <span>worktree: {activeSession.workspace.branchName}</span>
+              </span>
+            ) : (
+              <span className="badge badge-gray text-[10px]">primary</span>
+            )}
+            <span className="mx-1">&bull;</span>
             <span>
               {activeSession.checkpointCount} {t.workflow.checkpoints}
             </span>
-            <span className="mx-2">&bull;</span>
+            <span className="mx-1">&bull;</span>
             <span>
               {activeSession.eventCount} {t.workflow.events}
             </span>

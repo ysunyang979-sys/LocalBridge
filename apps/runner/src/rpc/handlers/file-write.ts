@@ -89,6 +89,9 @@ export function createFileWriteHandler(
       });
     }
 
-    return fsService.writeFile(payload);
+    return fsService.writeFile({
+      ...payload,
+      sessionId: params.sessionId,
+    });
   };
 }
