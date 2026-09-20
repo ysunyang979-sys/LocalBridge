@@ -12,6 +12,7 @@ import type {
   DesktopHealthStatus,
   ProjectTrustPolicy,
   ApprovalRoutingMode,
+  LspServerStatus,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -517,6 +518,35 @@ class ApiBridge {
     if (limit) query.set("limit", String(limit));
     const qs = query.toString() ? `?${query.toString()}` : "";
     return this.fetchJson<JobLogsResult>(`/api/jobs/${jobId}/logs${qs}`);
+  }
+
+  // Code Intelligence / LSP
+  async getLspStatus(projectId?: string): Promise<{ servers: LspServerStatus[] }> {
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    if (isTauri()) {
+      return invoke<{ servers: LspServerStatus[] }>("desktop_get_lsp_status", { projectId: projectId || null });
+    }
+    return this.fetchJson<{ servers: LspServerStatus[] }>(`/api/management/lsp/status${query}`);
+  }
+
+  async restartLspServer(projectId: string): Promise<{ restarted: boolean; status: LspServerStatus }> {
+    if (isTauri()) {
+      return invoke<{ restarted: boolean; status: LspServerStatus }>("desktop_restart_lsp", { projectId });
+    }
+    return this.fetchJson<{ restarted: boolean; status: LspServerStatus }>("/api/management/lsp/restart", {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+    });
+  }
+
+  async stopLspServer(projectId: string): Promise<{ stopped: boolean }> {
+    if (isTauri()) {
+      return invoke<{ stopped: boolean }>("desktop_stop_lsp", { projectId });
+    }
+    return this.fetchJson<{ stopped: boolean }>("/api/management/lsp/stop", {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+    });
   }
 
   // Tokens

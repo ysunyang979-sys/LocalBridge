@@ -500,6 +500,25 @@ export interface I18nDictionary {
       submitting: string;
     };
   };
+  lsp: {
+    title: string;
+    language: string;
+    status: string;
+    pid: string;
+    restartCount: string;
+    restartBtn: string;
+    stopBtn: string;
+    restarting: string;
+    stopping: string;
+    ready: string;
+    starting: string;
+    unavailable: string;
+    stopped: string;
+    error: string;
+    crashed: string;
+    noServers: string;
+    desc: string;
+  };
   errors: {
     unknown: string;
     PROJECT_ALREADY_AUTHORIZED: string;
@@ -523,5 +542,15 @@ export interface I18nDictionary {
     HOST_NOT_ALLOWED: string;
     RATE_LIMITED: string;
     PROJECT_EXECUTION_REQUIRES_WRITE_ACCESS: string;
+    LSP_NOT_AVAILABLE: string;
+    LSP_NOT_INITIALIZED: string;
+    LSP_SERVER_START_FAILED: string;
+    LSP_SERVER_CRASHED: string;
+    LSP_REQUEST_TIMEOUT: string;
+    LSP_RESTART_LIMIT: string;
+    LSP_METHOD_UNSUPPORTED: string;
+    LSP_PATH_OUTSIDE_PROJECT: string;
+    LSP_INVALID_POSITION: string;
+    LSP_RESULT_TOO_LARGE: string;
   };
 }

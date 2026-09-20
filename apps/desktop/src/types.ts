@@ -14,6 +14,17 @@ export interface McpStatus {
   toolsCount: number;
 }
 
+export interface LspServerStatus {
+  projectId: string;
+  language: string;
+  serverKind: string;
+  status: "ready" | "starting" | "unavailable" | "error" | "stopped";
+  pid?: number;
+  startedAt?: number;
+  restartCount: number;
+  lastError?: string;
+}
+
 export interface Project {
   id: string;
   name: string;

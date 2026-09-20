@@ -10,6 +10,7 @@ import {
 import type { Project } from "../types.js";
 import { bridge } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
+import { LspStatusPanel } from "../components/LspStatusPanel.js";
 
 interface ProjectsPageProps {
   projects: Project[];
@@ -279,6 +280,13 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                     </select>
                   </div>
                 </div>
+
+                {/* Code Intelligence / LSP Status */}
+                <LspStatusPanel
+                  projectId={project.id}
+                  projectName={project.name}
+                  enabled={project.enabled}
+                />
               </div>
             );
           })}

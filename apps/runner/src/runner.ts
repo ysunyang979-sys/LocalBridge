@@ -74,6 +74,18 @@ import {
   ProcessRunner,
 } from "./process/index.js";
 import { JobManager } from "./jobs/index.js";
+import { LspManager } from "./lsp/index.js";
+import { createCodeDocumentSymbolsHandler } from "./rpc/handlers/code-document-symbols.js";
+import { createCodeWorkspaceSymbolsHandler } from "./rpc/handlers/code-workspace-symbols.js";
+import { createCodeDefinitionHandler } from "./rpc/handlers/code-definition.js";
+import { createCodeReferencesHandler } from "./rpc/handlers/code-references.js";
+import { createCodeHoverHandler } from "./rpc/handlers/code-hover.js";
+import { createCodeDiagnosticsHandler } from "./rpc/handlers/code-diagnostics.js";
+import { createCodeCallHierarchyHandler } from "./rpc/handlers/code-call-hierarchy.js";
+import { createCodeImpactHandler } from "./rpc/handlers/code-impact.js";
+import { createLspStatusHandler } from "./rpc/handlers/lsp-status.js";
+import { createLspRestartHandler } from "./rpc/handlers/lsp-restart.js";
+import { createLspStopHandler } from "./rpc/handlers/lsp-stop.js";
 
 export const RUNNER_VERSION = "1.1.0";
 
@@ -98,6 +110,7 @@ export class LocalBridgeRunner {
   readonly commandExecutionService: CommandExecutionService;
   readonly jobManager: JobManager;
   readonly approvalManager: ApprovalManager;
+  readonly lspManager: LspManager;
   readonly runnerStateDir: string;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
@@ -181,6 +194,16 @@ export class LocalBridgeRunner {
       this.approvalManager,
       { enableQueue: true, persistState: true }
     );
+
+    this.lspManager = new LspManager(
+      this.projectRegistry,
+      runnerStateDir,
+      this.logger
+    );
+
+    this.filesystemService.onFileChange((projectId, path, content) => {
+      this.lspManager.onFileModified(projectId, path, content).catch(() => {});
+    });
 
     this.rpcRouter = new RpcRouter(this.logger);
     this.registerDefaultHandlers();
@@ -400,7 +423,7 @@ export class LocalBridgeRunner {
 
     this.rpcRouter.register(
       RunnerRpcMethods.ProjectRemove,
-      createProjectRemoveHandler(this.projectRegistry)
+      createProjectRemoveHandler(this.projectRegistry, this.lspManager)
     );
 
     this.rpcRouter.register(
@@ -410,7 +433,7 @@ export class LocalBridgeRunner {
 
     this.rpcRouter.register(
       RunnerRpcMethods.ProjectDisable,
-      createProjectDisableHandler(this.projectRegistry)
+      createProjectDisableHandler(this.projectRegistry, this.lspManager)
     );
 
     this.rpcRouter.register(
@@ -450,7 +473,62 @@ export class LocalBridgeRunner {
 
     this.rpcRouter.register(
       RunnerRpcMethods.JobCancelAll,
-      createJobCancelAllHandler(this.jobManager)
+      createJobCancelAllHandler(this.jobManager, this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeDocumentSymbols,
+      createCodeDocumentSymbolsHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeWorkspaceSymbols,
+      createCodeWorkspaceSymbolsHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeDefinition,
+      createCodeDefinitionHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeReferences,
+      createCodeReferencesHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeHover,
+      createCodeHoverHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeDiagnostics,
+      createCodeDiagnosticsHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeCallHierarchy,
+      createCodeCallHierarchyHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.CodeImpact,
+      createCodeImpactHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.LspStatus,
+      createLspStatusHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.LspRestart,
+      createLspRestartHandler(this.lspManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.LspStop,
+      createLspStopHandler(this.lspManager)
     );
   }
 
@@ -538,6 +616,7 @@ export class LocalBridgeRunner {
     this.reconnectController.cancel();
     this.heartbeatMonitor.stop();
     await this.jobManager.stop();
+    await this.lspManager.stopAll();
     this.approvalManager.expireAll();
 
     if (this.client) {

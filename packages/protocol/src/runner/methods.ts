@@ -46,6 +46,17 @@ export const RunnerRpcMethods = {
   GitBranchCreate: "git.branchCreate",
   GitBranchSwitch: "git.branchSwitch",
   GitCommit: "git.commit",
+  CodeDocumentSymbols: "code.document_symbols",
+  CodeWorkspaceSymbols: "code.workspace_symbols",
+  CodeDefinition: "code.definition",
+  CodeReferences: "code.references",
+  CodeHover: "code.hover",
+  CodeDiagnostics: "code.diagnostics",
+  CodeCallHierarchy: "code.call_hierarchy",
+  CodeImpact: "code.impact",
+  LspStatus: "lsp.status",
+  LspRestart: "lsp.restart",
+  LspStop: "lsp.stop",
 } as const;
 
 export type RunnerRpcMethod =

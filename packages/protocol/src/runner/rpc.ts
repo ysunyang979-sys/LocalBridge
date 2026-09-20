@@ -2,6 +2,52 @@ import { z } from "zod";
 import crypto from "node:crypto";
 import { RunnerRpcMethods } from "./methods.js";
 import { RunnerCapabilitiesSchema, RunnerToolsSchema } from "../models/runner.js";
+import {
+  CodeDocumentSymbolsParamsSchema,
+  CodeWorkspaceSymbolsParamsSchema,
+  CodeDefinitionParamsSchema,
+  CodeReferencesParamsSchema,
+  CodeHoverParamsSchema,
+  CodeDiagnosticsParamsSchema,
+  CodeCallHierarchyParamsSchema,
+  CodeImpactParamsSchema,
+  LspStatusParamsSchema,
+  LspRestartParamsSchema,
+  LspStopParamsSchema,
+  DocumentSymbolsResultSchema,
+  WorkspaceSymbolsResultSchema,
+  DefinitionResultSchema,
+  ReferencesResultSchema,
+  HoverResultSchema,
+  DiagnosticsResultSchema,
+  CallHierarchyResultSchema,
+  CodeImpactResultSchema,
+  LspStatusResultSchema,
+  LspRestartResultSchema,
+  LspStopResultSchema,
+  type CodeDocumentSymbolsParams,
+  type CodeWorkspaceSymbolsParams,
+  type CodeDefinitionParams,
+  type CodeReferencesParams,
+  type CodeHoverParams,
+  type CodeDiagnosticsParams,
+  type CodeCallHierarchyParams,
+  type CodeImpactParams,
+  type LspStatusParams,
+  type LspRestartParams,
+  type LspStopParams,
+  type DocumentSymbolsResult,
+  type WorkspaceSymbolsResult,
+  type DefinitionResult,
+  type ReferencesResult,
+  type HoverResult,
+  type DiagnosticsResult,
+  type CallHierarchyResult,
+  type CodeImpactResult,
+  type LspStatusResult,
+  type LspRestartResult,
+  type LspStopResult,
+} from "../code/index.js";
 
 export const OperationIdSchema = z
   .string()
@@ -1575,6 +1621,50 @@ export interface RunnerRpcMap {
     params: ApprovalBulkResolveParams;
     result: ApprovalBulkResolveResult;
   };
+  [RunnerRpcMethods.CodeDocumentSymbols]: {
+    params: CodeDocumentSymbolsParams;
+    result: DocumentSymbolsResult;
+  };
+  [RunnerRpcMethods.CodeWorkspaceSymbols]: {
+    params: CodeWorkspaceSymbolsParams;
+    result: WorkspaceSymbolsResult;
+  };
+  [RunnerRpcMethods.CodeDefinition]: {
+    params: CodeDefinitionParams;
+    result: DefinitionResult;
+  };
+  [RunnerRpcMethods.CodeReferences]: {
+    params: CodeReferencesParams;
+    result: ReferencesResult;
+  };
+  [RunnerRpcMethods.CodeHover]: {
+    params: CodeHoverParams;
+    result: HoverResult;
+  };
+  [RunnerRpcMethods.CodeDiagnostics]: {
+    params: CodeDiagnosticsParams;
+    result: DiagnosticsResult;
+  };
+  [RunnerRpcMethods.CodeCallHierarchy]: {
+    params: CodeCallHierarchyParams;
+    result: CallHierarchyResult;
+  };
+  [RunnerRpcMethods.CodeImpact]: {
+    params: CodeImpactParams;
+    result: CodeImpactResult;
+  };
+  [RunnerRpcMethods.LspStatus]: {
+    params: LspStatusParams;
+    result: LspStatusResult;
+  };
+  [RunnerRpcMethods.LspRestart]: {
+    params: LspRestartParams;
+    result: LspRestartResult;
+  };
+  [RunnerRpcMethods.LspStop]: {
+    params: LspStopParams;
+    result: LspStopResult;
+  };
 }
 
 export type RunnerRpcMethodName = keyof RunnerRpcMap;
@@ -1764,5 +1854,49 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.GitCommit]: {
     params: GitCommitParamsSchema,
     result: GitCommitResultSchema,
+  },
+  [RunnerRpcMethods.CodeDocumentSymbols]: {
+    params: CodeDocumentSymbolsParamsSchema,
+    result: DocumentSymbolsResultSchema,
+  },
+  [RunnerRpcMethods.CodeWorkspaceSymbols]: {
+    params: CodeWorkspaceSymbolsParamsSchema,
+    result: WorkspaceSymbolsResultSchema,
+  },
+  [RunnerRpcMethods.CodeDefinition]: {
+    params: CodeDefinitionParamsSchema,
+    result: DefinitionResultSchema,
+  },
+  [RunnerRpcMethods.CodeReferences]: {
+    params: CodeReferencesParamsSchema,
+    result: ReferencesResultSchema,
+  },
+  [RunnerRpcMethods.CodeHover]: {
+    params: CodeHoverParamsSchema,
+    result: HoverResultSchema,
+  },
+  [RunnerRpcMethods.CodeDiagnostics]: {
+    params: CodeDiagnosticsParamsSchema,
+    result: DiagnosticsResultSchema,
+  },
+  [RunnerRpcMethods.CodeCallHierarchy]: {
+    params: CodeCallHierarchyParamsSchema,
+    result: CallHierarchyResultSchema,
+  },
+  [RunnerRpcMethods.CodeImpact]: {
+    params: CodeImpactParamsSchema,
+    result: CodeImpactResultSchema,
+  },
+  [RunnerRpcMethods.LspStatus]: {
+    params: LspStatusParamsSchema,
+    result: LspStatusResultSchema,
+  },
+  [RunnerRpcMethods.LspRestart]: {
+    params: LspRestartParamsSchema,
+    result: LspRestartResultSchema,
+  },
+  [RunnerRpcMethods.LspStop]: {
+    params: LspStopParamsSchema,
+    result: LspStopResultSchema,
   },
 } as const;

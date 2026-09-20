@@ -1058,4 +1058,105 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         .send({ mode: projectService.getApprovalRoutingMode() });
     }
   );
+
+  // ==========================================
+  // LSP Code Intelligence Management
+  // ==========================================
+  fastify.get<{ Querystring: { projectId?: string } }>(
+    "/management/lsp/status",
+    async (request, reply) => {
+      const { projectId } = request.query || {};
+      const runners = runnerRegistry.list();
+      const allServers: any[] = [];
+
+      for (const runner of runners) {
+        try {
+          const res = await rpcService.request(
+            runner.id,
+            RunnerRpcMethods.LspStatus,
+            { projectId }
+          );
+          if (res?.servers) {
+            allServers.push(...res.servers);
+          }
+        } catch (err) {
+          fastify.log.warn({ runnerId: runner.id, err }, "Failed to fetch LSP status from runner");
+        }
+      }
+
+      return reply.status(200).send({ servers: allServers });
+    }
+  );
+
+  fastify.post<{ Body: { projectId: string } }>(
+    "/management/lsp/restart",
+    async (request, reply) => {
+      const { projectId } = request.body || {};
+      if (!projectId) {
+        return reply.status(400).send({
+          code: LocalBridgeErrorCode.INVALID_REQUEST,
+          message: "Field 'projectId' is required",
+        });
+      }
+
+      const p = projectService.getProject(projectId);
+      if (!p) {
+        return reply.status(404).send({
+          code: LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+          message: `Project '${projectId}' not found`,
+        });
+      }
+
+      const runner = runnerRegistry.get(p.runnerId);
+      if (!runner) {
+        return reply.status(503).send({
+          code: LocalBridgeErrorCode.RUNNER_OFFLINE,
+          message: `Runner '${p.runnerId}' is offline`,
+        });
+      }
+
+      const res = await rpcService.request(
+        p.runnerId,
+        RunnerRpcMethods.LspRestart,
+        { projectId }
+      );
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.post<{ Body: { projectId: string } }>(
+    "/management/lsp/stop",
+    async (request, reply) => {
+      const { projectId } = request.body || {};
+      if (!projectId) {
+        return reply.status(400).send({
+          code: LocalBridgeErrorCode.INVALID_REQUEST,
+          message: "Field 'projectId' is required",
+        });
+      }
+
+      const p = projectService.getProject(projectId);
+      if (!p) {
+        return reply.status(404).send({
+          code: LocalBridgeErrorCode.PROJECT_NOT_FOUND,
+          message: `Project '${projectId}' not found`,
+        });
+      }
+
+      const runner = runnerRegistry.get(p.runnerId);
+      if (!runner) {
+        return reply.status(503).send({
+          code: LocalBridgeErrorCode.RUNNER_OFFLINE,
+          message: `Runner '${p.runnerId}' is offline`,
+        });
+      }
+
+      const res = await rpcService.request(
+        p.runnerId,
+        RunnerRpcMethods.LspStop,
+        { projectId }
+      );
+      return reply.status(200).send(res);
+    }
+  );
 };

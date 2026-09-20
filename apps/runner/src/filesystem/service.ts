@@ -40,6 +40,7 @@ import { restoreFile } from "./file-restore.js";
 export class FilesystemService {
   private readonly backupService: BackupService;
   private readonly logger?: Logger;
+  private readonly fileChangeListeners: Array<(projectId: string, path: string, content?: string) => void> = [];
 
   constructor(
     private readonly projectRegistry: ProjectRegistry,
@@ -53,6 +54,18 @@ export class FilesystemService {
       this.logger = backupServiceOrLogger as Logger | undefined;
       const defaultBackupDir = path.join(os.tmpdir(), "localbridge-backups");
       this.backupService = new BackupService(defaultBackupDir, this.logger);
+    }
+  }
+
+  onFileChange(listener: (projectId: string, path: string, content?: string) => void): void {
+    this.fileChangeListeners.push(listener);
+  }
+
+  private notifyFileChange(projectId: string, path: string, content?: string): void {
+    for (const listener of this.fileChangeListeners) {
+      try {
+        listener(projectId, path, content);
+      } catch {}
     }
   }
 
@@ -185,12 +198,14 @@ export class FilesystemService {
       `Creating file "${params.path}" in project "${params.projectId}"`
     );
 
-    return createFile({
+    const result = await createFile({
       projectId: project.id,
       canonicalRoot: project.canonicalRoot,
       projectRelativePath: params.path,
       content: params.content,
     });
+    this.notifyFileChange(params.projectId, params.path, params.content);
+    return result;
   }
 
   /**
@@ -209,7 +224,7 @@ export class FilesystemService {
       `Writing file "${params.path}" in project "${params.projectId}"`
     );
 
-    return writeFile({
+    const result = await writeFile({
       projectId: project.id,
       canonicalRoot: project.canonicalRoot,
       projectRelativePath: params.path,
@@ -217,6 +232,8 @@ export class FilesystemService {
       content: params.content,
       backupService: this.backupService,
     });
+    this.notifyFileChange(params.projectId, params.path, params.content);
+    return result;
   }
 
   /**
@@ -236,7 +253,7 @@ export class FilesystemService {
       `Patching file "${params.path}" in project "${params.projectId}"`
     );
 
-    return patchFile({
+    const result = await patchFile({
       projectId: project.id,
       canonicalRoot: project.canonicalRoot,
       projectRelativePath: params.path,
@@ -244,6 +261,8 @@ export class FilesystemService {
       replacements: params.replacements,
       backupService: this.backupService,
     });
+    this.notifyFileChange(params.projectId, params.path);
+    return result;
   }
 
   /**
@@ -262,13 +281,15 @@ export class FilesystemService {
       `Deleting file "${params.path}" in project "${params.projectId}"`
     );
 
-    return deleteFile({
+    const result = await deleteFile({
       projectId: project.id,
       canonicalRoot: project.canonicalRoot,
       projectRelativePath: params.path,
       expectedHash: params.expectedHash,
       backupService: this.backupService,
     });
+    this.notifyFileChange(params.projectId, params.path);
+    return result;
   }
 
   /**

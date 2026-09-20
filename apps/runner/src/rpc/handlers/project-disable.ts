@@ -3,9 +3,13 @@ import type {
   ProjectDisableResult,
 } from "@localbridge/protocol";
 import type { ProjectRegistry } from "../../projects/index.js";
+import type { LspManager } from "../../lsp/manager.js";
 
-export function createProjectDisableHandler(registry: ProjectRegistry) {
+export function createProjectDisableHandler(registry: ProjectRegistry, lspManager?: LspManager) {
   return async (params: ProjectDisableParams): Promise<ProjectDisableResult> => {
+    if (lspManager) {
+      await lspManager.stopProject(params.projectId).catch(() => {});
+    }
     registry.disable(params.projectId);
     return {
       id: params.projectId,

@@ -722,6 +722,37 @@ fn desktop_set_approval_routing_mode(
     desktop_management_call(state, "POST".into(), "/api/management/settings/approval-routing".into(), Some(payload))
 }
 
+#[tauri::command]
+fn desktop_get_lsp_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let path = if let Some(p) = project_id {
+        format!("/api/management/lsp/status?projectId={}", p)
+    } else {
+        "/api/management/lsp/status".to_string()
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_restart_lsp(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "projectId": project_id });
+    desktop_management_call(state, "POST".into(), "/api/management/lsp/restart".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_stop_lsp(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "projectId": project_id });
+    desktop_management_call(state, "POST".into(), "/api/management/lsp/stop".into(), Some(payload))
+}
+
 
 #[tauri::command]
 fn desktop_list_jobs(
@@ -1455,7 +1486,10 @@ fn main() {
             desktop_get_operator_name,
             desktop_set_operator_name,
             desktop_get_approval_routing_mode,
-            desktop_set_approval_routing_mode
+            desktop_set_approval_routing_mode,
+            desktop_get_lsp_status,
+            desktop_restart_lsp,
+            desktop_stop_lsp
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;
