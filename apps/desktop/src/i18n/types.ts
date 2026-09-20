@@ -92,6 +92,7 @@ export interface I18nDictionary {
     chatGptCard: string;
     chatGptReady: string;
     chatGptNotReady: string;
+    activeSessionsCard: string;
     pendingFallbackTitle: string;
     pendingFallbackDesc: string;
     viewInActivity: string;
@@ -312,6 +313,7 @@ export interface I18nDictionary {
     filterJobs: string;
     filterFiles: string;
     filterGit: string;
+    filterWorkflow: string;
     filterApprovals: string;
     filterSecurity: string;
     viewDetails: string;
@@ -519,6 +521,36 @@ export interface I18nDictionary {
     noServers: string;
     desc: string;
   };
+  workflow: {
+    title: string;
+    noActiveSession: string;
+    activeSession: string;
+    completedSession: string;
+    abandonedSession: string;
+    startSessionBtn: string;
+    viewSessionBtn: string;
+    checkpointBtn: string;
+    finishSessionBtn: string;
+    checkpoints: string;
+    events: string;
+    handoff: string;
+    goals: string;
+    lastActive: string;
+    timeline: string;
+    createCheckpointTitle: string;
+    finishSessionTitle: string;
+    summaryPlaceholder: string;
+    nextStepsPlaceholder: string;
+    blockersPlaceholder: string;
+    reasonPlaceholder: string;
+    notesPlaceholder: string;
+    copyPromptBtn: string;
+    copyHandoffJsonBtn: string;
+    promptCopied: string;
+    jsonCopied: string;
+    continuationPrompt: string;
+    activeCount: string;
+  };
   errors: {
     unknown: string;
     PROJECT_ALREADY_AUTHORIZED: string;
@@ -552,5 +584,16 @@ export interface I18nDictionary {
     LSP_PATH_OUTSIDE_PROJECT: string;
     LSP_INVALID_POSITION: string;
     LSP_RESULT_TOO_LARGE: string;
+    SESSION_NOT_FOUND: string;
+    SESSION_ALREADY_ACTIVE: string;
+    SESSION_NOT_ACTIVE: string;
+    SESSION_INVALID_STATE: string;
+    SESSION_HAS_ACTIVE_JOBS: string;
+    SESSION_HAS_PENDING_APPROVALS: string;
+    SESSION_PROJECT_UNAVAILABLE: string;
+    SESSION_ACCESS_DENIED: string;
+    SESSION_CHECKPOINT_TOO_LARGE: string;
+    SESSION_EVENT_LIMIT: string;
+    SESSION_INTERNAL_ERROR: string;
   };
 }

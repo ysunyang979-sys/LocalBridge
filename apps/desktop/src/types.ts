@@ -199,3 +199,107 @@ export interface ProjectTrustPolicy {
   updatedAt?: number;
 }
 
+export type WorkflowSessionState = "active" | "completed" | "abandoned";
+export type WorkflowSessionEventKind =
+  | "session_started"
+  | "session_checkpoint"
+  | "session_finished"
+  | "file_operation"
+  | "git_operation"
+  | "command_execution"
+  | "job_lifecycle"
+  | "approval_decision"
+  | "lsp_impact"
+  | "security_event";
+
+export interface WorkflowSession {
+  id: string;
+  projectId: string;
+  state: WorkflowSessionState;
+  title: string | null;
+  goals: string[];
+  checkpointCount: number;
+  eventCount: number;
+  startedAt: number;
+  lastActiveAt: number;
+  finishedAt: number | null;
+  finishReason: string | null;
+  finishNotes: string | null;
+}
+
+export interface WorkflowCheckpoint {
+  id: string;
+  sessionId: string;
+  checkpointNumber: number;
+  summary: string;
+  nextSteps: string[];
+  blockers: string[];
+  createdAt: number;
+}
+
+export interface WorkflowSessionEvent {
+  id: string;
+  sessionId: string;
+  eventNumber: number;
+  kind: WorkflowSessionEventKind;
+  operation: string;
+  status: "success" | "failure" | "pending";
+  target: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: number;
+}
+
+export interface WorkflowHandoffPacket {
+  version: "1.0.0";
+  session: {
+    id: string;
+    projectId: string;
+    projectName: string;
+    state: WorkflowSessionState;
+    title: string | null;
+    goals: string[];
+    startedAt: number;
+    lastActiveAt: number;
+    finishedAt: number | null;
+    finishReason: string | null;
+    finishNotes: string | null;
+  };
+  latestCheckpoint: WorkflowCheckpoint | null;
+  recentCheckpoints: WorkflowCheckpoint[];
+  currentStatus: {
+    git: {
+      branch: string | null;
+      dirty: boolean;
+      modifiedFiles: string[];
+      untrackedFiles: string[];
+      stagedFiles: string[];
+    };
+    activeJobs: {
+      jobId: string;
+      commandKind: string;
+      startedAt: number;
+    }[];
+    pendingApprovals: {
+      id: string;
+      operation: string;
+      risk: string;
+      createdAt: number;
+    }[];
+  };
+  touchedFiles: {
+    path: string;
+    operationCount: number;
+    lastOperation: string;
+    lastTouchedAt: number;
+  }[];
+  recentEvents: {
+    eventNumber: number;
+    kind: WorkflowSessionEventKind;
+    operation: string;
+    status: string;
+    target: string | null;
+    createdAt: number;
+  }[];
+  continuationPrompt: string;
+}
+

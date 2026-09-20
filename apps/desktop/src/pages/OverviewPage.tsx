@@ -10,6 +10,7 @@ import {
   Clock,
   ArrowRight,
   Globe,
+  Compass,
 } from "lucide-react";
 import type { ServerStatus, McpStatus, Project, Approval, Job } from "../types.js";
 import type { NavPage } from "../components/Sidebar.js";
@@ -23,6 +24,7 @@ interface OverviewPageProps {
   projects: Project[];
   approvals: Approval[];
   jobs: Job[];
+  activeSessionsCount?: number;
   onNavigate: (page: NavPage) => void;
   onOpenAuthorizeModal: () => void;
   onOpenCreateTokenModal: () => void;
@@ -38,6 +40,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
   projects,
   approvals,
   jobs,
+  activeSessionsCount = 0,
   onNavigate,
   onOpenAuthorizeModal,
   onOpenCreateTokenModal,
@@ -75,7 +78,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
       )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {/* Card 1: Server */}
         <div className="p-5 bg-theme-card border border-theme-card rounded-xl space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
@@ -224,6 +227,29 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             <div className="text-2xl font-bold text-theme-primary">{pendingApprovals.length}</div>
             <div className="text-xs text-theme-muted mt-1">
               {approvals.filter((a) => a.status === "approved").length} {t.common.approved}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 6: Workflow Sessions */}
+        <div
+          onClick={() => onNavigate("projects")}
+          className="p-5 bg-theme-card border border-theme-card hover:border-indigo-500/50 rounded-xl space-y-3 cursor-pointer transition shadow-sm"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-theme-muted font-medium uppercase tracking-wider">
+              {t.overview.activeSessionsCard}
+            </span>
+            <Compass className="w-4 h-4 text-indigo-500" />
+          </div>
+          <div>
+            <div className="text-2xl font-bold text-theme-primary">
+              {activeSessionsCount}
+            </div>
+            <div className="text-xs text-theme-muted mt-1">
+              {activeSessionsCount === 1
+                ? "1 active session"
+                : `${activeSessionsCount} active sessions`}
             </div>
           </div>
         </div>

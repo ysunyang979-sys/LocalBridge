@@ -11,6 +11,7 @@ import type { Project } from "../types.js";
 import { bridge } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import { LspStatusPanel } from "../components/LspStatusPanel.js";
+import { WorkflowSessionCard } from "../components/WorkflowSessionCard.js";
 
 interface ProjectsPageProps {
   projects: Project[];
@@ -283,6 +284,13 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
 
                 {/* Code Intelligence / LSP Status */}
                 <LspStatusPanel
+                  projectId={project.id}
+                  projectName={project.name}
+                  enabled={project.enabled}
+                />
+
+                {/* Workflow Session */}
+                <WorkflowSessionCard
                   projectId={project.id}
                   projectName={project.name}
                   enabled={project.enabled}

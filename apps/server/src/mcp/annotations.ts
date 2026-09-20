@@ -41,4 +41,13 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   localbridge_job_cancel: { readOnlyHint: false, destructiveHint: true },
   localbridge_build_start: { readOnlyHint: false },
   localbridge_test_start: { readOnlyHint: false },
+
+  // Workflow Session tools
+  localbridge_session_list: { readOnlyHint: true },
+  localbridge_session_status: { readOnlyHint: true },
+  localbridge_session_events: { readOnlyHint: true },
+  localbridge_session_handoff: { readOnlyHint: true },
+  localbridge_session_start: { readOnlyHint: false, destructiveHint: false },
+  localbridge_session_checkpoint: { readOnlyHint: false, destructiveHint: false },
+  localbridge_session_finish: { readOnlyHint: false, destructiveHint: false },
 };

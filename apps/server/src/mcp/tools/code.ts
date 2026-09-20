@@ -143,6 +143,19 @@ export function registerCodeTools(server: McpServer, context: McpContext): void 
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "CODE_DEFINITION",
+          source: "mcp",
+          refType: "code",
+          summary: {
+            path: args.path,
+            line: args.line,
+            character: args.character,
+            resultCount: result?.definitions?.length ?? 0,
+          },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -188,6 +201,19 @@ export function registerCodeTools(server: McpServer, context: McpContext): void 
           runnerId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
+        });
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "CODE_REFERENCES",
+          source: "mcp",
+          refType: "code",
+          summary: {
+            path: args.path,
+            line: args.line,
+            character: args.character,
+            resultCount: result?.references?.length ?? 0,
+          },
         });
 
         return formatToolSuccess(result);
@@ -284,6 +310,21 @@ export function registerCodeTools(server: McpServer, context: McpContext): void 
           resultStatus: "success",
         });
 
+        const errorCount = result?.diagnostics?.filter((d: any) => d.severity === 1).length ?? 0;
+        const warningCount = result?.diagnostics?.filter((d: any) => d.severity === 2).length ?? 0;
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "CODE_DIAGNOSTICS",
+          source: "mcp",
+          refType: "code",
+          summary: {
+            path: args.path,
+            errorCount,
+            warningCount,
+            totalCount: result?.diagnostics?.length ?? 0,
+          },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -331,6 +372,18 @@ export function registerCodeTools(server: McpServer, context: McpContext): void 
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "CODE_CALL_HIERARCHY",
+          source: "mcp",
+          refType: "code",
+          summary: {
+            path: args.path,
+            direction: args.direction,
+            itemCount: result?.calls?.length ?? 0,
+          },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -376,6 +429,19 @@ export function registerCodeTools(server: McpServer, context: McpContext): void 
           runnerId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
+        });
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "CODE_IMPACT",
+          source: "mcp",
+          refType: "code",
+          summary: {
+            path: args.path,
+            referenceCount: result?.referenceCount ?? 0,
+            callerCount: result?.directCallers ?? 0,
+            affectedFilesCount: result?.affectedFiles?.length ?? 0,
+          },
         });
 
         return formatToolSuccess(result);

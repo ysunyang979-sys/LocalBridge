@@ -42,6 +42,7 @@ export const App: React.FC = () => {
   const [runners, setRunners] = useState<RunnerInfo[]>([]);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [activeSessionsCount, setActiveSessionsCount] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSuccessfulRefresh, setLastSuccessfulRefresh] = useState<number | null>(null);
   const lastSuccessfulRefreshRef = useRef<number | null>(null);
@@ -68,6 +69,7 @@ export const App: React.FC = () => {
         audRes,
         healthRes,
         tunnelRes,
+        sessionsRes,
       ] = await Promise.allSettled([
         bridge.getStatus(),
         bridge.getMcpStatus(),
@@ -79,6 +81,7 @@ export const App: React.FC = () => {
         bridge.listAudit(),
         bridge.getDesktopHealth(),
         bridge.getTunnelStatus(),
+        bridge.listSessions({ state: "active" }),
       ]);
 
       if (generation !== refreshGeneration.current) return;
@@ -119,6 +122,8 @@ export const App: React.FC = () => {
       else setAuditEvents([]);
       if (tunnelRes.status === "fulfilled") setTunnelStatus(tunnelRes.value);
       else setTunnelStatus(null);
+      if (sessionsRes.status === "fulfilled") setActiveSessionsCount(sessionsRes.value.total || 0);
+      else setActiveSessionsCount(0);
     } catch {
       if (generation === refreshGeneration.current) {
         setServerStatus(null);
@@ -130,6 +135,7 @@ export const App: React.FC = () => {
         setRunners([]);
         setTokens([]);
         setAuditEvents([]);
+        setActiveSessionsCount(0);
       }
     }
   }, []);
@@ -265,6 +271,7 @@ export const App: React.FC = () => {
               projects={projects}
               approvals={approvals}
               jobs={jobs}
+              activeSessionsCount={activeSessionsCount}
               onNavigate={setCurrentPage}
               onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
               onOpenCreateTokenModal={() => setIsCreateTokenModalOpen(true)}

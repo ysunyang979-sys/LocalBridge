@@ -57,6 +57,13 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
     "localbridge_code_diagnostics",
     "localbridge_code_call_hierarchy",
     "localbridge_code_impact",
+    "localbridge_session_start",
+    "localbridge_session_list",
+    "localbridge_session_status",
+    "localbridge_session_events",
+    "localbridge_session_checkpoint",
+    "localbridge_session_handoff",
+    "localbridge_session_finish",
   ];
 
   const PROHIBITED_TOOLS = [
@@ -141,8 +148,8 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
     } catch {}
   });
 
-  it("registers exactly 37 official tools on tools/list", () => {
-    expect(tools.length).toBe(37);
+  it("registers exactly 44 official tools on tools/list", () => {
+    expect(tools.length).toBe(44);
 
     const registeredNames = tools.map((t: any) => t.name).sort();
     expect(registeredNames).toEqual([...EXPECTED_23_TOOLS].sort());

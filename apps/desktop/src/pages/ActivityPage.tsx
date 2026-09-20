@@ -15,6 +15,7 @@ import {
   FolderLock,
   GitBranch,
   Eye,
+  Compass,
 } from "lucide-react";
 import type { AuditEvent, Approval } from "../types.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -32,6 +33,7 @@ export type ActivityFilterType =
   | "jobs"
   | "files"
   | "git"
+  | "workflow"
   | "approvals"
   | "security";
 
@@ -114,6 +116,13 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
         evt.event.includes("git")
       );
     }
+    if (filter === "workflow") {
+      return (
+        evt.toolName.includes("session") ||
+        evt.event.includes("session") ||
+        evt.event.includes("workflow")
+      );
+    }
     if (filter === "security") {
       return (
         evt.toolName.includes("trust") ||
@@ -190,6 +199,7 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
     { id: "jobs", label: t.activity.filterJobs, icon: Terminal },
     { id: "files", label: t.activity.filterFiles, icon: FolderLock },
     { id: "git", label: t.activity.filterGit, icon: GitBranch },
+    { id: "workflow", label: t.activity.filterWorkflow, icon: Compass },
     { id: "security", label: t.activity.filterSecurity, icon: ShieldCheck },
   ];
 

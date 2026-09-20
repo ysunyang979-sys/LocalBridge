@@ -90,3 +90,54 @@ export interface JobRow {
   approval_id: string | null;
 }
 
+export interface WorkflowSessionRow {
+  id: string;
+  project_id: string;
+  title: string | null;
+  goal: string;
+  state: string;
+  created_at: number;
+  updated_at: number;
+  last_activity_at: number;
+  finished_at: number | null;
+  created_by: string;
+  finished_by: string | null;
+  finish_reason: string | null;
+  final_note: string | null;
+  event_count: number;
+  events_truncated: number;
+  latest_checkpoint_at: number | null;
+}
+
+export interface WorkflowSessionEventRow {
+  id: string;
+  session_id: string;
+  project_id: string;
+  event_type: string;
+  source: string;
+  ref_type: string | null;
+  ref_id: string | null;
+  summary_json: string | null;
+  created_at: number;
+}
+
+export interface WorkflowSessionCheckpointRow {
+  id: string;
+  session_id: string;
+  summary: string;
+  next_steps_json: string | null;
+  blockers_json: string | null;
+  created_at: number;
+  created_by: string;
+}
+
+export interface WorkflowSessionFileRow {
+  session_id: string;
+  relative_path: string;
+  first_touched_at: number;
+  last_touched_at: number;
+  read_count: number;
+  write_count: number;
+  patch_count: number;
+  delete_count: number;
+}

@@ -238,6 +238,14 @@ export function registerGitTools(server: McpServer, context: McpContext): void {
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "GIT_STAGE",
+          source: "mcp",
+          refType: "git",
+          summary: { paths: args.paths },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -283,6 +291,14 @@ export function registerGitTools(server: McpServer, context: McpContext): void {
           runnerId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
+        });
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "GIT_UNSTAGE",
+          source: "mcp",
+          refType: "git",
+          summary: { paths: args.paths },
         });
 
         return formatToolSuccess(result);
@@ -332,6 +348,14 @@ export function registerGitTools(server: McpServer, context: McpContext): void {
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "GIT_BRANCH_CREATED",
+          source: "mcp",
+          refType: "git",
+          summary: { branch: args.branch },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -379,6 +403,14 @@ export function registerGitTools(server: McpServer, context: McpContext): void {
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "GIT_BRANCH_SWITCHED",
+          source: "mcp",
+          refType: "git",
+          summary: { branch: args.branch },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -424,6 +456,15 @@ export function registerGitTools(server: McpServer, context: McpContext): void {
           runnerId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
+        });
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "GIT_COMMIT",
+          source: "mcp",
+          refType: "git",
+          refId: result.commitHash,
+          summary: { commitHash: result.commitHash, message: args.message },
         });
 
         return formatToolSuccess(result);

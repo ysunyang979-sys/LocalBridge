@@ -110,6 +110,16 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
           args
         );
 
+        if (result && result.state) {
+          context.recordJob?.({
+            id: jobId,
+            state: result.state,
+            exitCode: result.exitCode,
+            finishedAt: result.finishedAt,
+            errorMessage: result.error,
+          });
+        }
+
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_job_status",
           runnerId,
@@ -197,6 +207,14 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
           RunnerRpcMethods.JobCancel,
           args
         );
+
+        if (result && result.state) {
+          context.recordJob?.({
+            id: jobId,
+            state: result.state,
+            finishedAt: Date.now(),
+          });
+        }
 
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_job_cancel",

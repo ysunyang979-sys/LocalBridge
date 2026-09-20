@@ -275,6 +275,25 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         }
       }
 
+      // Record SECURITY_EMERGENCY_STOP into any active workflow sessions
+      if (db) {
+        try {
+          const activeSessions = db
+            .prepare("SELECT project_id FROM workflow_sessions WHERE state = 'active'")
+            .all() as Array<{ project_id: string }>;
+          for (const s of activeSessions) {
+            mcpContext.recordSessionEvent({
+              projectId: s.project_id,
+              eventType: "SECURITY_EMERGENCY_STOP",
+              source: "system",
+              summary: { reason },
+            });
+          }
+        } catch (err) {
+          fastify.log.warn({ err }, "Failed to record emergency stop session event");
+        }
+      }
+
       return reply.status(200).send({
         emergencyStopped: true,
         paused: true,
@@ -1159,4 +1178,199 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       return reply.status(200).send(res);
     }
   );
+
+  // ==========================================
+  // 8. Workflow Sessions Management
+  // ==========================================
+  fastify.get<{
+    Querystring: {
+      projectId?: string;
+      state?: "active" | "completed" | "abandoned";
+      limit?: number;
+      cursor?: string;
+    };
+  }>("/management/sessions", async (request, reply) => {
+    if (!mcpContext.workflowSessionManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "WorkflowSessionManager is not initialized",
+      });
+    }
+
+    const { projectId, state, limit = 20, cursor } = request.query;
+
+    if (projectId) {
+      const res = mcpContext.workflowSessionManager.listSessions({
+        projectId,
+        state,
+        limit,
+        cursor,
+      });
+      return reply.status(200).send(res);
+    }
+
+    // If projectId omitted, list across all projects from DB
+    if (!db) {
+      return reply.status(200).send({ sessions: [], hasMore: false });
+    }
+
+    let query = "SELECT * FROM workflow_sessions";
+    const params: any[] = [];
+    if (state) {
+      query += " WHERE state = ?";
+      params.push(state);
+    }
+    query += " ORDER BY created_at DESC LIMIT ?";
+    params.push(limit + 1);
+
+    const rows = db.prepare(query).all(...params) as any[];
+    const hasMore = rows.length > limit;
+    const resultRows = hasMore ? rows.slice(0, limit) : rows;
+
+    const sessions = resultRows.map((r) => ({
+      sessionId: r.id,
+      projectId: r.project_id,
+      title: r.title ?? undefined,
+      goal: r.goal,
+      state: r.state,
+      createdAt: r.created_at,
+      lastActivityAt: r.last_activity_at,
+      finishedAt: r.finished_at,
+    }));
+
+    return reply.status(200).send({
+      sessions,
+      hasMore,
+      nextCursor:
+        hasMore && resultRows.length > 0
+          ? String(resultRows[resultRows.length - 1].created_at)
+          : undefined,
+    });
+  });
+
+  fastify.get<{ Params: { id: string } }>("/management/sessions/:id", async (request, reply) => {
+    if (!mcpContext.workflowSessionManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "WorkflowSessionManager is not initialized",
+      });
+    }
+    const res = mcpContext.workflowSessionManager.getSessionStatus(request.params.id);
+    return reply.status(200).send(res);
+  });
+
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { cursor?: string; limit?: number };
+  }>("/management/sessions/:id/events", async (request, reply) => {
+    if (!mcpContext.workflowSessionManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "WorkflowSessionManager is not initialized",
+      });
+    }
+    const { cursor, limit } = request.query;
+    const res = mcpContext.workflowSessionManager.getSessionEvents({
+      sessionId: request.params.id,
+      cursor,
+      limit,
+    });
+    return reply.status(200).send(res);
+  });
+
+  fastify.get<{ Params: { id: string } }>(
+    "/management/sessions/:id/handoff",
+    async (request, reply) => {
+      if (!mcpContext.workflowSessionManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "WorkflowSessionManager is not initialized",
+        });
+      }
+      const res = await mcpContext.workflowSessionManager.buildHandoffPacket(request.params.id);
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.post<{
+    Body: { projectId: string; goal: string; title?: string };
+  }>("/management/sessions", async (request, reply) => {
+    if (!mcpContext.workflowSessionManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "WorkflowSessionManager is not initialized",
+      });
+    }
+    const { projectId, goal, title } = request.body || {};
+    if (!projectId || !goal) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Fields 'projectId' and 'goal' are required",
+      });
+    }
+
+    const res = mcpContext.workflowSessionManager.startSession({
+      projectId,
+      goal,
+      title,
+      createdBy: "desktop",
+    });
+    return reply.status(201).send(res);
+  });
+
+  fastify.post<{
+    Params: { id: string };
+    Body: { summary: string; nextSteps?: string[]; blockers?: string[] };
+  }>("/management/sessions/:id/checkpoint", async (request, reply) => {
+    if (!mcpContext.workflowSessionManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "WorkflowSessionManager is not initialized",
+      });
+    }
+    const { summary, nextSteps, blockers } = request.body || {};
+    if (!summary) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Field 'summary' is required",
+      });
+    }
+
+    const res = mcpContext.workflowSessionManager.addCheckpoint({
+      sessionId: request.params.id,
+      summary,
+      nextSteps,
+      blockers,
+      createdBy: "desktop",
+    });
+    return reply.status(200).send(res);
+  });
+
+  fastify.post<{
+    Params: { id: string };
+    Body: { outcome: "completed" | "abandoned"; finalNote?: string };
+  }>("/management/sessions/:id/finish", async (request, reply) => {
+    if (!mcpContext.workflowSessionManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "WorkflowSessionManager is not initialized",
+      });
+    }
+    const { outcome, finalNote } = request.body || {};
+    if (!outcome || (outcome !== "completed" && outcome !== "abandoned")) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Field 'outcome' must be 'completed' or 'abandoned'",
+      });
+    }
+
+    const res = mcpContext.workflowSessionManager.finishSession({
+      sessionId: request.params.id,
+      outcome,
+      finalNote,
+      finishedBy: "desktop",
+    });
+    return reply.status(200).send(res);
+  });
 };
+

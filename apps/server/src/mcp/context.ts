@@ -8,6 +8,7 @@ import type Database from "better-sqlite3";
 import type { RunnerRegistry } from "../runner/registry.js";
 import type { RunnerRpcService } from "../runner/rpc-service.js";
 import type { ServerProjectService } from "../runner/project-service.js";
+import { WorkflowSessionManager } from "../session/manager.js";
 import type { McpPrincipal } from "./types.js";
 
 export interface McpContextDeps {
@@ -16,6 +17,7 @@ export interface McpContextDeps {
   rpcService: RunnerRpcService;
   db?: Database.Database;
   logger?: Logger;
+  workflowSessionManager?: WorkflowSessionManager;
 }
 
 export interface SafeAuditMetadata {
@@ -44,6 +46,7 @@ export class McpContext {
   public readonly rpcService: RunnerRpcService;
   public readonly db?: Database.Database;
   public readonly logger?: Logger;
+  public readonly workflowSessionManager?: WorkflowSessionManager;
 
   // In-memory mapping from jobId to runnerId for background jobs
   private readonly jobToRunnerMap = new Map<string, string>();
@@ -61,6 +64,32 @@ export class McpContext {
     this.rpcService = deps.rpcService;
     this.db = deps.db;
     this.logger = deps.logger;
+    this.workflowSessionManager =
+      deps.workflowSessionManager ??
+      (deps.db
+        ? new WorkflowSessionManager({
+            db: deps.db,
+            projectService: deps.projectService,
+            runnerRegistry: deps.runnerRegistry,
+            rpcService: deps.rpcService,
+            logger: deps.logger,
+          })
+        : undefined);
+  }
+
+  recordSessionEvent(event: {
+    projectId: string;
+    eventType: string;
+    source: string;
+    refType?: string;
+    refId?: string;
+    summary?: Record<string, unknown>;
+  }): void {
+    try {
+      this.workflowSessionManager?.recordProjectEvent(event);
+    } catch (err) {
+      this.logger?.warn({ err, event }, "Failed to record session event");
+    }
   }
 
   isPaused(): boolean {
@@ -123,22 +152,52 @@ export class McpContext {
   /**
    * Record a job in memory and persistent SQLite jobs table.
    */
-  recordJob(row: {
+  recordJob(rawRow: {
     id: string;
-    projectId: string;
-    runnerId: string;
-    commandKind: string;
+    projectId?: string;
+    project_id?: string;
+    runnerId?: string;
+    runner_id?: string;
+    commandKind?: string;
+    command_kind?: string;
     risk?: string;
     state?: string;
     createdAt?: number;
+    created_at?: number;
     queuedAt?: number | null;
+    queued_at?: number | null;
     startedAt?: number | null;
+    started_at?: number | null;
     finishedAt?: number | null;
+    finished_at?: number | null;
     exitCode?: number | null;
+    exit_code?: number | null;
     signal?: string | null;
     timeoutMs?: number | null;
+    timeout_ms?: number | null;
     approvalId?: string | null;
+    approval_id?: string | null;
+    errorMessage?: string | null;
+    error_message?: string | null;
   }): void {
+    const row = {
+      id: rawRow.id,
+      projectId: rawRow.projectId || rawRow.project_id || "",
+      runnerId: rawRow.runnerId || rawRow.runner_id || "runner_default",
+      commandKind: rawRow.commandKind || rawRow.command_kind || "command",
+      risk: rawRow.risk || "SAFE",
+      state: rawRow.state ?? "queued",
+      createdAt: rawRow.createdAt ?? rawRow.created_at ?? Date.now(),
+      queuedAt: rawRow.queuedAt ?? rawRow.queued_at ?? null,
+      startedAt: rawRow.startedAt ?? rawRow.started_at ?? null,
+      finishedAt: rawRow.finishedAt ?? rawRow.finished_at ?? null,
+      exitCode: rawRow.exitCode ?? rawRow.exit_code ?? null,
+      signal: rawRow.signal ?? null,
+      timeoutMs: rawRow.timeoutMs ?? rawRow.timeout_ms ?? null,
+      approvalId: rawRow.approvalId ?? rawRow.approval_id ?? null,
+      errorMessage: rawRow.errorMessage || rawRow.error_message || null,
+    };
+
     this.trackJob(row.id, row.runnerId);
     if (!this.db) return;
     try {
@@ -159,17 +218,61 @@ export class McpContext {
           row.projectId,
           row.runnerId,
           row.commandKind,
-          row.risk ?? "SAFE",
-          row.state ?? "queued",
-          row.createdAt ?? Date.now(),
-          row.queuedAt ?? null,
-          row.startedAt ?? null,
-          row.finishedAt ?? null,
-          row.exitCode ?? null,
-          row.signal ?? null,
-          row.timeoutMs ?? null,
-          row.approvalId ?? null
+          row.risk,
+          row.state,
+          row.createdAt,
+          row.queuedAt,
+          row.startedAt,
+          row.finishedAt,
+          row.exitCode,
+          row.signal,
+          row.timeoutMs,
+          row.approvalId
         );
+
+      // Auto-attribute job event to active project session
+      let targetProjectId = row.projectId;
+      if (!targetProjectId && this.db) {
+        try {
+          const found = this.db.prepare("SELECT project_id FROM jobs WHERE id = ?").get(row.id) as { project_id: string } | undefined;
+          if (found) targetProjectId = found.project_id;
+        } catch {}
+      }
+
+      if (targetProjectId && row.state) {
+        let eventType: string | undefined;
+        if (row.state === "running" || row.state === "queued") eventType = "JOB_STARTED";
+        else if (row.state === "succeeded") eventType = "JOB_SUCCEEDED";
+        else if (row.state === "failed") eventType = "JOB_FAILED";
+        else if (row.state === "cancelled") eventType = "JOB_CANCELLED";
+        else if (row.state === "timed_out") eventType = "JOB_TIMED_OUT";
+        else if (row.state === "interrupted") eventType = "JOB_INTERRUPTED";
+
+        if (eventType) {
+          const status =
+            row.state === "succeeded"
+              ? "success"
+              : row.state === "failed" || row.state === "cancelled" || row.state === "timed_out" || row.state === "interrupted"
+                ? "failure"
+                : "running";
+
+          this.recordSessionEvent({
+            projectId: targetProjectId,
+            eventType,
+            source: "job-manager",
+            refType: "job",
+            refId: row.id,
+            summary: {
+              jobId: row.id,
+              target: row.id,
+              commandKind: row.commandKind,
+              state: row.state,
+              status,
+              exitCode: row.exitCode,
+            },
+          });
+        }
+      }
     } catch (err) {
       this.logger?.warn({ err, jobId: row.id }, "Failed to record job in SQLite jobs table");
     }

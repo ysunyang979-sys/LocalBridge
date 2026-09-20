@@ -79,6 +79,15 @@ export function registerCommandTools(server: McpServer, context: McpContext): vo
 
         const runnerId = context.resolveProjectRunner(projectId);
         const sanitizedArgs = sanitizeCommandSpec(args);
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "COMMAND_STARTED",
+          source: "mcp",
+          refType: "command",
+          summary: { kind: sanitizedArgs.kind },
+        });
+
         const result = await context.request(
           runnerId,
           RunnerRpcMethods.CommandRun,
@@ -91,6 +100,14 @@ export function registerCommandTools(server: McpServer, context: McpContext): vo
           runnerId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
+        });
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "COMMAND_FINISHED",
+          source: "mcp",
+          refType: "command",
+          summary: { kind: sanitizedArgs.kind, exitCode: result.exitCode },
         });
 
         return formatToolSuccess(result);

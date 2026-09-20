@@ -190,6 +190,15 @@ export function registerFilesystemTools(server: McpServer, context: McpContext):
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "FILE_CREATED",
+          source: "mcp",
+          refType: "file",
+          refId: args.path,
+          summary: { path: args.path },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -235,6 +244,15 @@ export function registerFilesystemTools(server: McpServer, context: McpContext):
           runnerId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
+        });
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "FILE_UPDATED",
+          source: "mcp",
+          refType: "file",
+          refId: args.path,
+          summary: { path: args.path, bytesAfter: result.bytesAfter },
         });
 
         return formatToolSuccess(result);
@@ -284,6 +302,15 @@ export function registerFilesystemTools(server: McpServer, context: McpContext):
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "FILE_PATCHED",
+          source: "mcp",
+          refType: "file",
+          refId: args.path,
+          summary: { path: args.path, replacementsApplied: result.replacementsApplied },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -331,6 +358,15 @@ export function registerFilesystemTools(server: McpServer, context: McpContext):
           resultStatus: "success",
         });
 
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "FILE_DELETED",
+          source: "mcp",
+          refType: "file",
+          refId: args.path,
+          summary: { path: args.path },
+        });
+
         return formatToolSuccess(result);
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -376,6 +412,15 @@ export function registerFilesystemTools(server: McpServer, context: McpContext):
           runnerId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
+        });
+
+        context.recordSessionEvent?.({
+          projectId,
+          eventType: "FILE_UPDATED",
+          source: "mcp",
+          refType: "file",
+          refId: args.path,
+          summary: { path: args.path, backupId: args.backupId },
         });
 
         return formatToolSuccess(result);

@@ -33,15 +33,16 @@ describe("Database Migrations & Persistence", () => {
     const conn = initDatabase(dbFilePath, migrationsDir);
 
     try {
-      expect(conn.migrationResult.appliedCount).toBe(6);
-      expect(conn.migrationResult.currentVersion).toBe(6);
+      expect(conn.migrationResult.appliedCount).toBe(7);
+      expect(conn.migrationResult.currentVersion).toBe(7);
       expect(conn.migrationResult.appliedMigrations).toContain("0001_initial.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0002_projects_metadata.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0003_projects_access_mode.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0004_project_trust_policies.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0005_projects_execution_mode.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0006_jobs.sql");
-      expect(getCurrentSchemaVersion(conn.db)).toBe(6);
+      expect(conn.migrationResult.appliedMigrations).toContain("0007_workflow_sessions.sql");
+      expect(getCurrentSchemaVersion(conn.db)).toBe(7);
 
       // Verify tables exist
       const tables = (
@@ -58,6 +59,10 @@ describe("Database Migrations & Persistence", () => {
       expect(tables).toContain("projects");
       expect(tables).toContain("jobs");
       expect(tables).toContain("audit_logs");
+      expect(tables).toContain("workflow_sessions");
+      expect(tables).toContain("workflow_session_events");
+      expect(tables).toContain("workflow_session_checkpoints");
+      expect(tables).toContain("workflow_session_files");
 
       // Verify projects table has no 'root' column and has 'access_mode' & 'execution_mode'
       const columns = (
@@ -79,7 +84,7 @@ describe("Database Migrations & Persistence", () => {
   it("is idempotent when running migrations multiple times", () => {
     const conn1 = initDatabase(dbFilePath, migrationsDir);
     try {
-      expect(conn1.migrationResult.appliedCount).toBe(6);
+      expect(conn1.migrationResult.appliedCount).toBe(7);
     } finally {
       conn1.close();
     }
@@ -87,7 +92,7 @@ describe("Database Migrations & Persistence", () => {
     const conn2 = initDatabase(dbFilePath, migrationsDir);
     try {
       expect(conn2.migrationResult.appliedCount).toBe(0);
-      expect(conn2.migrationResult.currentVersion).toBe(6);
+      expect(conn2.migrationResult.currentVersion).toBe(7);
     } finally {
       conn2.close();
     }
@@ -146,7 +151,7 @@ describe("Database Migrations & Persistence", () => {
 
     const futureMigrations = path.join(tmpDir, "future-migrations");
     fs.cpSync(migrationsDir, futureMigrations, { recursive: true });
-    fs.writeFileSync(path.join(futureMigrations, "0007_wal_backup_test.sql"), "CREATE TABLE migration_seven (id INTEGER PRIMARY KEY);");
+    fs.writeFileSync(path.join(futureMigrations, "0008_wal_backup_test.sql"), "CREATE TABLE migration_eight (id INTEGER PRIMARY KEY);");
     const conn = initDatabase(dbFilePath, futureMigrations);
     try {
       expect(conn.backupPath).toBeDefined();

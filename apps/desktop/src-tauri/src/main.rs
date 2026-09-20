@@ -753,6 +753,125 @@ fn desktop_stop_lsp(
     desktop_management_call(state, "POST".into(), "/api/management/lsp/stop".into(), Some(payload))
 }
 
+#[tauri::command]
+fn desktop_list_sessions(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: Option<String>,
+    session_state: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let mut qs = Vec::new();
+    if let Some(p) = project_id {
+        qs.push(format!("projectId={}", p));
+    }
+    if let Some(s) = session_state {
+        qs.push(format!("state={}", s));
+    }
+    if let Some(l) = limit {
+        qs.push(format!("limit={}", l));
+    }
+    if let Some(o) = offset {
+        qs.push(format!("offset={}", o));
+    }
+    let path = if qs.is_empty() {
+        "/api/management/sessions".to_string()
+    } else {
+        format!("/api/management/sessions?{}", qs.join("&"))
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_get_session(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), format!("/api/management/sessions/{}", session_id), None)
+}
+
+#[tauri::command]
+fn desktop_get_session_events(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    session_id: String,
+    cursor: Option<String>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let mut qs = Vec::new();
+    if let Some(c) = cursor {
+        qs.push(format!("cursor={}", c));
+    }
+    if let Some(l) = limit {
+        qs.push(format!("limit={}", l));
+    }
+    let path = if qs.is_empty() {
+        format!("/api/management/sessions/{}/events", session_id)
+    } else {
+        format!("/api/management/sessions/{}/events?{}", session_id, qs.join("&"))
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_get_session_handoff(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), format!("/api/management/sessions/{}/handoff", session_id), None)
+}
+
+#[tauri::command]
+fn desktop_start_session(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: String,
+    title: Option<String>,
+    goals: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({ "projectId": project_id });
+    if let Some(t) = title {
+        payload["title"] = serde_json::json!(t);
+    }
+    if let Some(g) = goals {
+        payload["goals"] = serde_json::json!(g);
+    }
+    desktop_management_call(state, "POST".into(), "/api/management/sessions/start".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_checkpoint_session(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    session_id: String,
+    summary: String,
+    next_steps: Option<Vec<String>>,
+    blockers: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({ "summary": summary });
+    if let Some(ns) = next_steps {
+        payload["nextSteps"] = serde_json::json!(ns);
+    }
+    if let Some(b) = blockers {
+        payload["blockers"] = serde_json::json!(b);
+    }
+    desktop_management_call(state, "POST".into(), format!("/api/management/sessions/{}/checkpoint", session_id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_finish_session(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    session_id: String,
+    reason: Option<String>,
+    notes: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({});
+    if let Some(r) = reason {
+        payload["reason"] = serde_json::json!(r);
+    }
+    if let Some(n) = notes {
+        payload["notes"] = serde_json::json!(n);
+    }
+    desktop_management_call(state, "POST".into(), format!("/api/management/sessions/{}/finish", session_id), Some(payload))
+}
+
 
 #[tauri::command]
 fn desktop_list_jobs(
@@ -1489,7 +1608,14 @@ fn main() {
             desktop_set_approval_routing_mode,
             desktop_get_lsp_status,
             desktop_restart_lsp,
-            desktop_stop_lsp
+            desktop_stop_lsp,
+            desktop_list_sessions,
+            desktop_get_session,
+            desktop_get_session_events,
+            desktop_get_session_handoff,
+            desktop_start_session,
+            desktop_checkpoint_session,
+            desktop_finish_session
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;

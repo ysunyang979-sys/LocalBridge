@@ -13,6 +13,10 @@ import type {
   ProjectTrustPolicy,
   ApprovalRoutingMode,
   LspServerStatus,
+  WorkflowSession,
+  WorkflowCheckpoint,
+  WorkflowSessionEvent,
+  WorkflowHandoffPacket,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -708,6 +712,128 @@ class ApiBridge {
       mcpServerUrl: "http://127.0.0.1:18080/mcp",
       hasMcpToken: false,
     };
+  }
+
+  // Workflow Sessions
+  async listSessions(params?: {
+    projectId?: string;
+    state?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ sessions: WorkflowSession[]; total: number }> {
+    if (isTauri()) {
+      return invoke<{ sessions: WorkflowSession[]; total: number }>("desktop_list_sessions", {
+        projectId: params?.projectId,
+        sessionState: params?.state,
+        limit: params?.limit,
+        offset: params?.offset,
+      });
+    }
+    const qs = new URLSearchParams();
+    if (params?.projectId) qs.set("projectId", params.projectId);
+    if (params?.state) qs.set("state", params.state);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    const query = qs.toString();
+    return this.fetchJson<{ sessions: WorkflowSession[]; total: number }>(
+      `/api/management/sessions${query ? `?${query}` : ""}`
+    );
+  }
+
+  async getSession(sessionId: string): Promise<{ session: WorkflowSession }> {
+    if (isTauri()) {
+      return invoke<{ session: WorkflowSession }>("desktop_get_session", { sessionId });
+    }
+    return this.fetchJson<{ session: WorkflowSession }>(`/api/management/sessions/${sessionId}`);
+  }
+
+  async getSessionEvents(
+    sessionId: string,
+    cursor?: string,
+    limit?: number
+  ): Promise<{ events: WorkflowSessionEvent[]; nextCursor?: string; hasMore: boolean }> {
+    if (isTauri()) {
+      return invoke<{ events: WorkflowSessionEvent[]; nextCursor?: string; hasMore: boolean }>(
+        "desktop_get_session_events",
+        { sessionId, cursor, limit }
+      );
+    }
+    const qs = new URLSearchParams();
+    if (cursor) qs.set("cursor", cursor);
+    if (limit) qs.set("limit", String(limit));
+    const query = qs.toString();
+    return this.fetchJson<{ events: WorkflowSessionEvent[]; nextCursor?: string; hasMore: boolean }>(
+      `/api/management/sessions/${sessionId}/events${query ? `?${query}` : ""}`
+    );
+  }
+
+  async getSessionHandoff(sessionId: string): Promise<{ handoff: WorkflowHandoffPacket }> {
+    if (isTauri()) {
+      return invoke<{ handoff: WorkflowHandoffPacket }>("desktop_get_session_handoff", { sessionId });
+    }
+    return this.fetchJson<{ handoff: WorkflowHandoffPacket }>(`/api/management/sessions/${sessionId}/handoff`);
+  }
+
+  async startSession(
+    projectId: string,
+    title?: string,
+    goals?: string[]
+  ): Promise<{ session: WorkflowSession }> {
+    if (isTauri()) {
+      return invoke<{ session: WorkflowSession }>("desktop_start_session", {
+        projectId,
+        title,
+        goals,
+      });
+    }
+    return this.fetchJson<{ session: WorkflowSession }>("/api/management/sessions/start", {
+      method: "POST",
+      body: JSON.stringify({ projectId, title, goals }),
+    });
+  }
+
+  async checkpointSession(
+    sessionId: string,
+    summary: string,
+    nextSteps?: string[],
+    blockers?: string[]
+  ): Promise<{ checkpoint: WorkflowCheckpoint }> {
+    if (isTauri()) {
+      return invoke<{ checkpoint: WorkflowCheckpoint }>("desktop_checkpoint_session", {
+        sessionId,
+        summary,
+        nextSteps,
+        blockers,
+      });
+    }
+    return this.fetchJson<{ checkpoint: WorkflowCheckpoint }>(
+      `/api/management/sessions/${sessionId}/checkpoint`,
+      {
+        method: "POST",
+        body: JSON.stringify({ summary, nextSteps, blockers }),
+      }
+    );
+  }
+
+  async finishSession(
+    sessionId: string,
+    reason?: string,
+    notes?: string
+  ): Promise<{ session: WorkflowSession }> {
+    if (isTauri()) {
+      return invoke<{ session: WorkflowSession }>("desktop_finish_session", {
+        sessionId,
+        reason,
+        notes,
+      });
+    }
+    return this.fetchJson<{ session: WorkflowSession }>(
+      `/api/management/sessions/${sessionId}/finish`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason, notes }),
+      }
+    );
   }
 }
 
