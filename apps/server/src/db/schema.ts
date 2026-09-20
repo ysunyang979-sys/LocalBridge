@@ -29,6 +29,7 @@ export interface ProjectRow {
   name: string;
   enabled: number; // 0 or 1
   access_mode: string; // 'read-only' or 'read-write'
+  execution_mode?: string; // 'disabled', 'safe-only', or 'project-code'
   first_seen_at: number;
   last_seen_at: number;
 }

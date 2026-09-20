@@ -10,6 +10,7 @@ export class ServerProjectService {
   private readonly stmtGetProject: Database.Statement;
   private readonly stmtRemoveProject: Database.Statement;
   private readonly stmtUpdateAccess: Database.Statement;
+  private readonly stmtUpdateExecution: Database.Statement;
   private readonly stmtUpdateEnabled: Database.Statement;
   private readonly stmtUpsertTrustPolicy: Database.Statement;
   private readonly stmtGetTrustPolicy: Database.Statement;
@@ -24,13 +25,14 @@ export class ServerProjectService {
     private readonly logger?: Logger
   ) {
     this.stmtUpsertProject = this.db.prepare(`
-      INSERT INTO projects (id, runner_id, name, enabled, access_mode, first_seen_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (id, runner_id, name, enabled, access_mode, execution_mode, first_seen_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         runner_id = excluded.runner_id,
         name = excluded.name,
         enabled = excluded.enabled,
         access_mode = excluded.access_mode,
+        execution_mode = excluded.execution_mode,
         last_seen_at = excluded.last_seen_at
     `);
     this.stmtListProjects = this.db.prepare(
@@ -44,6 +46,9 @@ export class ServerProjectService {
     );
     this.stmtUpdateAccess = this.db.prepare(
       "UPDATE projects SET access_mode = ?, last_seen_at = ? WHERE id = ?"
+    );
+    this.stmtUpdateExecution = this.db.prepare(
+      "UPDATE projects SET execution_mode = ?, last_seen_at = ? WHERE id = ?"
     );
     this.stmtUpdateEnabled = this.db.prepare(
       "UPDATE projects SET enabled = ?, last_seen_at = ? WHERE id = ?"
@@ -97,6 +102,7 @@ export class ServerProjectService {
           p.name,
           p.enabled ? 1 : 0,
           p.accessMode ?? "read-only",
+          p.executionMode ?? "disabled",
           now,
           now
         );
@@ -134,6 +140,7 @@ export class ServerProjectService {
         enabled: isEnabled,
         available: runnerOnline && isEnabled,
         accessMode: row.access_mode === "read-write" ? "read-write" : "read-only",
+        executionMode: (row.execution_mode as any) || "disabled",
       };
     });
   }
@@ -159,6 +166,7 @@ export class ServerProjectService {
       enabled: isEnabled,
       available: runnerOnline && isEnabled,
       accessMode: row.access_mode === "read-write" ? "read-write" : "read-only",
+      executionMode: (row.execution_mode as any) || "disabled",
     };
   }
 
@@ -171,6 +179,11 @@ export class ServerProjectService {
   updateProjectAccess(projectId: string, accessMode: string): void {
     if (!this.db.open) return;
     this.stmtUpdateAccess.run(accessMode, Date.now(), projectId);
+  }
+
+  updateProjectExecution(projectId: string, executionMode: string): void {
+    if (!this.db.open) return;
+    this.stmtUpdateExecution.run(executionMode, Date.now(), projectId);
   }
 
   updateProjectEnabled(projectId: string, enabled: boolean): void {

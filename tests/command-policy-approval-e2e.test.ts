@@ -544,4 +544,47 @@ describe("P1-A: Unified Command Policy & Approval Control E2E", () => {
     expect(jobResult.jobId).toBeDefined();
     expect(jobResult.state).toBe("running");
   });
+
+  // 14. Project executionMode = project-code with commandPolicy = controlled triggers APPROVAL_REQUIRED on build
+  it("triggers APPROVAL_REQUIRED for 'pnpm run build' when executionMode is project-code and commandPolicy is controlled (Safe Development)", async () => {
+    const pkgJson = {
+      name: "myweb-test",
+      version: "1.0.0",
+      scripts: {
+        build: "node -v",
+      },
+    };
+    fs.writeFileSync(
+      path.join(projectDir, "package.json"),
+      JSON.stringify(pkgJson, null, 2),
+      "utf-8"
+    );
+
+    projectRegistry.setExecutionMode(projectId, "project-code");
+    projectRegistry.setTrustPolicy(projectId, {
+      trustLevel: "standard",
+      commandPolicy: "controlled",
+      protectedFilesPolicy: "always-ask",
+    });
+
+    const spec: CommandSpec = {
+      kind: "package-script",
+      projectId,
+      manager: "pnpm",
+      script: "build",
+      args: [],
+      cwd: ".",
+      timeoutMs: 5000,
+    };
+
+    try {
+      await commandService.run(spec);
+      expect.unreachable("Build command should require approval under controlled policy");
+    } catch (err) {
+      expect(err).toBeInstanceOf(LocalBridgeError);
+      const lbErr = err as LocalBridgeError;
+      expect(lbErr.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
+      expect(lbErr.details?.approvalId).toBeDefined();
+    }
+  });
 });

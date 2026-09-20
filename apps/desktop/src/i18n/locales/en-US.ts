@@ -463,5 +463,6 @@ export const enUS: I18nDictionary = {
     CROSS_SITE_REQUEST_BLOCKED: "Forbidden: Cross-site browser requests are blocked.",
     HOST_NOT_ALLOWED: "Forbidden: Host header is not an authorized loopback address.",
     RATE_LIMITED: "Too many requests: rate limit exceeded.",
+    PROJECT_EXECUTION_REQUIRES_WRITE_ACCESS: "Enabling project code execution requires project access mode to be read-write.",
   },
 };

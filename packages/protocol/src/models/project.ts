@@ -21,5 +21,6 @@ export const ProjectPublicSchema = z.object({
   enabled: z.boolean(),
   available: z.boolean(),
   accessMode: z.enum(["read-only", "read-write"]).default("read-only"),
+  executionMode: z.enum(["disabled", "safe-only", "project-code"]).default("disabled"),
 });
 export type ProjectPublic = z.infer<typeof ProjectPublicSchema>;

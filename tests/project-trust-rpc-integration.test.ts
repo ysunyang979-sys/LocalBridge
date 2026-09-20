@@ -44,6 +44,7 @@ describe("Project Trust & Approval Policy - RPC & Integration Suite", () => {
         name TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
         access_mode TEXT NOT NULL,
+        execution_mode TEXT NOT NULL DEFAULT 'disabled',
         first_seen_at INTEGER NOT NULL,
         last_seen_at INTEGER NOT NULL
       );

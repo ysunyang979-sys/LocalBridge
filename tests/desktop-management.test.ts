@@ -225,6 +225,62 @@ describe("Phase 11: Desktop Management Channel & Tokens", () => {
     const updatedExec = JSON.parse(execRes.body);
     expect(updatedExec.executionMode).toBe("safe-only");
 
+    // Verify GET /api/projects returns executionMode "safe-only"
+    const listRes1 = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+    });
+    expect(listRes1.statusCode).toBe(200);
+    const proj1 = JSON.parse(listRes1.body).projects.find((p: any) => p.id === projectId);
+    expect(proj1.executionMode).toBe("safe-only");
+
+    // Change Execution Mode to project-code
+    const execRes2 = await app.inject({
+      method: "POST",
+      url: `/api/management/projects/${projectId}/execution`,
+      payload: {
+        executionMode: "project-code",
+      },
+    });
+    expect(execRes2.statusCode).toBe(200);
+    expect(JSON.parse(execRes2.body).executionMode).toBe("project-code");
+
+    // Verify GET /api/projects and GET /api/projects/:id return "project-code"
+    const listRes2 = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+    });
+    expect(listRes2.statusCode).toBe(200);
+    const proj2 = JSON.parse(listRes2.body).projects.find((p: any) => p.id === projectId);
+    expect(proj2.executionMode).toBe("project-code");
+
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}`,
+    });
+    expect(getRes.statusCode).toBe(200);
+    expect(JSON.parse(getRes.body).executionMode).toBe("project-code");
+
+    // Change Execution Mode to disabled
+    const execRes3 = await app.inject({
+      method: "POST",
+      url: `/api/management/projects/${projectId}/execution`,
+      payload: {
+        executionMode: "disabled",
+      },
+    });
+    expect(execRes3.statusCode).toBe(200);
+    expect(JSON.parse(execRes3.body).executionMode).toBe("disabled");
+
+    // Verify GET /api/projects returns "disabled"
+    const listRes3 = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+    });
+    expect(listRes3.statusCode).toBe(200);
+    const proj3 = JSON.parse(listRes3.body).projects.find((p: any) => p.id === projectId);
+    expect(proj3.executionMode).toBe("disabled");
+
     // 3.4 Disable Project
     const disableRes = await app.inject({
       method: "POST",

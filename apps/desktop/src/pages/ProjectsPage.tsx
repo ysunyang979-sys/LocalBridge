@@ -249,15 +249,15 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                         {t.projects.executionMode}
                       </div>
                       <div className="text-theme-muted text-[11px] mt-0.5">
-                        {project.executionMode === "disabled"
-                          ? t.modals.authorize.execDisabledOptionDesc
+                        {project.executionMode === "project-code"
+                          ? t.modals.authorize.execProjectCodeOptionDesc
                           : project.executionMode === "safe-only"
                             ? t.modals.authorize.execSafeOnlyOptionDesc
-                            : t.modals.authorize.execProjectCodeOptionDesc}
+                            : t.modals.authorize.execDisabledOptionDesc}
                       </div>
                     </div>
                     <select
-                      value={project.executionMode}
+                      value={project.executionMode || "disabled"}
                       onChange={(e) =>
                         handleChangeExecution(
                           project,

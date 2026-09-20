@@ -463,5 +463,6 @@ export const zhCN: I18nDictionary = {
     CROSS_SITE_REQUEST_BLOCKED: "跨站防护拦截：禁止来自第三方网页浏览器的跨站请求。",
     HOST_NOT_ALLOWED: "访问拦截：Host 请求头非受信任的本地环回域名。",
     RATE_LIMITED: "请求过于频繁：已触发速率保护限制。",
+    PROJECT_EXECUTION_REQUIRES_WRITE_ACCESS: "启用允许项目常规命令需要项目访问权限为可读写。",
   },
 };

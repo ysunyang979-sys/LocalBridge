@@ -68,20 +68,22 @@ describe("Phase 12 - Crash Recovery, Approvals Expiration & State Integrity", ()
     // 2. Second initialization with a newly available migration
     const futureMigrations = path.join(tmpDir, "future-migrations");
     fs.cpSync(path.resolve("apps/server/src/db/migrations"), futureMigrations, { recursive: true });
-    fs.writeFileSync(path.join(futureMigrations, "0005_backup_test.sql"), "CREATE TABLE migration_backup_test (id INTEGER PRIMARY KEY);");
+    fs.writeFileSync(path.join(futureMigrations, "0006_backup_test.sql"), "CREATE TABLE migration_backup_test (id INTEGER PRIMARY KEY);");
     const secondConn = initDatabase(dbPath, futureMigrations);
-    expect(secondConn.backupPath).toBeDefined();
-    expect(fs.existsSync(secondConn.backupPath!)).toBe(true);
+    try {
+      expect(secondConn.backupPath).toBeDefined();
+      expect(fs.existsSync(secondConn.backupPath!)).toBe(true);
 
-    // Verify backup copy contains the pre-existing data
-    const backupContent = fs.readFileSync(secondConn.backupPath!);
-    expect(backupContent.length).toBeGreaterThan(0);
+      // Verify backup copy contains the pre-existing data
+      const backupContent = fs.readFileSync(secondConn.backupPath!);
+      expect(backupContent.length).toBeGreaterThan(0);
 
-    // Verify active DB retains data
-    const row = secondConn.db.prepare("SELECT val FROM custom_test WHERE id = 1").get() as { val: string };
-    expect(row.val).toBe("persisted_value");
-
-    secondConn.close();
+      // Verify active DB retains data
+      const row = secondConn.db.prepare("SELECT val FROM custom_test WHERE id = 1").get() as { val: string };
+      expect(row.val).toBe("persisted_value");
+    } finally {
+      secondConn.close();
+    }
   });
 
   it("preserves corrupt configuration files without silent overwrite and throws descriptive error", () => {

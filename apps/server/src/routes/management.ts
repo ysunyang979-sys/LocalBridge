@@ -371,6 +371,9 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     );
 
     projectService.updateProjectAccess(id, accessMode);
+    if ((result as any)?.executionMode) {
+      projectService.updateProjectExecution(id, (result as any).executionMode);
+    }
     return reply.status(200).send(result);
   });
 
@@ -404,6 +407,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       }
     );
 
+    projectService.updateProjectExecution(id, executionMode);
     return reply.status(200).send(result);
   });
 

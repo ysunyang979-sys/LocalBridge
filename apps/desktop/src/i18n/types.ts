@@ -463,5 +463,6 @@ export interface I18nDictionary {
     CROSS_SITE_REQUEST_BLOCKED: string;
     HOST_NOT_ALLOWED: string;
     RATE_LIMITED: string;
+    PROJECT_EXECUTION_REQUIRES_WRITE_ACCESS: string;
   };
 }
