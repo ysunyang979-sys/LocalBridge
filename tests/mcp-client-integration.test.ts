@@ -185,12 +185,17 @@ describe("Phase 10 - Official MCP Client Integration (@modelcontextprotocol/clie
   it("lists all available tools via official client", async () => {
     const listResult = await client.listTools();
     expect(listResult.tools).toBeDefined();
-    expect(listResult.tools.length).toBe(24);
+    expect(listResult.tools.length).toBe(29);
 
     const toolNames = listResult.tools.map((t) => t.name);
     expect(toolNames).toContain("localbridge_project_list");
     expect(toolNames).toContain("localbridge_file_read");
     expect(toolNames).toContain("localbridge_git_status");
+    expect(toolNames).toContain("localbridge_git_stage");
+    expect(toolNames).toContain("localbridge_git_unstage");
+    expect(toolNames).toContain("localbridge_git_branch_create");
+    expect(toolNames).toContain("localbridge_git_branch_switch");
+    expect(toolNames).toContain("localbridge_git_commit");
     expect(toolNames).toContain("localbridge_approval_status");
   });
 

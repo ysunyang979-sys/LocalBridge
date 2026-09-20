@@ -206,7 +206,17 @@ export class TrustPolicyEvaluator {
         };
       }
 
-      // Normal file and git operations under Full Project Trust are Auto Allowed
+      // Normal file and git read operations under Full Project Trust are Auto Allowed
+      if (this.isGitWriteOperation(operation)) {
+        return {
+          decision: "ask",
+          decisionSource: "project-policy",
+          policyLevel: "full-project-trust",
+          reason: `Git write operation '${operation}' requires human approval.`,
+          requiresApproval: true,
+        };
+      }
+
       return {
         decision: "allow",
         decisionSource: "project-policy",
@@ -224,13 +234,24 @@ export class TrustPolicyEvaluator {
           policyLevel: "custom",
           reason:
             customDecision === "ask"
-              ? "Operation requires approval per custom project policy."
+              ? `Operation '${operation}' requires approval per custom project policy.`
               : customDecision === "deny"
-                ? "Operation denied per custom project policy."
+                ? `Operation '${operation}' denied per custom project policy.`
                 : undefined,
           requiresApproval: customDecision === "ask",
         };
       }
+    }
+
+    // Git write operations in any non-custom policy require approval by default
+    if (this.isGitWriteOperation(operation)) {
+      return {
+        decision: "ask",
+        decisionSource: "project-policy",
+        policyLevel: trustLevel,
+        reason: `Git write operation '${operation}' requires human approval.`,
+        requiresApproval: true,
+      };
     }
 
     // Standard Policy (Safe Defaults)
@@ -279,9 +300,15 @@ export class TrustPolicyEvaluator {
 
     // Git
     if (operation.startsWith("git.")) {
-      const op = operation.slice(4) as keyof NonNullable<typeof rules.git>;
-      if (rules.git && rules.git[op]) {
-        return rules.git[op] as PolicyDecision;
+      const rawOp = operation.slice(4);
+      const op =
+        rawOp === "branchCreate"
+          ? "createBranch"
+          : rawOp === "branchSwitch"
+            ? "switchBranch"
+            : rawOp;
+      if (rules.git && (rules.git as any)[op]) {
+        return (rules.git as any)[op] as PolicyDecision;
       }
     }
 
@@ -320,12 +347,7 @@ export class TrustPolicyEvaluator {
       operation === "file.patch" ||
       operation === "file.delete" ||
       operation === "file.restore" ||
-      operation === "file.rename" ||
-      operation.startsWith("git.stage") ||
-      operation.startsWith("git.unstage") ||
-      operation.startsWith("git.commit") ||
-      operation.startsWith("git.createBranch") ||
-      operation.startsWith("git.restore")
+      operation === "file.rename"
     ) {
       return "write";
     }
@@ -335,7 +357,8 @@ export class TrustPolicyEvaluator {
       operation === "command.classify" ||
       operation === "job.start" ||
       operation === "build.start" ||
-      operation === "test.start"
+      operation === "test.start" ||
+      this.isGitWriteOperation(operation)
     ) {
       return "execute";
     }
@@ -350,7 +373,8 @@ export class TrustPolicyEvaluator {
       operation === "file.patch" ||
       operation === "file.delete" ||
       operation === "file.restore" ||
-      operation === "file.rename"
+      operation === "file.rename" ||
+      this.isGitWriteOperation(operation)
     );
   }
 
@@ -361,6 +385,18 @@ export class TrustPolicyEvaluator {
       operation === "job.start" ||
       operation === "build.start" ||
       operation === "test.start"
+    );
+  }
+
+  private static isGitWriteOperation(operation: string): boolean {
+    return (
+      operation === "git.stage" ||
+      operation === "git.unstage" ||
+      operation === "git.branchCreate" ||
+      operation === "git.createBranch" ||
+      operation === "git.branchSwitch" ||
+      operation === "git.switchBranch" ||
+      operation === "git.commit"
     );
   }
 }

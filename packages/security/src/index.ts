@@ -5,3 +5,4 @@ export * from "./path/sensitive.js";
 export * from "./path/resolver.js";
 export * from "./command/index.js";
 export * from "./policy/evaluator.js";
+export * from "./git/validation.js";

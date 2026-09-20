@@ -136,6 +136,7 @@ export interface ProjectCustomRules {
     unstage?: FileActionPolicy;
     commit?: FileActionPolicy;
     createBranch?: FileActionPolicy;
+    switchBranch?: FileActionPolicy;
     restore?: FileActionPolicy;
   };
   commands?: {

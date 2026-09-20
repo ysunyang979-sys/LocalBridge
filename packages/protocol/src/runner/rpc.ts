@@ -451,6 +451,172 @@ export const GitLogResultSchema = z
   .strict();
 export type GitLogResult = z.infer<typeof GitLogResultSchema>;
 
+// Git Write Schemas (P1-B)
+
+// git.stage
+export const GitStageParamsSchema = z
+  .object({
+    projectId: z.string(),
+    paths: z.array(z.string().min(1)).min(1).max(128),
+    approvalId: z.string().optional(),
+  })
+  .strict();
+export type GitStageParams = z.infer<typeof GitStageParamsSchema>;
+
+export const GitStageResultSchema = z
+  .object({
+    projectId: z.string(),
+    staged: z.array(z.string()),
+  })
+  .strict();
+export type GitStageResult = z.infer<typeof GitStageResultSchema>;
+
+export const GitStageToolInputSchema = z
+  .object({
+    projectId: z.string().describe("Target project identifier"),
+    paths: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(128)
+      .describe("Explicit relative file paths to stage within project bounds"),
+    approvalId: z
+      .string()
+      .optional()
+      .describe("Optional approval identifier used to execute an approved stage request"),
+  })
+  .strict();
+
+// git.unstage
+export const GitUnstageParamsSchema = z
+  .object({
+    projectId: z.string(),
+    paths: z.array(z.string().min(1)).min(1).max(128),
+    approvalId: z.string().optional(),
+  })
+  .strict();
+export type GitUnstageParams = z.infer<typeof GitUnstageParamsSchema>;
+
+export const GitUnstageResultSchema = z
+  .object({
+    projectId: z.string(),
+    unstaged: z.array(z.string()),
+  })
+  .strict();
+export type GitUnstageResult = z.infer<typeof GitUnstageResultSchema>;
+
+export const GitUnstageToolInputSchema = z
+  .object({
+    projectId: z.string().describe("Target project identifier"),
+    paths: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(128)
+      .describe("Explicit relative file paths to unstage from git index (leaves worktree unchanged)"),
+    approvalId: z
+      .string()
+      .optional()
+      .describe("Optional approval identifier used to execute an approved unstage request"),
+  })
+  .strict();
+
+// git.branchCreate
+export const GitBranchCreateParamsSchema = z
+  .object({
+    projectId: z.string(),
+    branchName: z.string().min(1).max(255),
+    startPoint: z.string().max(128).optional(),
+    approvalId: z.string().optional(),
+  })
+  .strict();
+export type GitBranchCreateParams = z.infer<typeof GitBranchCreateParamsSchema>;
+
+export const GitBranchCreateResultSchema = z
+  .object({
+    projectId: z.string(),
+    branch: z.string(),
+    commitHash: z.string(),
+  })
+  .strict();
+export type GitBranchCreateResult = z.infer<typeof GitBranchCreateResultSchema>;
+
+export const GitBranchCreateToolInputSchema = z
+  .object({
+    projectId: z.string().describe("Target project identifier"),
+    branchName: z.string().min(1).max(255).describe("Name of the local branch to create"),
+    startPoint: z
+      .string()
+      .max(128)
+      .optional()
+      .describe("Optional starting point commit hash or ref for the new branch"),
+    approvalId: z
+      .string()
+      .optional()
+      .describe("Optional approval identifier used to execute an approved branch creation request"),
+  })
+  .strict();
+
+// git.branchSwitch
+export const GitBranchSwitchParamsSchema = z
+  .object({
+    projectId: z.string(),
+    branchName: z.string().min(1).max(255),
+    approvalId: z.string().optional(),
+  })
+  .strict();
+export type GitBranchSwitchParams = z.infer<typeof GitBranchSwitchParamsSchema>;
+
+export const GitBranchSwitchResultSchema = z
+  .object({
+    projectId: z.string(),
+    currentBranch: z.string(),
+    previousBranch: z.string(),
+  })
+  .strict();
+export type GitBranchSwitchResult = z.infer<typeof GitBranchSwitchResultSchema>;
+
+export const GitBranchSwitchToolInputSchema = z
+  .object({
+    projectId: z.string().describe("Target project identifier"),
+    branchName: z.string().min(1).max(255).describe("Name of existing local branch to switch to"),
+    approvalId: z
+      .string()
+      .optional()
+      .describe("Optional approval identifier used to execute an approved branch switch request"),
+  })
+  .strict();
+
+// git.commit
+export const GitCommitParamsSchema = z
+  .object({
+    projectId: z.string(),
+    message: z.string().min(1).max(4096),
+    approvalId: z.string().optional(),
+  })
+  .strict();
+export type GitCommitParams = z.infer<typeof GitCommitParamsSchema>;
+
+export const GitCommitResultSchema = z
+  .object({
+    projectId: z.string(),
+    commitHash: z.string(),
+    shortHash: z.string(),
+    branch: z.string(),
+    summary: z.string(),
+  })
+  .strict();
+export type GitCommitResult = z.infer<typeof GitCommitResultSchema>;
+
+export const GitCommitToolInputSchema = z
+  .object({
+    projectId: z.string().describe("Target project identifier"),
+    message: z.string().min(1).max(4096).describe("Commit message describing staged changes"),
+    approvalId: z
+      .string()
+      .optional()
+      .describe("Optional approval identifier used to execute an approved commit request"),
+  })
+  .strict();
+
 // Command Risk Level
 export const CommandRiskLevelSchema = z.enum(["SAFE", "CAUTION", "DANGEROUS"]);
 export type CommandRiskLevel = z.infer<typeof CommandRiskLevelSchema>;
@@ -1103,6 +1269,7 @@ export const ProjectCustomRulesSchema = z
         unstage: FileActionPolicySchema.optional(),
         commit: FileActionPolicySchema.optional(),
         createBranch: FileActionPolicySchema.optional(),
+        switchBranch: FileActionPolicySchema.optional(),
         restore: FileActionPolicySchema.optional(),
       })
       .optional(),
@@ -1282,6 +1449,26 @@ export interface RunnerRpcMap {
   [RunnerRpcMethods.GitLog]: {
     params: GitLogParams;
     result: GitLogResult;
+  };
+  [RunnerRpcMethods.GitStage]: {
+    params: GitStageParams;
+    result: GitStageResult;
+  };
+  [RunnerRpcMethods.GitUnstage]: {
+    params: GitUnstageParams;
+    result: GitUnstageResult;
+  };
+  [RunnerRpcMethods.GitBranchCreate]: {
+    params: GitBranchCreateParams;
+    result: GitBranchCreateResult;
+  };
+  [RunnerRpcMethods.GitBranchSwitch]: {
+    params: GitBranchSwitchParams;
+    result: GitBranchSwitchResult;
+  };
+  [RunnerRpcMethods.GitCommit]: {
+    params: GitCommitParams;
+    result: GitCommitResult;
   };
   [RunnerRpcMethods.CommandClassify]: {
     params: CommandClassifyParams;
@@ -1544,5 +1731,25 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.ApprovalBulkResolve]: {
     params: ApprovalBulkResolveParamsSchema,
     result: ApprovalBulkResolveResultSchema,
+  },
+  [RunnerRpcMethods.GitStage]: {
+    params: GitStageParamsSchema,
+    result: GitStageResultSchema,
+  },
+  [RunnerRpcMethods.GitUnstage]: {
+    params: GitUnstageParamsSchema,
+    result: GitUnstageResultSchema,
+  },
+  [RunnerRpcMethods.GitBranchCreate]: {
+    params: GitBranchCreateParamsSchema,
+    result: GitBranchCreateResultSchema,
+  },
+  [RunnerRpcMethods.GitBranchSwitch]: {
+    params: GitBranchSwitchParamsSchema,
+    result: GitBranchSwitchResultSchema,
+  },
+  [RunnerRpcMethods.GitCommit]: {
+    params: GitCommitParamsSchema,
+    result: GitCommitResultSchema,
   },
 } as const;

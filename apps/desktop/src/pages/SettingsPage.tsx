@@ -75,6 +75,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       delete: "ask",
       rename: "ask",
     },
+    git: {
+      status: "allow",
+      diff: "allow",
+      log: "allow",
+      stage: "ask",
+      unstage: "ask",
+      createBranch: "ask",
+      switchBranch: "ask",
+      commit: "ask",
+    },
     commands: {
       inspect: "allow",
       test: "allow",
@@ -162,6 +172,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
           ? {
               ...prev.customRules,
               files: prev.customRules?.files || defaultCustomRules.files,
+              git: prev.customRules?.git || defaultCustomRules.git,
             }
           : prev.customRules,
     }));
@@ -183,17 +194,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setPolicyErrorMsg(null);
     try {
       const hasFileCustom = trustPolicy.trustLevel === "custom";
+      const hasGitCustom = trustPolicy.trustLevel === "custom";
       const hasCommandCustom =
         trustPolicy.commandPolicy === "controlled" &&
         Boolean(trustPolicy.customRules?.commands);
 
       let customRulesToSave: ProjectCustomRules | undefined = undefined;
-      if (hasFileCustom || hasCommandCustom) {
+      if (hasFileCustom || hasGitCustom || hasCommandCustom) {
         customRulesToSave = {};
         if (hasFileCustom) {
           customRulesToSave.files = {
             ...defaultCustomRules.files,
             ...trustPolicy.customRules?.files,
+          };
+          customRulesToSave.git = {
+            ...defaultCustomRules.git,
+            ...trustPolicy.customRules?.git,
           };
         }
         if (hasCommandCustom) {
@@ -1182,6 +1198,59 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                             </div>
                           )
                         )}
+                      </div>
+                    </div>
+
+                    {/* Git write rules */}
+                    <div className="space-y-1.5 pt-2 border-t border-theme-subtle">
+                      <div className="text-[11px] font-medium text-theme-secondary">
+                        {t.trust.gitPolicyTitle}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        {(
+                          [
+                            { key: "stage", label: t.trust.gitActionStage, def: "ask" },
+                            { key: "unstage", label: t.trust.gitActionUnstage, def: "ask" },
+                            { key: "createBranch", label: t.trust.gitActionCreateBranch, def: "ask" },
+                            { key: "switchBranch", label: t.trust.gitActionSwitchBranch, def: "ask" },
+                            { key: "commit", label: t.trust.gitActionCommit, def: "ask" },
+                          ] as const
+                        ).map(({ key, label, def }) => (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between p-1.5 bg-theme-card rounded border border-theme-subtle"
+                          >
+                            <span className="font-mono text-theme-primary text-[10px] truncate mr-1" title={label}>
+                              git.{key}
+                            </span>
+                            <select
+                              value={
+                                trustPolicy.customRules?.git?.[
+                                  key as keyof NonNullable<typeof defaultCustomRules.git>
+                                ] ?? def
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value as FileActionPolicy;
+                                setTrustPolicy((prev) => ({
+                                  ...prev,
+                                  customRules: {
+                                    ...prev.customRules,
+                                    git: {
+                                      ...defaultCustomRules.git,
+                                      ...prev.customRules?.git,
+                                      [key]: val,
+                                    },
+                                  },
+                                }));
+                              }}
+                              className="bg-theme-input border border-theme-input rounded px-1.5 py-0.5 text-[10px] text-theme-primary shrink-0"
+                            >
+                              <option value="allow">{t.trust.commandAllow}</option>
+                              <option value="ask">{t.trust.commandAsk}</option>
+                              <option value="deny">{t.trust.commandDeny}</option>
+                            </select>
+                          </div>
+                        ))}
                       </div>
                     </div>
 

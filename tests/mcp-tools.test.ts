@@ -34,6 +34,11 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
     "localbridge_git_status",
     "localbridge_git_diff",
     "localbridge_git_log",
+    "localbridge_git_stage",
+    "localbridge_git_unstage",
+    "localbridge_git_branch_create",
+    "localbridge_git_branch_switch",
+    "localbridge_git_commit",
     "localbridge_command_classify",
     "localbridge_command_run",
     "localbridge_job_start",
@@ -128,8 +133,8 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
     } catch {}
   });
 
-  it("registers exactly 24 official tools on tools/list", () => {
-    expect(tools.length).toBe(24);
+  it("registers exactly 29 official tools on tools/list", () => {
+    expect(tools.length).toBe(29);
 
     const registeredNames = tools.map((t: any) => t.name).sort();
     expect(registeredNames).toEqual([...EXPECTED_23_TOOLS].sort());

@@ -35,6 +35,11 @@ import { createGitInfoHandler } from "./rpc/handlers/git-info.js";
 import { createGitStatusHandler } from "./rpc/handlers/git-status.js";
 import { createGitDiffHandler } from "./rpc/handlers/git-diff.js";
 import { createGitLogHandler } from "./rpc/handlers/git-log.js";
+import { createGitStageHandler } from "./rpc/handlers/git-stage.js";
+import { createGitUnstageHandler } from "./rpc/handlers/git-unstage.js";
+import { createGitBranchCreateHandler } from "./rpc/handlers/git-branch-create.js";
+import { createGitBranchSwitchHandler } from "./rpc/handlers/git-branch-switch.js";
+import { createGitCommitHandler } from "./rpc/handlers/git-commit.js";
 import { createCommandClassifyHandler } from "./rpc/handlers/command-classify.js";
 import { createCommandRunHandler } from "./rpc/handlers/command-run.js";
 import { createJobStartHandler } from "./rpc/handlers/job-start.js";
@@ -305,6 +310,31 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.GitLog,
       createGitLogHandler(this.gitService)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitStage,
+      createGitStageHandler(this.gitService, this.approvalManager, this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitUnstage,
+      createGitUnstageHandler(this.gitService, this.approvalManager, this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitBranchCreate,
+      createGitBranchCreateHandler(this.gitService, this.approvalManager, this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitBranchSwitch,
+      createGitBranchSwitchHandler(this.gitService, this.approvalManager, this.projectRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.GitCommit,
+      createGitCommitHandler(this.gitService, this.approvalManager, this.projectRegistry)
     );
 
     this.rpcRouter.register(

@@ -192,7 +192,7 @@ export class GitProcessRunner {
         const stderr = Buffer.concat(stderrChunks).toString("utf-8");
         const exitCode = code ?? 0;
 
-        if (exitCode !== 0) {
+        if (exitCode !== 0 && !options.allowNonZeroExit) {
           this.logger?.debug(
             {
               event: "git_process_error",

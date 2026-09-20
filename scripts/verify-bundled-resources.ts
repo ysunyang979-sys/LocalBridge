@@ -136,7 +136,30 @@ async function verifyBundledServerMcpSchema() {
       throw new Error(`localbridge_job_start timeoutMs contract mismatch: expected max 300000, default 60000`);
     }
 
-    console.log("Bundled server MCP schema verified successfully: approvalId exists and timeoutMs contract is unified.");
+    const gitWriteTools = [
+      "localbridge_git_stage",
+      "localbridge_git_unstage",
+      "localbridge_git_branch_create",
+      "localbridge_git_branch_switch",
+      "localbridge_git_commit",
+    ];
+
+    for (const toolName of gitWriteTools) {
+      const tool = tools.find((t: any) => t.name === toolName);
+      if (!tool) throw new Error(`${toolName} tool missing from bundled server tools/list`);
+      if (tool.inputSchema?.type !== "object") throw new Error(`${toolName} inputSchema is not an object`);
+      if (!tool.inputSchema?.properties?.approvalId) {
+        throw new Error(`BUILD ARTIFACT REGRESSION: ${toolName} inputSchema is missing properties.approvalId!`);
+      }
+      if (tool.inputSchema.properties.approvalId.type !== "string") {
+        throw new Error(`${toolName} properties.approvalId must be string`);
+      }
+      if (tool.inputSchema.required?.includes("approvalId")) {
+        throw new Error(`${toolName} approvalId must NOT be required`);
+      }
+    }
+
+    console.log("Bundled server MCP schema verified successfully: approvalId exists for command, job, and git-write tools, timeoutMs contract is unified.");
   } finally {
     serverProc.kill();
     try {

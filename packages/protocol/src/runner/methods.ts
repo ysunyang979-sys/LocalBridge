@@ -41,6 +41,11 @@ export const RunnerRpcMethods = {
   ProjectSetTrustPolicy: "project.setTrustPolicy",
   ProjectSessionTrust: "project.sessionTrust",
   ApprovalBulkResolve: "approval.bulkResolve",
+  GitStage: "git.stage",
+  GitUnstage: "git.unstage",
+  GitBranchCreate: "git.branchCreate",
+  GitBranchSwitch: "git.branchSwitch",
+  GitCommit: "git.commit",
 } as const;
 
 export type RunnerRpcMethod =

@@ -4,6 +4,7 @@ export interface GitSpawnOptions {
   timeoutMs?: number;
   maxBufferBytes?: number;
   isDiff?: boolean;
+  allowNonZeroExit?: boolean;
 }
 
 export interface GitSpawnResult {

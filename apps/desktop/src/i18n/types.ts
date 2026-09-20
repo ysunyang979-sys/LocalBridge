@@ -162,6 +162,12 @@ export interface I18nDictionary {
     protectedDeny: string;
     protectedFollowPolicy: string;
     filePolicyTitle: string;
+    gitPolicyTitle: string;
+    gitActionStage: string;
+    gitActionUnstage: string;
+    gitActionCreateBranch: string;
+    gitActionSwitchBranch: string;
+    gitActionCommit: string;
     commandPolicyTitle: string;
     commandAllow: string;
     commandControlled: string;
