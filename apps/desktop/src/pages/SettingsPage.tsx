@@ -76,8 +76,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       rename: "ask",
     },
     commands: {
+      inspect: "allow",
+      test: "allow",
+      lint: "allow",
+      typecheck: "allow",
       build: "ask",
-      test: "ask",
+      devServer: "ask",
+      packageScript: "ask",
+      packageInstall: "ask",
+      gitRead: "allow",
+      customSafe: "allow",
       controlledCommand: "ask",
     },
   };
@@ -1158,15 +1166,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                         {t.trust.commandPolicyTitle}
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[11px]">
-                        {(["build", "test", "controlledCommand"] as const).map((cmd) => (
+                        {(
+                          [
+                            { key: "inspect", label: t.trust.commandCategoryInspect, def: "allow" },
+                            { key: "test", label: t.trust.commandCategoryTest, def: "allow" },
+                            { key: "lint", label: t.trust.commandCategoryLint, def: "allow" },
+                            { key: "typecheck", label: t.trust.commandCategoryTypecheck, def: "allow" },
+                            { key: "build", label: t.trust.commandCategoryBuild, def: "ask" },
+                            { key: "devServer", label: t.trust.commandCategoryDevServer, def: "ask" },
+                            { key: "packageScript", label: t.trust.commandCategoryPackageScript, def: "ask" },
+                            { key: "packageInstall", label: t.trust.commandCategoryPackageInstall, def: "ask" },
+                            { key: "gitRead", label: t.trust.commandCategoryGitRead, def: "allow" },
+                            { key: "customSafe", label: t.trust.commandCategoryCustomSafe, def: "allow" },
+                          ] as const
+                        ).map(({ key, label, def }) => (
                           <div
-                            key={cmd}
+                            key={key}
                             className="flex items-center justify-between p-1.5 bg-theme-card rounded border border-theme-subtle"
                           >
-                            <span className="font-mono text-theme-primary">{cmd}</span>
+                            <span className="font-mono text-theme-primary text-[10px] truncate mr-1" title={label}>
+                              {key}
+                            </span>
                             <select
                               value={
-                                trustPolicy.customRules?.commands?.[cmd] ?? "ask"
+                                trustPolicy.customRules?.commands?.[key as keyof typeof defaultCustomRules.commands] ??
+                                def
                               }
                               onChange={(e) => {
                                 const val = e.target.value as FileActionPolicy;
@@ -1176,12 +1200,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                                     ...prev.customRules,
                                     commands: {
                                       ...prev.customRules?.commands,
-                                      [cmd]: val,
+                                      [key]: val,
                                     },
                                   },
                                 }));
                               }}
-                              className="bg-theme-input border border-theme-input rounded px-1.5 py-0.5 text-[10px] text-theme-primary"
+                              className="bg-theme-input border border-theme-input rounded px-1.5 py-0.5 text-[10px] text-theme-primary shrink-0"
                             >
                               <option value="allow">{t.trust.commandAllow}</option>
                               <option value="ask">{t.trust.commandAsk}</option>
@@ -1193,6 +1217,169 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                     </div>
                   </div>
                 )}
+
+                {/* Command Execution Policy Section */}
+                <div className="pt-2 border-t border-theme-subtle space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-medium text-theme-secondary">
+                        {t.trust.commandExecPolicyTitle}
+                      </div>
+                      <div className="text-[11px] text-theme-muted mt-0.5">
+                        {t.trust.commandExecPolicyDesc}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Absolute Security Badges */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20">
+                      <AlertTriangle className="w-3 h-3" />
+                      {t.trust.badgeRawShellDenied}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 border border-red-500/20">
+                      <AlertTriangle className="w-3 h-3" />
+                      {t.trust.badgeUnknownCommandDenied}
+                    </span>
+                  </div>
+
+                  {/* 4 Execution Modes */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      {
+                        mode: "disabled",
+                        label: t.trust.commandExecDisabled,
+                        desc: t.trust.commandExecDisabledDesc,
+                        active: trustPolicy.commandPolicy === "deny",
+                        onClick: () =>
+                          setTrustPolicy((prev) => ({
+                            ...prev,
+                            commandPolicy: "deny",
+                          })),
+                      },
+                      {
+                        mode: "safe-only",
+                        label: t.trust.commandExecSafe,
+                        desc: t.trust.commandExecSafeDesc,
+                        active:
+                          trustPolicy.commandPolicy === "controlled" &&
+                          !trustPolicy.customRules?.commands,
+                        onClick: () =>
+                          setTrustPolicy((prev) => ({
+                            ...prev,
+                            commandPolicy: "controlled",
+                          })),
+                      },
+                      {
+                        mode: "ask-before-execute",
+                        label: t.trust.commandExecAsk,
+                        desc: t.trust.commandExecAskDesc,
+                        active: trustPolicy.commandPolicy === "ask",
+                        onClick: () =>
+                          setTrustPolicy((prev) => ({
+                            ...prev,
+                            commandPolicy: "ask",
+                          })),
+                      },
+                      {
+                        mode: "custom",
+                        label: t.trust.commandExecCustom,
+                        desc: t.trust.commandExecCustomDesc,
+                        active:
+                          trustPolicy.commandPolicy === "controlled" &&
+                          Boolean(trustPolicy.customRules?.commands),
+                        onClick: () =>
+                          setTrustPolicy((prev) => ({
+                            ...prev,
+                            commandPolicy: "controlled",
+                            customRules: {
+                              ...prev.customRules,
+                              commands:
+                                prev.customRules?.commands ??
+                                defaultCustomRules.commands,
+                            },
+                          })),
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.mode}
+                        onClick={item.onClick}
+                        className={`p-2.5 rounded-lg border cursor-pointer transition text-left ${
+                          item.active
+                            ? "bg-indigo-500/10 border-indigo-500 shadow-sm"
+                            : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                        }`}
+                      >
+                        <div className="font-semibold text-xs text-theme-primary">
+                          {item.label}
+                        </div>
+                        <div className="text-[10px] text-theme-muted mt-0.5 line-clamp-2">
+                          {item.desc}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Custom Command Accordion when custom mode is active */}
+                  {trustPolicy.commandPolicy === "controlled" &&
+                    Boolean(trustPolicy.customRules?.commands) && (
+                      <div className="p-3 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-2 mt-2">
+                        <div className="text-[11px] font-semibold text-theme-primary">
+                          {t.trust.commandExecCustomDesc}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          {(
+                            [
+                              { key: "inspect", label: t.trust.commandCategoryInspect, def: "allow" },
+                              { key: "test", label: t.trust.commandCategoryTest, def: "allow" },
+                              { key: "lint", label: t.trust.commandCategoryLint, def: "allow" },
+                              { key: "typecheck", label: t.trust.commandCategoryTypecheck, def: "allow" },
+                              { key: "build", label: t.trust.commandCategoryBuild, def: "ask" },
+                              { key: "devServer", label: t.trust.commandCategoryDevServer, def: "ask" },
+                              { key: "packageScript", label: t.trust.commandCategoryPackageScript, def: "ask" },
+                              { key: "packageInstall", label: t.trust.commandCategoryPackageInstall, def: "ask" },
+                              { key: "gitRead", label: t.trust.commandCategoryGitRead, def: "allow" },
+                              { key: "customSafe", label: t.trust.commandCategoryCustomSafe, def: "allow" },
+                            ] as const
+                          ).map(({ key, label, def }) => (
+                            <div
+                              key={key}
+                              className="flex items-center justify-between p-1.5 bg-theme-card rounded border border-theme-subtle"
+                            >
+                              <span className="font-mono text-theme-primary text-[10px] truncate mr-1" title={label}>
+                                {key}
+                              </span>
+                              <select
+                                value={
+                                  trustPolicy.customRules?.commands?.[
+                                    key as keyof typeof defaultCustomRules.commands
+                                  ] ?? def
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value as FileActionPolicy;
+                                  setTrustPolicy((prev) => ({
+                                    ...prev,
+                                    customRules: {
+                                      ...prev.customRules,
+                                      commands: {
+                                        ...prev.customRules?.commands,
+                                        [key]: val,
+                                      },
+                                    },
+                                  }));
+                                }}
+                                className="bg-theme-input border border-theme-input rounded px-1.5 py-0.5 text-[10px] text-theme-primary shrink-0"
+                              >
+                                <option value="allow">{t.trust.commandAllow}</option>
+                                <option value="ask">{t.trust.commandAsk}</option>
+                                <option value="deny">{t.trust.commandDeny}</option>
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                </div>
 
                 {/* Protected Files Policy Selector */}
                 <div className="pt-2">

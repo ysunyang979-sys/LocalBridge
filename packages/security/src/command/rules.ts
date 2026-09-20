@@ -12,6 +12,7 @@ export const DANGEROUS_PACKAGE_SCRIPTS = new Set([
   "postpublish",
   "prepack",
   "postpack",
+  "prepublishOnly",
 ]);
 
 export const PROHIBITED_PACKAGE_MANAGER_COMMANDS = new Set([
@@ -42,7 +43,42 @@ export const PROHIBITED_PYTHON_FLAGS = new Set([
   "-m",
 ]);
 
-export function validateCommandArguments(args: string[]): { valid: boolean; reason?: string } {
+export const PROHIBITED_SHELL_EXECUTABLES = new Set([
+  "cmd",
+  "cmd.exe",
+  "powershell",
+  "powershell.exe",
+  "pwsh",
+  "pwsh.exe",
+  "bash",
+  "sh",
+  "zsh",
+  "csh",
+  "ksh",
+]);
+
+export const PROHIBITED_SHELL_ARGS = new Set([
+  "/c",
+  "/k",
+  "-c",
+  "-command",
+  "--command",
+]);
+
+export const ALLOWED_TOOLCHAIN_EXECUTABLES = new Set([
+  "node",
+  "npm",
+  "pnpm",
+  "python",
+  "python3",
+  "git",
+]);
+
+export function validateCommandArguments(args?: string[]): { valid: boolean; reason?: string } {
+  if (!args || !Array.isArray(args)) {
+    return { valid: true };
+  }
+
   if (args.length > MAX_COMMAND_ARGS_COUNT) {
     return {
       valid: false,

@@ -157,22 +157,24 @@ export class LocalBridgeRunner {
 
     this.executableRegistry = new ExecutableRegistry(this.logger);
     this.processRunner = new ProcessRunner(this.logger);
+    this.approvalManager = new ApprovalManager(this.logger);
+
     this.commandExecutionService = new CommandExecutionService(
       this.projectRegistry,
       this.executableRegistry,
       this.processRunner,
       runnerStateDir,
-      this.logger
+      this.logger,
+      this.approvalManager
     );
 
     this.jobManager = new JobManager(
       this.projectRegistry,
       this.executableRegistry,
       runnerStateDir,
-      this.logger
+      this.logger,
+      this.approvalManager
     );
-
-    this.approvalManager = new ApprovalManager(this.logger);
 
     this.rpcRouter = new RpcRouter(this.logger);
     this.registerDefaultHandlers();

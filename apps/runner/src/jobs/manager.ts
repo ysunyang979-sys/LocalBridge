@@ -26,12 +26,13 @@ import {
   resolveProjectPath,
   SecurityPathError,
 } from "@localbridge/security";
-import type { Logger } from "@localbridge/shared";
+import { canonicalPayloadHash, type Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
 import type { ExecutableRegistry } from "../process/executable-registry.js";
 import { buildSafeProcessEnv } from "../process/environment.js";
 import { killProcessTree } from "../process/kill-tree.js";
 import { JobLogBuffer } from "./log-buffer.js";
+import type { ApprovalManager } from "../approvals/index.js";
 import {
   type JobRecord,
   MAX_RUNNING_JOBS_PER_RUNNER,
@@ -53,7 +54,8 @@ export class JobManager {
     private readonly projectRegistry: ProjectRegistry,
     private readonly executableRegistry: ExecutableRegistry,
     private readonly runnerStateDir: string,
-    private readonly logger?: Logger
+    private readonly logger?: Logger,
+    private readonly approvalManager?: ApprovalManager
   ) {
     this.wireProjectRegistryEvents();
   }
@@ -220,13 +222,18 @@ export class JobManager {
 
     // 4. Classify risk and evaluate execution policy
     const assessment = CommandClassifier.classify(command);
-    const decision = CommandPolicy.evaluate(
-      project.executionMode,
-      project.accessMode,
-      assessment
-    );
+    const isSessionTrusted = this.projectRegistry.isSessionTrusted(command.projectId);
+    const decision = CommandPolicy.evaluateUnified({
+      projectId: command.projectId,
+      spec: command,
+      projectEnabled: project.enabled,
+      projectAccessMode: project.accessMode,
+      executionMode: project.executionMode,
+      trustPolicy: project.trustPolicy,
+      isSessionTrusted,
+    });
 
-    if (!decision.allowed) {
+    if (decision.decision === "deny") {
       if (
         decision.requiredAccessMode === "read-write" &&
         project.accessMode !== "read-write"
@@ -247,6 +254,58 @@ export class JobManager {
       throw new LocalBridgeError(
         LocalBridgeErrorCode.COMMAND_BLOCKED,
         decision.reason || "Command execution blocked by policy"
+      );
+    }
+
+    if (decision.decision === "ask") {
+      const { approvalId, ...jobPayload } = params;
+      const pHash = canonicalPayloadHash(jobPayload);
+
+      if (!this.approvalManager) {
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          `Operation "job.start" requires human approval.`
+        );
+      }
+
+      if (!approvalId) {
+        let summaryText: string = command.kind;
+        if (command.kind === "node-script" || command.kind === "python-script") {
+          summaryText = `run ${command.kind} "${command.path}"`;
+        } else if (command.kind === "package-script") {
+          summaryText = `run package script "${command.script}" via ${command.manager}`;
+        } else if (command.kind === "tool-version") {
+          summaryText = `check ${command.tool} version`;
+        }
+
+        const approval = this.approvalManager.create({
+          projectId: project.id,
+          operation: "job.start",
+          risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
+          summary: `Start background job: ${summaryText} in project "${project.id}"`,
+          payloadHash: pHash,
+          timeoutMs: 300000,
+        });
+
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          `Operation requires human approval. Approval request "${approval.id}" created for job start. Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
+          {
+            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
+            approvalId: approval.id,
+            operation: "job.start",
+            projectId: project.id,
+            summary: approval.summary,
+            expiresAt: approval.expiresAt,
+          }
+        );
+      }
+
+      this.approvalManager.verifyAndConsume(
+        approvalId,
+        project.id,
+        "job.start",
+        pHash
       );
     }
 
@@ -799,6 +858,7 @@ export class JobManager {
     const startResult = await this.startJob({
       command,
       timeoutMs: params.timeoutMs,
+      approvalId: params.approvalId,
     });
 
     return {
@@ -863,6 +923,7 @@ export class JobManager {
     const startResult = await this.startJob({
       command,
       timeoutMs: params.timeoutMs,
+      approvalId: params.approvalId,
     });
 
     return {

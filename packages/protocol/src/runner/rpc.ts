@@ -455,12 +455,36 @@ export type GitLogResult = z.infer<typeof GitLogResultSchema>;
 export const CommandRiskLevelSchema = z.enum(["SAFE", "CAUTION", "DANGEROUS"]);
 export type CommandRiskLevel = z.infer<typeof CommandRiskLevelSchema>;
 
+// Command Categories (P1-A)
+export const CommandCategorySchema = z.enum([
+  "inspect",
+  "test",
+  "lint",
+  "typecheck",
+  "build",
+  "dev-server",
+  "package-script",
+  "package-install",
+  "git-read",
+  "custom-safe",
+]);
+export type CommandCategory = z.infer<typeof CommandCategorySchema>;
+
+export const CommandExecutionModeSchema = z.enum([
+  "disabled",
+  "safe-development",
+  "ask-before-execute",
+  "custom",
+]);
+export type CommandExecutionMode = z.infer<typeof CommandExecutionModeSchema>;
+
 // CommandSpec Discriminated Union
 export const ToolVersionCommandSchema = z
   .object({
     kind: z.literal("tool-version"),
     projectId: z.string(),
     tool: z.enum(["node", "npm", "pnpm", "python"]),
+    approvalId: z.string().optional(),
   })
   .strict();
 export type ToolVersionCommand = z.infer<typeof ToolVersionCommandSchema>;
@@ -473,6 +497,7 @@ export const NodeScriptCommandSchema = z
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+    approvalId: z.string().optional(),
   })
   .strict();
 export type NodeScriptCommand = z.infer<typeof NodeScriptCommandSchema>;
@@ -485,6 +510,7 @@ export const PythonScriptCommandSchema = z
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+    approvalId: z.string().optional(),
   })
   .strict();
 export type PythonScriptCommand = z.infer<typeof PythonScriptCommandSchema>;
@@ -498,6 +524,7 @@ export const PackageScriptCommandSchema = z
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+    approvalId: z.string().optional(),
   })
   .strict();
 export type PackageScriptCommand = z.infer<typeof PackageScriptCommandSchema>;
@@ -561,6 +588,7 @@ export const JobStartParamsSchema = z
   .object({
     command: CommandSpecSchema,
     timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+    approvalId: z.string().optional(),
   })
   .strict();
 export type JobStartParams = z.infer<typeof JobStartParamsSchema>;
@@ -687,6 +715,7 @@ export const BuildStartParamsSchema = z
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+    approvalId: z.string().optional(),
   })
   .strict();
 export type BuildStartParams = z.infer<typeof BuildStartParamsSchema>;
@@ -709,6 +738,7 @@ export const TestStartParamsSchema = z
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
     timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+    approvalId: z.string().optional(),
   })
   .strict();
 export type TestStartParams = z.infer<typeof TestStartParamsSchema>;
@@ -937,7 +967,7 @@ export type ProjectTrustLevel = z.infer<typeof ProjectTrustLevelSchema>;
 export const FileActionPolicySchema = z.enum(["allow", "ask", "deny"]);
 export type FileActionPolicy = z.infer<typeof FileActionPolicySchema>;
 
-export const CommandActionPolicySchema = z.enum(["ask", "controlled", "deny"]);
+export const CommandActionPolicySchema = z.enum(["allow", "ask", "controlled", "deny"]);
 export type CommandActionPolicy = z.infer<typeof CommandActionPolicySchema>;
 
 export const ProtectedFilesPolicySchema = z.enum(["always-ask", "deny", "follow-policy"]);
@@ -969,10 +999,16 @@ export const ProjectCustomRulesSchema = z
       .optional(),
     commands: z
       .object({
-        build: FileActionPolicySchema.optional(),
+        inspect: FileActionPolicySchema.optional(),
         test: FileActionPolicySchema.optional(),
+        lint: FileActionPolicySchema.optional(),
+        typecheck: FileActionPolicySchema.optional(),
+        build: FileActionPolicySchema.optional(),
+        devServer: FileActionPolicySchema.optional(),
         packageScript: FileActionPolicySchema.optional(),
         packageInstall: FileActionPolicySchema.optional(),
+        gitRead: FileActionPolicySchema.optional(),
+        customSafe: FileActionPolicySchema.optional(),
         controlledCommand: FileActionPolicySchema.optional(),
       })
       .optional(),

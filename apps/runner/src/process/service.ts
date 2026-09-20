@@ -15,11 +15,12 @@ import {
   resolveProjectPath,
   SecurityPathError,
 } from "@localbridge/security";
-import type { Logger } from "@localbridge/shared";
+import { canonicalPayloadHash, type Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
 import type { ExecutableRegistry } from "./executable-registry.js";
 import type { ProcessRunner } from "./runner.js";
 import { buildSafeProcessEnv } from "./environment.js";
+import type { ApprovalManager } from "../approvals/index.js";
 
 export class CommandExecutionService {
   constructor(
@@ -27,7 +28,8 @@ export class CommandExecutionService {
     private readonly executableRegistry: ExecutableRegistry,
     private readonly processRunner: ProcessRunner,
     private readonly runnerStateDir: string,
-    private readonly logger?: Logger
+    private readonly logger?: Logger,
+    private readonly approvalManager?: ApprovalManager
   ) {}
 
   /**
@@ -37,9 +39,18 @@ export class CommandExecutionService {
     this.logger?.debug({ params }, "Classifying command risk");
     const assessment = CommandClassifier.classify(params);
     const project = this.projectRegistry.get(params.projectId);
+    const isSessionTrusted = this.projectRegistry.isSessionTrusted(params.projectId);
     const decision = project
-      ? CommandPolicy.evaluate(project.executionMode, project.accessMode, assessment)
-      : { allowed: false, reason: `Project '${params.projectId}' not found` };
+      ? CommandPolicy.evaluateUnified({
+          projectId: params.projectId,
+          spec: params,
+          projectEnabled: project.enabled,
+          projectAccessMode: project.accessMode,
+          executionMode: project.executionMode,
+          trustPolicy: project.trustPolicy,
+          isSessionTrusted,
+        })
+      : { decision: "deny", reason: `Project '${params.projectId}' not found` };
 
     return {
       risk: assessment.risk,
@@ -47,7 +58,7 @@ export class CommandExecutionService {
       executesProjectCode: assessment.executesProjectCode,
       mayModifyFiles: assessment.mayModifyFiles,
       mayAccessNetwork: assessment.mayAccessNetwork,
-      allowed: decision.allowed,
+      allowed: decision.decision === "allow",
       ...(decision.reason ? { reason: decision.reason } : {}),
     };
   }
@@ -68,6 +79,13 @@ export class CommandExecutionService {
       );
     }
 
+    if (!project.enabled) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_DISABLED,
+        `Project '${project.name}' (${project.id}) is disabled`
+      );
+    }
+
     // 2. Validate argument bounds if args are present
     if ("args" in params && Array.isArray(params.args)) {
       const validation = validateCommandArguments(params.args);
@@ -79,15 +97,20 @@ export class CommandExecutionService {
       }
     }
 
-    // 3. Classify risk and evaluate execution policy
+    // 3. Classify risk and evaluate unified execution policy
     const assessment = CommandClassifier.classify(params);
-    const decision = CommandPolicy.evaluate(
-      project.executionMode,
-      project.accessMode,
-      assessment
-    );
+    const isSessionTrusted = this.projectRegistry.isSessionTrusted(params.projectId);
+    const decision = CommandPolicy.evaluateUnified({
+      projectId: params.projectId,
+      spec: params,
+      projectEnabled: project.enabled,
+      projectAccessMode: project.accessMode,
+      executionMode: project.executionMode,
+      trustPolicy: project.trustPolicy,
+      isSessionTrusted,
+    });
 
-    if (!decision.allowed) {
+    if (decision.decision === "deny") {
       if (
         decision.requiredAccessMode === "read-write" &&
         project.accessMode !== "read-write"
@@ -108,6 +131,58 @@ export class CommandExecutionService {
       throw new LocalBridgeError(
         LocalBridgeErrorCode.COMMAND_BLOCKED,
         decision.reason || "Command execution blocked by policy"
+      );
+    }
+
+    if (decision.decision === "ask") {
+      const { approvalId, ...commandPayload } = params;
+      const pHash = canonicalPayloadHash(commandPayload);
+
+      if (!this.approvalManager) {
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          `Operation "command.run" requires human approval.`
+        );
+      }
+
+      if (!approvalId) {
+        let summaryText: string = params.kind;
+        if (params.kind === "node-script" || params.kind === "python-script") {
+          summaryText = `run ${params.kind} "${params.path}"`;
+        } else if (params.kind === "package-script") {
+          summaryText = `run package script "${params.script}" via ${params.manager}`;
+        } else if (params.kind === "tool-version") {
+          summaryText = `check ${params.tool} version`;
+        }
+
+        const approval = this.approvalManager.create({
+          projectId: params.projectId,
+          operation: "command.run",
+          risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
+          summary: `Execute command: ${summaryText} in project "${params.projectId}"`,
+          payloadHash: pHash,
+          timeoutMs: 300000,
+        });
+
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          `Operation requires human approval. Approval request "${approval.id}" created for command execution. Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
+          {
+            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
+            approvalId: approval.id,
+            operation: "command.run",
+            projectId: params.projectId,
+            summary: approval.summary,
+            expiresAt: approval.expiresAt,
+          }
+        );
+      }
+
+      this.approvalManager.verifyAndConsume(
+        approvalId,
+        params.projectId,
+        "command.run",
+        pHash
       );
     }
 
