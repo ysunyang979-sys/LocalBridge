@@ -1608,7 +1608,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
             <div className="flex items-center gap-3 pt-1">
               <img
                 src="/app-icon.png"
-                alt="LocalBridge"
+                alt="Nexus"
                 className="w-10 h-10 rounded-lg object-contain shadow-sm"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = "/favicon.png";

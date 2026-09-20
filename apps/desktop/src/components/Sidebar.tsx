@@ -81,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-4 border-b border-theme-subtle flex items-center gap-3">
           <img
             src="/app-icon.png"
-            alt="LocalBridge"
+            alt="Nexus"
             className="w-9 h-9 rounded-lg shadow-md object-contain bg-slate-900/10 dark:bg-transparent"
             onError={(e) => {
               // Fallback to favicon if app-icon not loaded
@@ -90,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           />
           <div>
             <div className="font-semibold text-theme-primary text-sm tracking-wide">
-              LocalBridge
+              Nexus
             </div>
             <div className="text-xs text-theme-muted">{t.nav.desktopControlCenter}</div>
           </div>

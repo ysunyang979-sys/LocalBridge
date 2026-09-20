@@ -1,8 +1,8 @@
 [package]
 name = "localbridge-desktop"
 version = "1.2.0"
-description = "LocalBridge Desktop Control Center"
-authors = ["LocalBridge Team"]
+description = "Nexus Desktop Control Center"
+authors = ["Nexus Team"]
 edition = "2021"
 
 [build-dependencies]

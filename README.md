@@ -1,8 +1,8 @@
-# LocalBridge
+# Nexus
 
-> Secure Model Context Protocol (MCP) Bridge for Local Development Projects.
+> Secure Model Context Protocol (MCP) Control Plane powered by the LocalBridge runtime architecture.
 
-LocalBridge allows AI assistants (such as ChatGPT, Claude, and Codex) to securely inspect, search, edit, build, and test local projects on your computer via MCP, without exposing your entire disk or sending source code to untrusted intermediaries.
+Nexus allows AI assistants (such as ChatGPT, Claude, and Codex) to securely inspect, search, edit, build, and test local projects on your computer via MCP, without exposing your entire disk or sending source code to untrusted intermediaries.
 
 ---
 

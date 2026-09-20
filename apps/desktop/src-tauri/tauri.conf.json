@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LocalBridge",
+  "productName": "Nexus",
   "version": "1.2.0",
   "identifier": "com.localbridge.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "LocalBridge Control Center",
+        "title": "Nexus Control Center",
         "width": 1180,
         "height": 780,
         "minWidth": 960,

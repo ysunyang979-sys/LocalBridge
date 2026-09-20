@@ -1408,8 +1408,8 @@ fn main() {
             desktop_set_operator_name
         ])
         .setup(move |app| {
-            let open_i = MenuItem::with_id(app, "open", "Open LocalBridge", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit LocalBridge", true, None::<&str>)?;
+            let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit Nexus", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()
