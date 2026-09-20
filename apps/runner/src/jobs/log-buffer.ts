@@ -32,6 +32,9 @@ export class JobLogBuffer {
   private currentBytes = 0;
   private droppedBytes = 0;
   private truncated = false;
+  private hasInsertedTruncatedMarker = false;
+  private _stdoutBytes = 0;
+  private _stderrBytes = 0;
   private readonly maxBytes: number;
 
   constructor(maxBytes: number = MAX_JOB_LOG_BYTES) {
@@ -39,8 +42,9 @@ export class JobLogBuffer {
   }
 
   /**
-   * Append a log chunk to the ring buffer with immediate sanitization.
-   * Discards oldest chunks if the ring buffer capacity is exceeded.
+   * Append a log chunk to the buffer with immediate sanitization.
+   * If buffer capacity is exceeded, marks outputTruncated = true,
+   * inserts [output truncated] notice once, and drops subsequent chunks to avoid memory explosion.
    */
   append(
     stream: "stdout" | "stderr",
@@ -51,6 +55,13 @@ export class JobLogBuffer {
     const rawString = Buffer.isBuffer(raw) ? raw.toString("utf-8") : raw;
     if (!rawString) return;
 
+    const rawBytes = Buffer.byteLength(rawString, "utf-8");
+    if (stream === "stdout") {
+      this._stdoutBytes += rawBytes;
+    } else {
+      this._stderrBytes += rawBytes;
+    }
+
     // Sanitize before storage (strip ANSI CSI/OSC, redact physical paths, preserve UTF-8/Chinese/emojis)
     const text = sanitizeProcessOutput(rawString, canonicalProjectRoot, runnerStateDir);
     if (!text) return;
@@ -58,12 +69,30 @@ export class JobLogBuffer {
     const chunkBytes = Buffer.byteLength(text, "utf-8");
 
     // Evict oldest chunks if adding this chunk exceeds maxBytes
-    while (this.chunks.length > 0 && this.currentBytes + chunkBytes > this.maxBytes) {
-      const oldest = this.chunks.shift()!;
+    while (
+      (this.hasInsertedTruncatedMarker ? this.chunks.length > 1 : this.chunks.length > 0) &&
+      this.currentBytes + chunkBytes > this.maxBytes
+    ) {
+      const idx = this.hasInsertedTruncatedMarker ? 1 : 0;
+      const oldest = this.chunks.splice(idx, 1)[0]!;
       const dropped = Buffer.byteLength(oldest.text, "utf-8");
       this.currentBytes -= dropped;
       this.droppedBytes += dropped;
       this.truncated = true;
+    }
+
+    if (this.truncated && !this.hasInsertedTruncatedMarker) {
+      this.hasInsertedTruncatedMarker = true;
+      const markerText = "\n[output truncated]\n";
+      const markerBytes = Buffer.byteLength(markerText, "utf-8");
+      const marker: JobLogChunk = {
+        seq: 0,
+        stream: "stderr",
+        timestamp: Date.now(),
+        text: markerText,
+      };
+      this.chunks.unshift(marker);
+      this.currentBytes += markerBytes;
     }
 
     this.nextSeq++;
@@ -106,8 +135,8 @@ export class JobLogBuffer {
       MAX_LOG_CHUNKS_PER_RESPONSE
     );
 
-    // Filter chunks after lastSeq
-    const eligibleChunks = this.chunks.filter((c) => c.seq > lastSeq);
+    // Filter chunks after lastSeq (include seq 0 truncation marker on initial query)
+    const eligibleChunks = this.chunks.filter((c) => c.seq > lastSeq || (lastSeq === 0 && c.seq === 0));
 
     const resultChunks: JobLogChunk[] = [];
     let responseBytes = 0;
@@ -149,11 +178,34 @@ export class JobLogBuffer {
     return this.currentBytes;
   }
 
+  get stdoutBytes(): number {
+    return this._stdoutBytes;
+  }
+
+  get stderrBytes(): number {
+    return this._stderrBytes;
+  }
+
   get isTruncated(): boolean {
     return this.truncated;
   }
 
   get totalDroppedBytes(): number {
     return this.droppedBytes;
+  }
+
+  /**
+   * Retrieve the last N characters of accumulated logs for quick status inspection.
+   */
+  getLastOutput(maxLength: number = 1000): string {
+    if (this.chunks.length === 0) return "";
+    let combined = "";
+    for (let i = this.chunks.length - 1; i >= 0; i--) {
+      combined = this.chunks[i]!.text + combined;
+      if (combined.length >= maxLength) {
+        return combined.slice(-maxLength);
+      }
+    }
+    return combined;
   }
 }

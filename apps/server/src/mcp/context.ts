@@ -4,6 +4,7 @@ import {
   type RunnerRpcMap,
 } from "@localbridge/protocol";
 import type { Logger } from "@localbridge/shared";
+import type Database from "better-sqlite3";
 import type { RunnerRegistry } from "../runner/registry.js";
 import type { RunnerRpcService } from "../runner/rpc-service.js";
 import type { ServerProjectService } from "../runner/project-service.js";
@@ -13,6 +14,7 @@ export interface McpContextDeps {
   projectService: ServerProjectService;
   runnerRegistry: RunnerRegistry;
   rpcService: RunnerRpcService;
+  db?: Database.Database;
   logger?: Logger;
 }
 
@@ -40,6 +42,7 @@ export class McpContext {
   public readonly projectService: ServerProjectService;
   public readonly runnerRegistry: RunnerRegistry;
   public readonly rpcService: RunnerRpcService;
+  public readonly db?: Database.Database;
   public readonly logger?: Logger;
 
   // In-memory mapping from jobId to runnerId for background jobs
@@ -56,6 +59,7 @@ export class McpContext {
     this.projectService = deps.projectService;
     this.runnerRegistry = deps.runnerRegistry;
     this.rpcService = deps.rpcService;
+    this.db = deps.db;
     this.logger = deps.logger;
   }
 
@@ -105,7 +109,7 @@ export class McpContext {
   }
 
   /**
-   * Track which runner started a specific job.
+   * Track which runner started a specific job and optionally persist to SQLite.
    */
   trackJob(jobId: string, runnerId: string): void {
     this.jobToRunnerMap.set(jobId, runnerId);
@@ -117,12 +121,80 @@ export class McpContext {
   }
 
   /**
+   * Record a job in memory and persistent SQLite jobs table.
+   */
+  recordJob(row: {
+    id: string;
+    projectId: string;
+    runnerId: string;
+    commandKind: string;
+    risk?: string;
+    state?: string;
+    createdAt?: number;
+    queuedAt?: number | null;
+    startedAt?: number | null;
+    finishedAt?: number | null;
+    exitCode?: number | null;
+    signal?: string | null;
+    timeoutMs?: number | null;
+    approvalId?: string | null;
+  }): void {
+    this.trackJob(row.id, row.runnerId);
+    if (!this.db) return;
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO jobs (id, project_id, runner_id, command_kind, risk, state, created_at, queued_at, started_at, finished_at, exit_code, signal, timeout_ms, approval_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             state = excluded.state,
+             queued_at = excluded.queued_at,
+             started_at = excluded.started_at,
+             finished_at = excluded.finished_at,
+             exit_code = excluded.exit_code,
+             signal = excluded.signal`
+        )
+        .run(
+          row.id,
+          row.projectId,
+          row.runnerId,
+          row.commandKind,
+          row.risk ?? "SAFE",
+          row.state ?? "queued",
+          row.createdAt ?? Date.now(),
+          row.queuedAt ?? null,
+          row.startedAt ?? null,
+          row.finishedAt ?? null,
+          row.exitCode ?? null,
+          row.signal ?? null,
+          row.timeoutMs ?? null,
+          row.approvalId ?? null
+        );
+    } catch (err) {
+      this.logger?.warn({ err, jobId: row.id }, "Failed to record job in SQLite jobs table");
+    }
+  }
+
+  /**
    * Resolve a job ID to its owning Runner ID.
    */
   resolveJobRunner(jobId: string): string {
     const runnerId = this.jobToRunnerMap.get(jobId);
     if (runnerId && this.runnerRegistry.get(runnerId)) {
       return runnerId;
+    }
+
+    if (this.db) {
+      try {
+        const row = this.db
+          .prepare("SELECT runner_id FROM jobs WHERE id = ?")
+          .get(jobId) as { runner_id: string } | undefined;
+        if (row && row.runner_id && this.runnerRegistry.get(row.runner_id)) {
+          return row.runner_id;
+        }
+      } catch {
+        // ignore
+      }
     }
 
     // If only one runner is connected, default to it

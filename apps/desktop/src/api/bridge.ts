@@ -5,6 +5,7 @@ import type {
   Project,
   Approval,
   Job,
+  JobLogsResult,
   Token,
   RunnerInfo,
   AuditEvent,
@@ -459,6 +460,32 @@ class ApiBridge {
         method: "POST",
       }
     );
+  }
+
+  async getJobStatus(jobId: string): Promise<Job> {
+    if (isTauri()) {
+      return invoke<Job>("desktop_get_job_status", { jobId });
+    }
+    return this.fetchJson<Job>(`/api/jobs/${jobId}/status`);
+  }
+
+  async getJobLogs(
+    jobId: string,
+    cursor?: string | null,
+    limit?: number
+  ): Promise<JobLogsResult> {
+    if (isTauri()) {
+      return invoke<JobLogsResult>("desktop_get_job_logs", {
+        jobId,
+        cursor: cursor ?? null,
+        limit: limit ?? null,
+      });
+    }
+    const query = new URLSearchParams();
+    if (cursor) query.set("cursor", cursor);
+    if (limit) query.set("limit", String(limit));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return this.fetchJson<JobLogsResult>(`/api/jobs/${jobId}/logs${qs}`);
   }
 
   // Tokens

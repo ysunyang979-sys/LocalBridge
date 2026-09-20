@@ -43,12 +43,34 @@ export interface Approval {
 export interface Job {
   jobId: string;
   projectId: string;
-  state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed-out";
-  risk: "SAFE" | "CAUTION" | "DANGEROUS";
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out" | "timed-out" | "interrupted";
+  risk?: "SAFE" | "CAUTION" | "DANGEROUS";
+  commandKind?: string;
   createdAt: number;
+  queuedAt?: number | null;
   startedAt?: number | null;
   finishedAt?: number | null;
+  exitCode?: number | null;
+  signal?: string | null;
   durationMs?: number;
+  outputTruncated?: boolean;
+  error?: string;
+  errorCode?: string;
+}
+
+export interface JobLogChunk {
+  seq: number;
+  stream: "stdout" | "stderr";
+  timestamp: number;
+  text: string;
+}
+
+export interface JobLogsResult {
+  jobId: string;
+  chunks: JobLogChunk[];
+  nextCursor: string | null;
+  truncated: boolean;
+  droppedBytes: number;
 }
 
 export interface Token {

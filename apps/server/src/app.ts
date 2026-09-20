@@ -98,9 +98,42 @@ export async function buildApp(
       projectService,
       runnerRegistry,
       rpcService,
+      db: db.db,
       logger,
     });
   const rateLimiter = options.rateLimiter ?? new McpRateLimiter();
+
+  // Startup Crash Recovery: mark orphaned running/queued jobs as interrupted in SQLite
+  try {
+    const now = Date.now();
+    db.db
+      .prepare(
+        `UPDATE jobs SET state = 'interrupted', finished_at = ?, error_code = 'JOB_RUNNER_INTERRUPTED', error_message = 'Job was interrupted due to server restart or crash' WHERE state IN ('running', 'queued')`
+      )
+      .run(now);
+  } catch (err) {
+    logger.warn({ err }, "Failed to run startup crash recovery for jobs table");
+  }
+
+  // Handle runner disconnect: mark running jobs as interrupted, queued jobs as cancelled
+  runnerRegistry.onDisconnect((runnerId: string) => {
+    try {
+      const now = Date.now();
+      db.db
+        .prepare(
+          `UPDATE jobs SET state = 'interrupted', finished_at = ?, error_code = 'JOB_RUNNER_DISCONNECTED', error_message = 'Runner disconnected while job was running' WHERE runner_id = ? AND state = 'running'`
+        )
+        .run(now, runnerId);
+
+      db.db
+        .prepare(
+          `UPDATE jobs SET state = 'cancelled', finished_at = ?, error_code = 'JOB_RUNNER_DISCONNECTED', error_message = 'Runner disconnected while job was queued' WHERE runner_id = ? AND state = 'queued'`
+        )
+        .run(now, runnerId);
+    } catch (err) {
+      logger.warn({ err, runnerId }, "Failed to update jobs on runner disconnect");
+    }
+  });
 
   // Global error handler
   app.setErrorHandler(
@@ -183,6 +216,7 @@ export async function buildApp(
     rpcService,
     projectService,
     mcpContext,
+    db: db.db,
     managementSecret,
     requireManagementAuth,
   });

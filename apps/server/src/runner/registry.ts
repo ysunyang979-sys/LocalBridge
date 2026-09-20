@@ -505,8 +505,27 @@ export class ActiveRunnerConnection implements RunnerConnection {
 
 export class RunnerRegistry {
   private readonly connections = new Map<string, RunnerConnection>();
+  private readonly disconnectListeners: Array<(runnerId: string) => void> = [];
 
   constructor(private readonly logger?: CompatibleLogger) {}
+
+  onDisconnect(listener: (runnerId: string) => void): () => void {
+    this.disconnectListeners.push(listener);
+    return () => {
+      const idx = this.disconnectListeners.indexOf(listener);
+      if (idx !== -1) this.disconnectListeners.splice(idx, 1);
+    };
+  }
+
+  private notifyDisconnect(runnerId: string): void {
+    for (const listener of this.disconnectListeners) {
+      try {
+        listener(runnerId);
+      } catch (err) {
+        this.logger?.error({ err, runnerId }, "Error in runner disconnect listener");
+      }
+    }
+  }
 
   /**
    * Register a newly handshaked runner connection.
@@ -574,6 +593,8 @@ export class RunnerRegistry {
       `Runner "${runnerId}" unregistered`
     );
 
+    this.notifyDisconnect(runnerId);
+
     return true;
   }
 
@@ -612,6 +633,7 @@ export class RunnerRegistry {
    * Close all active runner connections during server shutdown.
    */
   closeAll(): void {
+    const ids = Array.from(this.connections.keys());
     for (const conn of this.connections.values()) {
       conn.dispose?.();
       try {
@@ -621,6 +643,9 @@ export class RunnerRegistry {
       }
     }
     this.connections.clear();
+    for (const runnerId of ids) {
+      this.notifyDisconnect(runnerId);
+    }
   }
 
   closeByTokenId(tokenId: string): number {
@@ -630,6 +655,7 @@ export class RunnerRegistry {
       this.connections.delete(runnerId);
       conn.dispose();
       try { conn.socket.close(4003, "runner_token_revoked"); } catch {}
+      this.notifyDisconnect(runnerId);
       closed++;
     }
     return closed;

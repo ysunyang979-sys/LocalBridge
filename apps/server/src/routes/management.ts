@@ -14,6 +14,8 @@ import type { RunnerRpcService } from "../runner/rpc-service.js";
 import type { ServerProjectService } from "../runner/project-service.js";
 import type { McpContext } from "../mcp/context.js";
 import { canonicalPayloadHash } from "@localbridge/shared";
+import type Database from "better-sqlite3";
+import type { JobRow } from "../db/schema.js";
 
 export interface ManagementRoutesOptions {
   tokenService: TokenService;
@@ -21,6 +23,7 @@ export interface ManagementRoutesOptions {
   rpcService: RunnerRpcService;
   projectService: ServerProjectService;
   mcpContext: McpContext;
+  db?: Database.Database;
   managementSecret?: string;
   requireManagementAuth?: boolean;
 }
@@ -155,7 +158,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
   fastify,
   opts
 ) => {
-  const { tokenService, runnerRegistry, rpcService, projectService, mcpContext } = opts;
+  const { tokenService, runnerRegistry, rpcService, projectService, mcpContext, db } = opts;
 
   // Middleware: Enforce loopback check and security for all routes in this plugin
   fastify.addHook("onRequest", async (request, reply) => {
@@ -783,25 +786,82 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     };
   }>("/jobs", async (request, reply) => {
     const { projectId, runnerId, limit } = request.query;
+    const maxLimit = limit ? Number(limit) : 50;
     const runners = runnerRegistry.list();
-    if (runners.length === 0) {
-      return reply.status(200).send({ jobs: [] });
+    const liveJobsMap = new Map<string, any>();
+
+    if (runners.length > 0) {
+      const targetRunners = runnerId
+        ? runners.filter((r) => r.id === runnerId)
+        : runners;
+
+      for (const r of targetRunners) {
+        try {
+          const res = await rpcService.request(r.id, RunnerRpcMethods.JobList, {
+            projectId,
+            limit: maxLimit,
+          });
+          for (const j of res.jobs) {
+            liveJobsMap.set(j.jobId, j);
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
 
-    const targetRunnerId = runnerId || runners[0]!.id;
-    try {
-      const res = await rpcService.request(targetRunnerId, RunnerRpcMethods.JobList, {
-        projectId,
-        limit: limit ? Number(limit) : 50,
-      });
-      return reply.status(200).send({ jobs: res.jobs });
-    } catch {
-      return reply.status(200).send({ jobs: [] });
+    // Merge with persisted jobs from SQLite if available
+    if (db) {
+      try {
+        let query = "SELECT * FROM jobs";
+        const params: any[] = [];
+        const conditions: string[] = [];
+
+        if (projectId) {
+          conditions.push("project_id = ?");
+          params.push(projectId);
+        }
+        if (runnerId) {
+          conditions.push("runner_id = ?");
+          params.push(runnerId);
+        }
+        if (conditions.length > 0) {
+          query += " WHERE " + conditions.join(" AND ");
+        }
+        query += " ORDER BY created_at DESC LIMIT ?";
+        params.push(maxLimit);
+
+        const rows = db.prepare(query).all(...params) as JobRow[];
+        for (const row of rows) {
+          if (!liveJobsMap.has(row.id)) {
+            liveJobsMap.set(row.id, {
+              jobId: row.id,
+              projectId: row.project_id,
+              state: row.state,
+              commandKind: row.command_kind,
+              risk: row.risk,
+              createdAt: row.created_at,
+              startedAt: row.started_at,
+              finishedAt: row.finished_at,
+              exitCode: row.exit_code,
+              outputTruncated: Boolean(row.output_truncated),
+              error: row.error_message || undefined,
+            });
+          }
+        }
+      } catch {
+        // ignore db query error
+      }
     }
+
+    const allJobs = Array.from(liveJobsMap.values()).sort(
+      (a, b) => b.createdAt - a.createdAt
+    );
+    return reply.status(200).send({ jobs: allJobs.slice(0, maxLimit) });
   });
 
-  fastify.post<{ Params: { id: string }; Querystring: { runnerId?: string } }>(
-    "/jobs/:id/cancel",
+  fastify.get<{ Params: { id: string }; Querystring: { runnerId?: string } }>(
+    "/jobs/:id/status",
     async (request, reply) => {
       const { id } = request.params;
       let targetRunnerId = request.query.runnerId;
@@ -814,13 +874,63 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         }
       }
 
-      const res = await rpcService.request(targetRunnerId, RunnerRpcMethods.JobCancel, {
+      const res = await rpcService.request(targetRunnerId, RunnerRpcMethods.JobStatus, {
         jobId: id,
       });
 
       return reply.status(200).send(res);
     }
   );
+
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { runnerId?: string; cursor?: string; limit?: number };
+  }>("/jobs/:id/logs", async (request, reply) => {
+    const { id } = request.params;
+    const { cursor, limit } = request.query;
+    let targetRunnerId = request.query.runnerId;
+
+    if (!targetRunnerId) {
+      try {
+        targetRunnerId = mcpContext.resolveJobRunner(id);
+      } catch {
+        targetRunnerId = getActiveRunnerId();
+      }
+    }
+
+    const res = await rpcService.request(targetRunnerId, RunnerRpcMethods.JobLogs, {
+      jobId: id,
+      cursor: cursor || undefined,
+      limit: limit ? Number(limit) : 100,
+    });
+
+    return reply.status(200).send(res);
+  });
+
+  fastify.post<{
+    Params: { id: string };
+    Querystring: { runnerId?: string };
+    Body?: { projectId?: string };
+  }>("/jobs/:id/cancel", async (request, reply) => {
+    const { id } = request.params;
+    const projectId = request.body?.projectId;
+    let targetRunnerId = request.query.runnerId;
+
+    if (!targetRunnerId) {
+      try {
+        targetRunnerId = mcpContext.resolveJobRunner(id);
+      } catch {
+        targetRunnerId = getActiveRunnerId();
+      }
+    }
+
+    const res = await rpcService.request(targetRunnerId, RunnerRpcMethods.JobCancel, {
+      jobId: id,
+      projectId,
+    });
+
+    return reply.status(200).send(res);
+  });
 
   // ==========================================
   // 6. Audit Events (/audit)

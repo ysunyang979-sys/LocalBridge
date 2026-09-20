@@ -737,6 +737,36 @@ fn desktop_cancel_job(
 }
 
 #[tauri::command]
+fn desktop_get_job_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    job_id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), format!("/api/jobs/{}/status", job_id), None)
+}
+
+#[tauri::command]
+fn desktop_get_job_logs(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    job_id: String,
+    cursor: Option<String>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let mut qs = Vec::new();
+    if let Some(c) = cursor {
+        qs.push(format!("cursor={}", c));
+    }
+    if let Some(l) = limit {
+        qs.push(format!("limit={}", l));
+    }
+    let path = if qs.is_empty() {
+        format!("/api/jobs/{}/logs", job_id)
+    } else {
+        format!("/api/jobs/{}/logs?{}", job_id, qs.join("&"))
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
 fn desktop_get_pause_state(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
 ) -> Result<serde_json::Value, String> {
@@ -1381,6 +1411,8 @@ fn main() {
             desktop_resolve_approval,
             desktop_list_jobs,
             desktop_cancel_job,
+            desktop_get_job_status,
+            desktop_get_job_logs,
             desktop_get_pause_state,
             desktop_set_pause_state,
             desktop_emergency_stop,

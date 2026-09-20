@@ -18,6 +18,7 @@ import {
   type BuildStartResult,
   type TestStartParams,
   type TestStartResult,
+  type JobState,
 } from "@localbridge/protocol";
 import {
   CommandClassifier,
@@ -35,8 +36,11 @@ import { JobLogBuffer } from "./log-buffer.js";
 import type { ApprovalManager } from "../approvals/index.js";
 import {
   type JobRecord,
+  type JobManagerOptions,
   MAX_RUNNING_JOBS_PER_RUNNER,
   MAX_RUNNING_JOBS_PER_PROJECT,
+  MAX_QUEUED_JOBS_PER_RUNNER,
+  MAX_QUEUED_JOBS_PER_PROJECT,
   MAX_JOB_STARTS_PER_MINUTE,
   DEFAULT_JOB_TIMEOUT_MS,
   MIN_JOB_TIMEOUT_MS,
@@ -48,30 +52,135 @@ import {
 
 export class JobManager {
   private readonly jobs = new Map<string, JobRecord>();
+  private readonly queuedJobIds: string[] = [];
   private readonly startTimestamps: number[] = [];
+  private readonly persistencePath: string;
 
   constructor(
     private readonly projectRegistry: ProjectRegistry,
     private readonly executableRegistry: ExecutableRegistry,
     private readonly runnerStateDir: string,
     private readonly logger?: Logger,
-    private readonly approvalManager?: ApprovalManager
+    private readonly approvalManager?: ApprovalManager,
+    private readonly options?: JobManagerOptions
   ) {
+    this.persistencePath = path.join(this.runnerStateDir, "jobs-state.json");
     this.wireProjectRegistryEvents();
+    this.recoverPersistedJobs();
   }
 
   /**
-   * Listen to ProjectRegistry mutations and automatically cancel active jobs
+   * Recover persisted jobs from previous runs upon startup.
+   * Any job that was saved as "running" or "queued" is transitioned to "interrupted".
+   */
+  private recoverPersistedJobs(): void {
+    if (!this.options?.persistState) return;
+    try {
+      if (!fs.existsSync(this.persistencePath)) return;
+      const raw = fs.readFileSync(this.persistencePath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+
+      for (const item of parsed) {
+        if (!item || typeof item.id !== "string") continue;
+        let state: JobState = item.state;
+        let finishedAt = item.finishedAt;
+        let errorCode = item.errorCode;
+        let errorMessage = item.errorMessage;
+
+        if (state === "running" || state === "queued") {
+          state = "interrupted";
+          finishedAt = finishedAt ?? Date.now();
+          errorCode = "JOB_RUNNER_INTERRUPTED";
+          errorMessage = "Job was interrupted due to runner restart or crash";
+        }
+
+        const logs = new JobLogBuffer(MAX_JOB_LOG_BYTES);
+        if (Array.isArray(item.recentLogs)) {
+          for (const chunk of item.recentLogs) {
+            logs.append(chunk.stream ?? "stdout", chunk.text ?? "");
+          }
+        }
+
+        const rec: JobRecord = {
+          id: item.id,
+          projectId: item.projectId,
+          commandKind: item.commandKind ?? "unknown",
+          risk: item.risk ?? "SAFE",
+          state,
+          createdAt: item.createdAt ?? Date.now(),
+          queuedAt: item.queuedAt ?? null,
+          startedAt: item.startedAt ?? null,
+          finishedAt,
+          cancelRequestedAt: item.cancelRequestedAt ?? null,
+          exitCode: item.exitCode ?? null,
+          signal: item.signal ?? null,
+          logs,
+          canonicalProjectRoot: item.canonicalProjectRoot ?? "",
+          approvalId: item.approvalId,
+          outputTruncated: item.outputTruncated ?? false,
+          errorCode,
+          errorMessage,
+        };
+
+        this.jobs.set(rec.id, rec);
+      }
+      this.persistJobs();
+    } catch (err) {
+      this.logger?.warn({ err }, "Failed to recover persisted jobs from disk");
+    }
+  }
+
+  /**
+   * Atomically persist job records to disk.
+   */
+  private persistJobs(): void {
+    if (!this.options?.persistState) return;
+    try {
+      const list = Array.from(this.jobs.values()).map((j) => {
+        const logRes = j.logs.getLogs({ limit: 50 });
+        return {
+          id: j.id,
+          projectId: j.projectId,
+          commandKind: j.commandKind,
+          risk: j.risk,
+          state: j.state,
+          createdAt: j.createdAt,
+          queuedAt: j.queuedAt,
+          startedAt: j.startedAt,
+          finishedAt: j.finishedAt,
+          cancelRequestedAt: j.cancelRequestedAt,
+          exitCode: j.exitCode,
+          signal: j.signal,
+          canonicalProjectRoot: j.canonicalProjectRoot,
+          approvalId: j.approvalId,
+          outputTruncated: j.logs.isTruncated,
+          errorCode: j.errorCode,
+          errorMessage: j.errorMessage,
+          recentLogs: logRes.chunks,
+        };
+      });
+
+      const tmpPath = `${this.persistencePath}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify(list, null, 2), "utf-8");
+      fs.renameSync(tmpPath, this.persistencePath);
+    } catch (err) {
+      this.logger?.warn({ err }, "Failed to persist jobs state to disk");
+    }
+  }
+
+  /**
+   * Listen to ProjectRegistry mutations and automatically cancel active/queued jobs
    * when project permissions are removed, disabled, or downgraded.
    */
   private wireProjectRegistryEvents(): void {
     this.projectRegistry.on("project:removed", (projectId: string) => {
-      this.logger?.info({ event: "project_removed_cancelling_jobs", projectId }, "Project removed; cancelling running jobs");
+      this.logger?.info({ event: "project_removed_cancelling_jobs", projectId }, "Project removed; cancelling running/queued jobs");
       this.cancelProjectJobs(projectId, "Project was removed from local registry");
     });
 
     this.projectRegistry.on("project:disabled", (projectId: string) => {
-      this.logger?.info({ event: "project_disabled_cancelling_jobs", projectId }, "Project disabled; cancelling running jobs");
+      this.logger?.info({ event: "project_disabled_cancelling_jobs", projectId }, "Project disabled; cancelling running/queued jobs");
       this.cancelProjectJobs(projectId, "Project authorization was disabled");
     });
 
@@ -84,25 +193,25 @@ export class JobManager {
   }
 
   /**
-   * Cancel all running jobs for a given project.
+   * Cancel all active and queued jobs for a given project.
    */
   cancelProjectJobs(projectId: string, reason?: string): void {
     for (const job of this.jobs.values()) {
-      if (job.projectId === projectId && job.state === "running") {
-        this.logger?.warn({ jobId: job.id, projectId, reason }, "Aborting active project job");
+      if (job.projectId === projectId && (job.state === "running" || job.state === "queued")) {
+        this.logger?.warn({ jobId: job.id, projectId, reason }, "Aborting active/queued project job");
         this.cancelJob(job.id).catch(() => {});
       }
     }
   }
 
   /**
-   * Cancel all currently running jobs across all projects (e.g. for Emergency Stop).
+   * Cancel all currently active or queued jobs across all projects (e.g. for Emergency Stop).
    */
   async cancelAllJobs(reason?: string): Promise<{ cancelledCount: number; jobIds: string[] }> {
     const jobIds: string[] = [];
     for (const job of this.jobs.values()) {
       if (job.state === "running" || job.state === "queued") {
-        this.logger?.warn({ jobId: job.id, reason }, "Emergency stop: aborting active job");
+        this.logger?.warn({ jobId: job.id, reason }, "Emergency stop: aborting job");
         await this.cancelJob(job.id).catch(() => {});
         jobIds.push(job.id);
       }
@@ -114,34 +223,12 @@ export class JobManager {
   }
 
   /**
-   * Check runner and project concurrency bounds.
-   */
-  private checkCapacity(projectId: string): void {
-    const runningJobs = Array.from(this.jobs.values()).filter((j) => j.state === "running");
-    if (runningJobs.length >= MAX_RUNNING_JOBS_PER_RUNNER) {
-      throw new LocalBridgeError(
-        LocalBridgeErrorCode.JOB_CAPACITY_EXCEEDED,
-        `Runner running job limit of ${MAX_RUNNING_JOBS_PER_RUNNER} has been reached`
-      );
-    }
-
-    const projectRunningJobs = runningJobs.filter((j) => j.projectId === projectId);
-    if (projectRunningJobs.length >= MAX_RUNNING_JOBS_PER_PROJECT) {
-      throw new LocalBridgeError(
-        LocalBridgeErrorCode.JOB_CAPACITY_EXCEEDED,
-        `Project running job limit of ${MAX_RUNNING_JOBS_PER_PROJECT} has been reached for project '${projectId}'`
-      );
-    }
-  }
-
-  /**
    * Check rate limit: max 20 starts per minute per runner.
    */
   private checkRateLimit(): void {
     const now = Date.now();
     const cutoff = now - 60000;
 
-    // Remove timestamps older than 1 minute
     while (this.startTimestamps.length > 0 && this.startTimestamps[0]! <= cutoff) {
       this.startTimestamps.shift();
     }
@@ -162,17 +249,15 @@ export class JobManager {
   private pruneOldJobs(): void {
     const now = Date.now();
 
-    // 1. Evict completed jobs older than 24 hours
     for (const [id, job] of this.jobs.entries()) {
-      if (job.state !== "running" && job.finishedAt && now - job.finishedAt > JOB_HISTORY_MAX_AGE_MS) {
+      if (job.state !== "running" && job.state !== "queued" && job.finishedAt && now - job.finishedAt > JOB_HISTORY_MAX_AGE_MS) {
         this.jobs.delete(id);
       }
     }
 
-    // 2. If history still exceeds MAX_JOB_HISTORY, evict oldest finished jobs
     if (this.jobs.size > MAX_JOB_HISTORY) {
       const finishedJobs = Array.from(this.jobs.values())
-        .filter((j) => j.state !== "running")
+        .filter((j) => j.state !== "running" && j.state !== "queued")
         .sort((a, b) => (a.finishedAt ?? 0) - (b.finishedAt ?? 0));
 
       while (this.jobs.size > MAX_JOB_HISTORY && finishedJobs.length > 0) {
@@ -184,12 +269,13 @@ export class JobManager {
 
   /**
    * Start a background job executing a validated CommandSpec.
-   * Returns immediately with the assigned jobId.
+   * If capacity is available, spawns process immediately.
+   * If queueing is enabled and capacity is reached, enters "queued" state.
    */
   async startJob(params: JobStartParams): Promise<JobStartResult> {
     const command = params.command;
 
-    // 1. Verify project exists
+    // 1. Verify project exists and is enabled
     const project = this.projectRegistry.get(command.projectId);
     if (!project) {
       throw new LocalBridgeError(
@@ -205,11 +291,30 @@ export class JobManager {
       );
     }
 
-    // 2. Concurrency and rate limit checks
-    this.checkCapacity(project.id);
+    // 2. Rate limit check
     this.checkRateLimit();
 
-    // 3. Validate arguments if present
+    // 3. Queue capacity check if queuing is active
+    const maxQueuedRunner = this.options?.maxQueuedPerRunner ?? MAX_QUEUED_JOBS_PER_RUNNER;
+    const maxQueuedProject = this.options?.maxQueuedPerProject ?? MAX_QUEUED_JOBS_PER_PROJECT;
+    const currentQueued = Array.from(this.jobs.values()).filter((j) => j.state === "queued");
+    const projectQueued = currentQueued.filter((j) => j.projectId === project.id);
+
+    if (currentQueued.length >= maxQueuedRunner) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.JOB_QUEUE_FULL,
+        `Runner job queue limit of ${maxQueuedRunner} has been reached`
+      );
+    }
+
+    if (projectQueued.length >= maxQueuedProject) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.JOB_QUEUE_FULL,
+        `Project job queue limit of ${maxQueuedProject} has been reached for project '${project.id}'`
+      );
+    }
+
+    // 4. Validate command arguments if present
     if ("args" in command && Array.isArray(command.args)) {
       const validation = validateCommandArguments(command.args);
       if (!validation.valid) {
@@ -220,7 +325,7 @@ export class JobManager {
       }
     }
 
-    // 4. Classify risk and evaluate execution policy
+    // 5. Classify risk and evaluate execution policy
     const assessment = CommandClassifier.classify(command);
     const isSessionTrusted = this.projectRegistry.isSessionTrusted(command.projectId);
     const decision = CommandPolicy.evaluateUnified({
@@ -257,59 +362,7 @@ export class JobManager {
       );
     }
 
-    if (decision.decision === "ask") {
-      const { approvalId, ...jobPayload } = params;
-      const pHash = canonicalPayloadHash(jobPayload);
-
-      if (!this.approvalManager) {
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation "job.start" requires human approval.`
-        );
-      }
-
-      if (!approvalId) {
-        let summaryText: string = command.kind;
-        if (command.kind === "node-script" || command.kind === "python-script") {
-          summaryText = `run ${command.kind} "${command.path}"`;
-        } else if (command.kind === "package-script") {
-          summaryText = `run package script "${command.script}" via ${command.manager}`;
-        } else if (command.kind === "tool-version") {
-          summaryText = `check ${command.tool} version`;
-        }
-
-        const approval = this.approvalManager.create({
-          projectId: project.id,
-          operation: "job.start",
-          risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
-          summary: `Start background job: ${summaryText} in project "${project.id}"`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for job start. Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "job.start",
-            projectId: project.id,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
-      }
-
-      this.approvalManager.verifyAndConsume(
-        approvalId,
-        project.id,
-        "job.start",
-        pHash
-      );
-    }
-
-    // 5. Resolve working directory
+    // 6. Preflight checks: resolve working directory and validate scripts BEFORE consuming approval
     let workingDir = project.canonicalRoot;
     const specifiedCwd = "cwd" in command ? command.cwd : undefined;
     if (specifiedCwd && specifiedCwd.trim() !== "" && specifiedCwd !== ".") {
@@ -344,7 +397,6 @@ export class JobManager {
       }
     }
 
-    // 6. Command spec preparation
     let targetTool: "node" | "npm" | "pnpm" | "python" = "node";
     let commandArgs: string[] = [];
 
@@ -521,22 +573,133 @@ export class JobManager {
       }
     }
 
-    // 7. Resolve executable and environment
-    const resolvedTool = await this.executableRegistry.getExecutable(targetTool);
-    const finalArgs = [...(resolvedTool.prependArgs ?? []), ...commandArgs];
-    const safeEnv = buildSafeProcessEnv(this.runnerStateDir);
+    // 7. Handle Approval if required (preflight checks above passed)
+    if (decision.decision === "ask") {
+      const { approvalId, ...jobPayload } = params;
+      const pHash = canonicalPayloadHash(jobPayload);
 
-    // 8. Timeout bound (Job-level timeout takes precedence over command-level timeout)
+      if (!this.approvalManager) {
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          `Operation "job.start" requires human approval.`
+        );
+      }
+
+      if (!approvalId) {
+        let summaryText: string = command.kind;
+        if (command.kind === "node-script" || command.kind === "python-script") {
+          summaryText = `run ${command.kind} "${command.path}"`;
+        } else if (command.kind === "package-script") {
+          summaryText = `run package script "${command.script}" via ${command.manager}`;
+        } else if (command.kind === "tool-version") {
+          summaryText = `check ${command.tool} version`;
+        }
+
+        const approval = this.approvalManager.create({
+          projectId: project.id,
+          operation: "job.start",
+          risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
+          summary: `Start background job: ${summaryText} in project "${project.id}"`,
+          payloadHash: pHash,
+          timeoutMs: 300000,
+        });
+
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          `Operation requires human approval. Approval request "${approval.id}" created for job start. Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
+          {
+            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
+            approvalId: approval.id,
+            operation: "job.start",
+            projectId: project.id,
+            summary: approval.summary,
+            expiresAt: approval.expiresAt,
+          }
+        );
+      }
+
+      this.approvalManager.verifyAndConsume(
+        approvalId,
+        project.id,
+        "job.start",
+        pHash
+      );
+    }
+
+    // 8. Timeout bound
     const timeoutMs = Math.min(
       Math.max(params.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS, MIN_JOB_TIMEOUT_MS),
       MAX_JOB_TIMEOUT_MS
     );
 
-    // 9. Create Job Record
-    const jobId = `job_${crypto.randomUUID()}`;
-    const logs = new JobLogBuffer(MAX_JOB_LOG_BYTES);
-    const createdAt = Date.now();
+    const safeEnv = buildSafeProcessEnv(this.runnerStateDir);
+    const maxRunningRunner = this.options?.maxRunningPerRunner ?? MAX_RUNNING_JOBS_PER_RUNNER;
+    const maxRunningProject = this.options?.maxRunningPerProject ?? MAX_RUNNING_JOBS_PER_PROJECT;
+    const runningJobs = Array.from(this.jobs.values()).filter((j) => j.state === "running");
+    const projectRunningJobs = runningJobs.filter((j) => j.projectId === project.id);
 
+    const canRunImmediately =
+      runningJobs.length < maxRunningRunner && projectRunningJobs.length < maxRunningProject;
+
+    const jobId = `job_${crypto.randomUUID()}`;
+    const createdAt = Date.now();
+    const logs = new JobLogBuffer(MAX_JOB_LOG_BYTES);
+
+    if (!canRunImmediately) {
+      if (!this.options?.enableQueue) {
+        if (runningJobs.length >= maxRunningRunner) {
+          throw new LocalBridgeError(
+            LocalBridgeErrorCode.JOB_CAPACITY_EXCEEDED,
+            `Runner running job limit of ${maxRunningRunner} has been reached`
+          );
+        }
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.JOB_CAPACITY_EXCEEDED,
+          `Project running job limit of ${maxRunningProject} has been reached for project '${project.id}'`
+        );
+      }
+
+      // Enqueue job (FIFO)
+      const queuedRecord: JobRecord = {
+        id: jobId,
+        projectId: project.id,
+        commandKind: command.kind,
+        risk: assessment.risk,
+        state: "queued",
+        createdAt,
+        queuedAt: createdAt,
+        startedAt: null,
+        finishedAt: null,
+        exitCode: null,
+        signal: null,
+        logs,
+        canonicalProjectRoot: project.canonicalRoot,
+        approvalId: params.approvalId,
+        commandSpec: command,
+        targetTool,
+        commandArgs,
+        workingDir,
+        safeEnv,
+        timeoutMs,
+      };
+
+      this.jobs.set(jobId, queuedRecord);
+      this.queuedJobIds.push(jobId);
+      this.persistJobs();
+
+      this.logger?.info(
+        { jobId, projectId: project.id, commandKind: command.kind },
+        "Enqueued background job"
+      );
+
+      return {
+        jobId,
+        state: "queued",
+        createdAt,
+      };
+    }
+
+    // Execute immediately
     const jobRecord: JobRecord = {
       id: jobId,
       projectId: project.id,
@@ -550,49 +713,19 @@ export class JobManager {
       signal: null,
       logs,
       canonicalProjectRoot: project.canonicalRoot,
+      approvalId: params.approvalId,
+      commandSpec: command,
+      targetTool,
+      commandArgs,
+      workingDir,
+      safeEnv,
+      timeoutMs,
     };
 
-    // 10. Spawn Subprocess directly with shell: false
-    let child: child_process.ChildProcess;
-    try {
-      child = child_process.spawn(resolvedTool.executablePath, finalArgs, {
-        cwd: workingDir,
-        env: safeEnv,
-        stdio: ["ignore", "pipe", "pipe"],
-        shell: false,
-        windowsHide: true,
-      });
-      jobRecord.process = child;
-    } catch (err) {
-      throw new LocalBridgeError(
-        LocalBridgeErrorCode.COMMAND_EXECUTION_FAILED,
-        `Failed to spawn job process: ${err instanceof Error ? err.message : String(err)}`
-      );
-    }
-
-    // 11. Wire Subprocess event handlers
-    child.stdout?.on("data", (chunk: Buffer) => {
-      jobRecord.logs.append("stdout", chunk, project.canonicalRoot, this.runnerStateDir);
-    });
-
-    child.stderr?.on("data", (chunk: Buffer) => {
-      jobRecord.logs.append("stderr", chunk, project.canonicalRoot, this.runnerStateDir);
-    });
-
-    jobRecord.timeoutTimer = setTimeout(async () => {
-      await this.handleTimeout(jobId);
-    }, timeoutMs);
-
-    child.on("close", (code, signal) => {
-      this.finalizeJob(jobId, { exitCode: code, signal });
-    });
-
-    child.on("error", (err) => {
-      this.logger?.error({ jobId, err }, "Job child process emitted error");
-      this.finalizeJob(jobId, { exitCode: 1, signal: null });
-    });
-
     this.jobs.set(jobId, jobRecord);
+    await this.executeJobProcess(jobRecord);
+    this.persistJobs();
+
     this.logger?.info(
       { jobId, projectId: project.id, commandKind: command.kind, timeoutMs },
       "Started background job"
@@ -603,6 +736,98 @@ export class JobManager {
       state: "running",
       createdAt,
     };
+  }
+
+  /**
+   * Spawn child process for an active JobRecord.
+   */
+  private async executeJobProcess(jobRecord: JobRecord): Promise<void> {
+    try {
+      const resolvedTool = await this.executableRegistry.getExecutable(jobRecord.targetTool!);
+      const finalArgs = [...(resolvedTool.prependArgs ?? []), ...(jobRecord.commandArgs ?? [])];
+
+      const child = child_process.spawn(resolvedTool.executablePath, finalArgs, {
+        cwd: jobRecord.workingDir,
+        env: jobRecord.safeEnv,
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: false,
+        windowsHide: true,
+      });
+      jobRecord.process = child;
+
+      child.stdout?.on("data", (chunk: Buffer) => {
+        jobRecord.logs.append("stdout", chunk, jobRecord.canonicalProjectRoot, this.runnerStateDir);
+      });
+
+      child.stderr?.on("data", (chunk: Buffer) => {
+        jobRecord.logs.append("stderr", chunk, jobRecord.canonicalProjectRoot, this.runnerStateDir);
+      });
+
+      jobRecord.timeoutTimer = setTimeout(async () => {
+        await this.handleTimeout(jobRecord.id);
+      }, jobRecord.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS);
+
+      child.on("close", (code, signal) => {
+        this.finalizeJob(jobRecord.id, { exitCode: code, signal });
+      });
+
+      child.on("error", (err) => {
+        this.logger?.error({ jobId: jobRecord.id, err }, "Job child process emitted error");
+        jobRecord.errorCode = LocalBridgeErrorCode.JOB_SPAWN_FAILED;
+        jobRecord.errorMessage = err.message;
+        this.finalizeJob(jobRecord.id, { exitCode: 1, signal: null });
+      });
+    } catch (err) {
+      this.logger?.error({ jobId: jobRecord.id, err }, "Failed to spawn job process");
+      jobRecord.state = "failed";
+      jobRecord.errorCode = LocalBridgeErrorCode.JOB_SPAWN_FAILED;
+      jobRecord.errorMessage = err instanceof Error ? err.message : String(err);
+      jobRecord.finishedAt = Date.now();
+      jobRecord.process = undefined;
+      this.persistJobs();
+      this.pumpQueue();
+    }
+  }
+
+  /**
+   * FIFO Queue dispatcher. Dequeues next eligible job and starts execution.
+   */
+  private pumpQueue(): void {
+    if (!this.options?.enableQueue || this.queuedJobIds.length === 0) return;
+
+    const maxRunningRunner = this.options?.maxRunningPerRunner ?? MAX_RUNNING_JOBS_PER_RUNNER;
+    const maxRunningProject = this.options?.maxRunningPerProject ?? MAX_RUNNING_JOBS_PER_PROJECT;
+
+    const runningJobs = Array.from(this.jobs.values()).filter((j) => j.state === "running");
+    if (runningJobs.length >= maxRunningRunner) return;
+
+    for (let i = 0; i < this.queuedJobIds.length; i++) {
+      const candidateId = this.queuedJobIds[i]!;
+      const candidate = this.jobs.get(candidateId);
+      if (!candidate || candidate.state !== "queued") {
+        this.queuedJobIds.splice(i, 1);
+        i--;
+        continue;
+      }
+
+      const projectRunning = Array.from(this.jobs.values()).filter(
+        (j) => j.state === "running" && j.projectId === candidate.projectId
+      );
+
+      if (projectRunning.length < maxRunningProject) {
+        this.queuedJobIds.splice(i, 1);
+        candidate.state = "running";
+        candidate.startedAt = Date.now();
+        void this.executeJobProcess(candidate);
+        this.persistJobs();
+
+        const updatedRunning = Array.from(this.jobs.values()).filter((j) => j.state === "running");
+        if (updatedRunning.length >= maxRunningRunner) {
+          break;
+        }
+        i--;
+      }
+    }
   }
 
   /**
@@ -627,9 +852,14 @@ export class JobManager {
     }
 
     job.logs.append("stderr", "\n[LocalBridge] Job execution timed out; terminated process tree.\n");
-    job.state = "timed-out";
+    job.state = "timed_out";
     job.finishedAt = Date.now();
+    job.errorCode = "JOB_TIMED_OUT";
+    job.errorMessage = "Job execution timed out";
     job.process = undefined;
+
+    this.persistJobs();
+    this.pumpQueue();
     this.pruneOldJobs();
   }
 
@@ -651,7 +881,11 @@ export class JobManager {
     job.finishedAt = Date.now();
     job.exitCode = result.exitCode;
     job.signal = result.signal;
-    job.state = result.exitCode === 0 ? "succeeded" : "failed";
+    if (job.cancelRequestedAt) {
+      job.state = "cancelled";
+    } else {
+      job.state = result.exitCode === 0 ? "succeeded" : "failed";
+    }
     job.process = undefined;
 
     this.logger?.info(
@@ -659,19 +893,21 @@ export class JobManager {
         jobId,
         state: job.state,
         exitCode: job.exitCode,
-        durationMs: (job.finishedAt - (job.startedAt ?? job.createdAt)),
+        durationMs: job.finishedAt - (job.startedAt ?? job.createdAt),
       },
       "Background job completed"
     );
 
+    this.persistJobs();
+    this.pumpQueue();
     this.pruneOldJobs();
   }
 
   /**
-   * Cancel a running job by terminating its entire process tree.
-   * Returns alreadyTerminal: true if the job is already finished.
+   * Cancel a running or queued job by terminating its entire process tree.
+   * If already terminal, returns alreadyTerminal: true.
    */
-  async cancelJob(jobId: string): Promise<JobCancelResult> {
+  async cancelJob(jobId: string, projectId?: string): Promise<JobCancelResult> {
     const job = this.jobs.get(jobId);
     if (!job) {
       throw new LocalBridgeError(
@@ -680,7 +916,37 @@ export class JobManager {
       );
     }
 
-    if (job.state !== "running") {
+    if (projectId && job.projectId !== projectId) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.POLICY_DENIED,
+        `Job '${jobId}' belongs to project '${job.projectId}', not '${projectId}'`
+      );
+    }
+
+    if (job.state === "queued") {
+      const qIdx = this.queuedJobIds.indexOf(jobId);
+      if (qIdx !== -1) {
+        this.queuedJobIds.splice(qIdx, 1);
+      }
+      job.state = "cancelled";
+      job.finishedAt = Date.now();
+      this.persistJobs();
+      this.pumpQueue();
+      return {
+        jobId: job.id,
+        state: "cancelled",
+        alreadyTerminal: false,
+      };
+    }
+
+    if (
+      job.state === "succeeded" ||
+      job.state === "failed" ||
+      job.state === "cancelled" ||
+      job.state === "timed_out" ||
+      job.state === "timed-out" ||
+      job.state === "interrupted"
+    ) {
       return {
         jobId: job.id,
         state: job.state,
@@ -693,20 +959,35 @@ export class JobManager {
       job.timeoutTimer = undefined;
     }
 
+    job.cancelRequestedAt = Date.now();
+    job.state = "cancelled";
+    job.finishedAt = Date.now();
     const pid = job.process?.pid;
+
+    if (job.process && pid) {
+      try {
+        job.process.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+
+      // Grace period before hard process tree kill
+      await new Promise((r) => setTimeout(r, 300));
+
+      try {
+        await killProcessTree(pid);
+      } catch {
+        // ignore kill error
+      }
+    }
+
     job.state = "cancelled";
     job.finishedAt = Date.now();
     job.process = undefined;
 
-    if (pid) {
-      try {
-        await killProcessTree(pid);
-      } catch {
-        // ignore
-      }
-    }
-
     this.logger?.info({ jobId }, "Cancelled background job and terminated process tree");
+    this.persistJobs();
+    this.pumpQueue();
     this.pruneOldJobs();
 
     return {
@@ -737,11 +1018,16 @@ export class JobManager {
       state: job.state,
       risk: job.risk,
       createdAt: job.createdAt,
+      queuedAt: job.queuedAt,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
       exitCode: job.exitCode,
       signal: job.signal,
       durationMs: Math.max(durationMs, 0),
+      outputTruncated: job.logs.isTruncated,
+      lastOutput: job.logs.getLastOutput(1000) || undefined,
+      errorCode: job.errorCode,
+      error: job.errorMessage,
     };
   }
 
@@ -782,7 +1068,11 @@ export class JobManager {
       matched = matched.filter((j) => j.projectId === params.projectId);
     }
     if (params?.state) {
-      matched = matched.filter((j) => j.state === params.state);
+      const targetState = params.state === "timed-out" ? "timed_out" : params.state;
+      matched = matched.filter((j) => {
+        const s = j.state === "timed-out" ? "timed_out" : j.state;
+        return s === targetState;
+      });
     }
 
     // Sort by createdAt descending
@@ -798,6 +1088,8 @@ export class JobManager {
       startedAt: j.startedAt,
       finishedAt: j.finishedAt,
       exitCode: j.exitCode,
+      outputTruncated: j.logs.isTruncated,
+      error: j.errorMessage,
     }));
 
     return { jobs: summaries };
@@ -946,5 +1238,6 @@ export class JobManager {
         // ignore
       }
     }
+    this.persistJobs();
   }
 }

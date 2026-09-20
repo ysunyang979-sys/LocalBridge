@@ -70,3 +70,23 @@ export interface MigrationRow {
   applied_at: number;
 }
 
+export interface JobRow {
+  id: string;
+  project_id: string;
+  runner_id: string | null;
+  command_kind: string;
+  risk: string;
+  state: string;
+  created_at: number;
+  queued_at: number | null;
+  started_at: number | null;
+  finished_at: number | null;
+  exit_code: number | null;
+  signal: string | null;
+  timeout_ms: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  output_truncated: number;
+  approval_id: string | null;
+}
+

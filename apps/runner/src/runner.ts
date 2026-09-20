@@ -178,7 +178,8 @@ export class LocalBridgeRunner {
       this.executableRegistry,
       runnerStateDir,
       this.logger,
-      this.approvalManager
+      this.approvalManager,
+      { enableQueue: true, persistState: true }
     );
 
     this.rpcRouter = new RpcRouter(this.logger);

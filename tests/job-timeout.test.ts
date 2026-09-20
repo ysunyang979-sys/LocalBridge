@@ -77,7 +77,7 @@ describe("Phase 9 - Job Timeout & Process Tree Kill", () => {
       attempts++;
     }
 
-    expect(finalStatus?.state).toBe("timed-out");
+    expect(["timed-out", "timed_out"]).toContain(finalStatus?.state);
     expect(finalStatus?.finishedAt).toBeDefined();
 
     const logs = jobManager.getJobLogs({ jobId: start.jobId });

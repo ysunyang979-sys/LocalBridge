@@ -854,7 +854,9 @@ export const JobStateSchema = z.enum([
   "succeeded",
   "failed",
   "cancelled",
+  "timed_out",
   "timed-out",
+  "interrupted",
 ]);
 export type JobState = z.infer<typeof JobStateSchema>;
 
@@ -892,11 +894,16 @@ export const JobStatusResultSchema = z
     state: JobStateSchema,
     risk: CommandRiskLevelSchema,
     createdAt: z.number().int(),
+    queuedAt: z.number().int().nullable().optional(),
     startedAt: z.number().int().nullable(),
     finishedAt: z.number().int().nullable(),
     exitCode: z.number().int().nullable(),
     signal: z.string().nullable(),
     durationMs: z.number().int().nonnegative(),
+    outputTruncated: z.boolean().default(false),
+    lastOutput: z.string().optional(),
+    errorCode: z.string().optional(),
+    error: z.string().optional(),
   })
   .strict();
 export type JobStatusResult = z.infer<typeof JobStatusResultSchema>;
@@ -936,6 +943,7 @@ export type JobLogsResult = z.infer<typeof JobLogsResultSchema>;
 export const JobCancelParamsSchema = z
   .object({
     jobId: z.string(),
+    projectId: z.string().optional(),
   })
   .strict();
 export type JobCancelParams = z.infer<typeof JobCancelParamsSchema>;
@@ -970,6 +978,8 @@ export const JobSummarySchema = z
     startedAt: z.number().int().nullable(),
     finishedAt: z.number().int().nullable(),
     exitCode: z.number().int().nullable(),
+    outputTruncated: z.boolean().optional(),
+    error: z.string().optional(),
   })
   .strict();
 export type JobSummary = z.infer<typeof JobSummarySchema>;

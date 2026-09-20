@@ -229,6 +229,19 @@ export interface I18nDictionary {
     completed: string;
     failed: string;
     cancelled: string;
+    timedOut: string;
+    interrupted: string;
+    tabAll: string;
+    tabRunning: string;
+    tabFailed: string;
+    details: string;
+    logs: string;
+    copyLogs: string;
+    clearLogs: string;
+    autoScroll: string;
+    exitCode: string;
+    noLogs: string;
+    outputTruncatedNotice: string;
   };
   connections: {
     title: string;

@@ -52,8 +52,17 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
           rpcPayload
         );
 
-        // Record job -> runner mapping in memory
-        context.trackJob(result.jobId, runnerId);
+        // Record job in memory and SQLite
+        context.recordJob?.({
+          id: result.jobId,
+          projectId,
+          runnerId,
+          commandKind: sanitizedCommand.kind,
+          state: result.state,
+          createdAt: result.createdAt,
+          timeoutMs: args.timeoutMs,
+          approvalId,
+        });
 
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_job_start",
@@ -308,8 +317,17 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
           args
         );
 
-        // Record job -> runner mapping in memory
-        context.trackJob(result.jobId, runnerId);
+        // Record job in memory and SQLite
+        context.recordJob?.({
+          id: result.jobId,
+          projectId,
+          runnerId,
+          commandKind: "package-script",
+          state: result.state,
+          createdAt: result.createdAt,
+          timeoutMs: args.timeoutMs,
+          approvalId: args.approvalId,
+        });
 
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_build_start",
@@ -358,8 +376,17 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
           args
         );
 
-        // Record job -> runner mapping in memory
-        context.trackJob(result.jobId, runnerId);
+        // Record job in memory and SQLite
+        context.recordJob?.({
+          id: result.jobId,
+          projectId,
+          runnerId,
+          commandKind: "package-script",
+          state: result.state,
+          createdAt: result.createdAt,
+          timeoutMs: args.timeoutMs,
+          approvalId: args.approvalId,
+        });
 
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_test_start",
