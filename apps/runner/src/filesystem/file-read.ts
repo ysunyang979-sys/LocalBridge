@@ -6,7 +6,7 @@ import {
   type FileReadResult,
   type FileLine,
 } from "@localbridge/protocol";
-import { resolveProjectPath, isSensitiveFile } from "@localbridge/security";
+import { resolveProjectPath } from "@localbridge/security";
 import { probeBinaryAndEncoding } from "./binary.js";
 import { sanitizeFsError } from "./errors.js";
 
@@ -47,14 +47,6 @@ export function readTextFile(options: ReadTextFileOptions): FileReadResult {
     mustExist: true,
     allowSensitive: true,
   });
-
-  // 3. Proactive sensitive file check on resolved relative path
-  if (isSensitiveFile(resolved.relativePath)) {
-    throw new LocalBridgeError(
-      LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED,
-      "Access to sensitive credential file is blocked"
-    );
-  }
 
   // 4. Open file strictly with "r" mode
   let fd: number;

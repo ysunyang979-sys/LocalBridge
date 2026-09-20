@@ -78,8 +78,10 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
       expect(approvalManager.list({ projectId }).length).toBe(0);
     });
 
-    it("writes, patches, and deletes .env.localbridge-test directly without approvals", async () => {
+    it("reads, stats, writes, patches, and deletes .env.localbridge-test directly without approvals", async () => {
       const createHandler = createFileCreateHandler(fsService, approvalManager, registry);
+      const readHandler = createFileReadHandler(fsService, approvalManager, registry);
+      const statHandler = createFileStatHandler(fsService, approvalManager, registry);
       const writeHandler = createFileWriteHandler(fsService, approvalManager, registry);
       const patchHandler = createFilePatchHandler(fsService, approvalManager, registry);
       const deleteHandler = createFileDeleteHandler(fsService, approvalManager, registry);
@@ -88,29 +90,44 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
       const cRes = await createHandler({
         projectId,
         path: ".env.localbridge-test",
-        content: "INITIAL=1\n",
+        content: "INITIAL=1\nTEST_ONLY=true\n",
       });
       expect(cRes.newHash).toBeDefined();
 
-      // 2. Write
+      // 2. Stat
+      const sRes = await statHandler({
+        projectId,
+        path: ".env.localbridge-test",
+      });
+      expect(sRes.size).toBeGreaterThan(0);
+      expect(sRes.type).toBe("file");
+
+      // 3. Read
+      const rRes = await readHandler({
+        projectId,
+        path: ".env.localbridge-test",
+      });
+      expect(rRes.lines.map((l) => l.text).join("\n")).toContain("TEST_ONLY=true");
+
+      // 4. Write
       const wRes = await writeHandler({
         projectId,
         path: ".env.localbridge-test",
         expectedHash: cRes.newHash,
-        content: "UPDATED=2\n",
+        content: "INITIAL=1\nTEST_ONLY=false\n",
       });
       expect(wRes.newHash).toBeDefined();
 
-      // 3. Patch
+      // 5. Patch
       const pRes = await patchHandler({
         projectId,
         path: ".env.localbridge-test",
         expectedHash: wRes.newHash,
-        replacements: [{ search: "UPDATED=2", replace: "UPDATED=3" }],
+        replacements: [{ search: "TEST_ONLY=false", replace: "TEST_ONLY=true" }],
       });
       expect(pRes.replacementsApplied).toBe(1);
 
-      // 4. Delete
+      // 6. Delete
       const dRes = await deleteHandler({
         projectId,
         path: ".env.localbridge-test",
@@ -118,6 +135,66 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
       });
       expect(dRes.deleted).toBe(true);
       expect(fs.existsSync(path.join(projectDir, ".env.localbridge-test"))).toBe(false);
+
+      // No approvals ever created
+      expect(approvalManager.list({ projectId }).length).toBe(0);
+    });
+
+    it("allows file.create, file.read, file.stat, file.write, file.patch, file.delete on *.key under Follow Policy without approvals", async () => {
+      const createHandler = createFileCreateHandler(fsService, approvalManager, registry);
+      const readHandler = createFileReadHandler(fsService, approvalManager, registry);
+      const statHandler = createFileStatHandler(fsService, approvalManager, registry);
+      const writeHandler = createFileWriteHandler(fsService, approvalManager, registry);
+      const patchHandler = createFilePatchHandler(fsService, approvalManager, registry);
+      const deleteHandler = createFileDeleteHandler(fsService, approvalManager, registry);
+
+      // 1. Create *.key
+      const cRes = await createHandler({
+        projectId,
+        path: "server.key",
+        content: "-----BEGIN PRIVATE KEY-----\nINITIAL_KEY\n",
+      });
+      expect(cRes.newHash).toBeDefined();
+
+      // 2. Stat *.key
+      const sRes = await statHandler({
+        projectId,
+        path: "server.key",
+      });
+      expect(sRes.size).toBeGreaterThan(0);
+
+      // 3. Read *.key
+      const rRes = await readHandler({
+        projectId,
+        path: "server.key",
+      });
+      expect(rRes.lines[0]?.text).toContain("BEGIN PRIVATE KEY");
+
+      // 4. Write *.key
+      const wRes = await writeHandler({
+        projectId,
+        path: "server.key",
+        expectedHash: cRes.newHash,
+        content: "-----BEGIN RSA PRIVATE KEY-----\nNEW_KEY\n",
+      });
+      expect(wRes.newHash).toBeDefined();
+
+      // 5. Patch *.key
+      const pRes = await patchHandler({
+        projectId,
+        path: "server.key",
+        expectedHash: wRes.newHash,
+        replacements: [{ search: "NEW_KEY", replace: "FINAL_KEY" }],
+      });
+      expect(pRes.replacementsApplied).toBe(1);
+
+      // 6. Delete *.key
+      const dRes = await deleteHandler({
+        projectId,
+        path: "server.key",
+        expectedHash: pRes.newHash,
+      });
+      expect(dRes.deleted).toBe(true);
 
       // No approvals ever created
       expect(approvalManager.list({ projectId }).length).toBe(0);
@@ -206,9 +283,155 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
       );
     });
 
-    it("file.create and file.write on *.key trigger approval flow and succeed upon approval", async () => {
-      const createHandler = createFileCreateHandler(fsService, approvalManager, registry);
+    it("file.read and file.stat on .env.localbridge-test trigger approval flow, retry succeeds, replay rejected", async () => {
+      fs.writeFileSync(
+        path.join(projectDir, ".env.localbridge-test"),
+        "SECRET_KEY=12345\nDEBUG=true\n",
+        "utf-8"
+      );
+      const readHandler = createFileReadHandler(fsService, approvalManager, registry);
+      const statHandler = createFileStatHandler(fsService, approvalManager, registry);
+
+      // 1. Stat triggers approval
+      let statErr: any;
+      try {
+        await statHandler({
+          projectId,
+          path: ".env.localbridge-test",
+        });
+      } catch (e) {
+        statErr = e;
+      }
+      expect(statErr).toBeInstanceOf(LocalBridgeError);
+      expect(statErr.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
+      const statAppId = statErr.details!.approvalId as string;
+
+      approvalManager.resolve({ approvalId: statAppId, action: "approve", resolvedBy: "operator-alice" });
+      const statRes = await statHandler({
+        projectId,
+        path: ".env.localbridge-test",
+        approvalId: statAppId,
+      });
+      expect(statRes.size).toBeGreaterThan(0);
+
+      // Replay stat with consumed approvalId fails
+      await expect(
+        statHandler({
+          projectId,
+          path: ".env.localbridge-test",
+          approvalId: statAppId,
+        })
+      ).rejects.toThrowError(
+        expect.objectContaining({
+          code: LocalBridgeErrorCode.APPROVAL_ALREADY_RESOLVED,
+        })
+      );
+
+      // 2. Read triggers approval
+      let readErr: any;
+      try {
+        await readHandler({
+          projectId,
+          path: ".env.localbridge-test",
+        });
+      } catch (e) {
+        readErr = e;
+      }
+      expect(readErr).toBeInstanceOf(LocalBridgeError);
+      expect(readErr.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
+      const readAppId = readErr.details!.approvalId as string;
+
+      approvalManager.resolve({ approvalId: readAppId, action: "approve", resolvedBy: "operator-alice" });
+      const readRes = await readHandler({
+        projectId,
+        path: ".env.localbridge-test",
+        approvalId: readAppId,
+      });
+      expect(readRes.lines.map((l) => l.text).join("\n")).toContain("SECRET_KEY=12345");
+
+      // Replay read with consumed approvalId fails
+      await expect(
+        readHandler({
+          projectId,
+          path: ".env.localbridge-test",
+          approvalId: readAppId,
+        })
+      ).rejects.toThrowError(
+        expect.objectContaining({
+          code: LocalBridgeErrorCode.APPROVAL_ALREADY_RESOLVED,
+        })
+      );
+    });
+
+    it("file.write and file.patch on .env.localbridge-test trigger approval flow and succeed upon approval", async () => {
+      const initialContent = "LINE1=a\nLINE2=b\n";
+      fs.writeFileSync(path.join(projectDir, ".env.localbridge-test"), initialContent, "utf-8");
+      const initialHash = computeSha256(initialContent);
+
       const writeHandler = createFileWriteHandler(fsService, approvalManager, registry);
+      const patchHandler = createFilePatchHandler(fsService, approvalManager, registry);
+
+      // 1. Write triggers approval
+      let writeErr: any;
+      try {
+        await writeHandler({
+          projectId,
+          path: ".env.localbridge-test",
+          expectedHash: initialHash,
+          content: "LINE1=updated\nLINE2=b\n",
+        });
+      } catch (e) {
+        writeErr = e;
+      }
+      expect(writeErr).toBeInstanceOf(LocalBridgeError);
+      expect(writeErr.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
+      const writeAppId = writeErr.details!.approvalId as string;
+
+      approvalManager.resolve({ approvalId: writeAppId, action: "approve", resolvedBy: "operator-alice" });
+      const writeRes = await writeHandler({
+        projectId,
+        path: ".env.localbridge-test",
+        expectedHash: initialHash,
+        content: "LINE1=updated\nLINE2=b\n",
+        approvalId: writeAppId,
+      });
+      expect(writeRes.newHash).toBeDefined();
+
+      // 2. Patch triggers approval
+      let patchErr: any;
+      try {
+        await patchHandler({
+          projectId,
+          path: ".env.localbridge-test",
+          expectedHash: writeRes.newHash,
+          replacements: [{ search: "LINE2=b", replace: "LINE2=patched" }],
+        });
+      } catch (e) {
+        patchErr = e;
+      }
+      expect(patchErr).toBeInstanceOf(LocalBridgeError);
+      expect(patchErr.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
+      const patchAppId = patchErr.details!.approvalId as string;
+
+      approvalManager.resolve({ approvalId: patchAppId, action: "approve", resolvedBy: "operator-alice" });
+      const patchRes = await patchHandler({
+        projectId,
+        path: ".env.localbridge-test",
+        expectedHash: writeRes.newHash,
+        replacements: [{ search: "LINE2=b", replace: "LINE2=patched" }],
+        approvalId: patchAppId,
+      });
+      expect(patchRes.replacementsApplied).toBe(1);
+      expect(fs.readFileSync(path.join(projectDir, ".env.localbridge-test"), "utf-8")).toBe(
+        "LINE1=updated\nLINE2=patched\n"
+      );
+    });
+
+    it("file.create, file.read, file.write, and file.patch on *.key trigger approval flow and succeed upon approval", async () => {
+      const createHandler = createFileCreateHandler(fsService, approvalManager, registry);
+      const readHandler = createFileReadHandler(fsService, approvalManager, registry);
+      const writeHandler = createFileWriteHandler(fsService, approvalManager, registry);
+      const patchHandler = createFilePatchHandler(fsService, approvalManager, registry);
 
       // Create *.key requires approval
       let createErr: any;
@@ -233,6 +456,27 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
       });
       expect(createRes.path).toBe("server.key");
 
+      // Read *.key requires approval
+      let readErr: any;
+      try {
+        await readHandler({
+          projectId,
+          path: "server.key",
+        });
+      } catch (e) {
+        readErr = e;
+      }
+      expect(readErr.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
+      const readAppId = readErr.details!.approvalId as string;
+
+      approvalManager.resolve({ approvalId: readAppId, action: "approve", resolvedBy: "operator-bob" });
+      const readRes = await readHandler({
+        projectId,
+        path: "server.key",
+        approvalId: readAppId,
+      });
+      expect(readRes.lines[0]?.text).toContain("BEGIN PRIVATE KEY");
+
       // Write *.key requires approval
       let writeErr: any;
       try {
@@ -240,7 +484,7 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
           projectId,
           path: "server.key",
           expectedHash: createRes.newHash,
-          content: "-----BEGIN RSA PRIVATE KEY-----\n",
+          content: "-----BEGIN RSA PRIVATE KEY-----\nKEYDATA\n",
         });
       } catch (e) {
         writeErr = e;
@@ -253,10 +497,35 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
         projectId,
         path: "server.key",
         expectedHash: createRes.newHash,
-        content: "-----BEGIN RSA PRIVATE KEY-----\n",
+        content: "-----BEGIN RSA PRIVATE KEY-----\nKEYDATA\n",
         approvalId: writeAppId,
       });
       expect(writeRes.path).toBe("server.key");
+
+      // Patch *.key requires approval
+      let patchErr: any;
+      try {
+        await patchHandler({
+          projectId,
+          path: "server.key",
+          expectedHash: writeRes.newHash,
+          replacements: [{ search: "KEYDATA", replace: "NEWKEYDATA" }],
+        });
+      } catch (e) {
+        patchErr = e;
+      }
+      expect(patchErr.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
+      const patchAppId = patchErr.details!.approvalId as string;
+
+      approvalManager.resolve({ approvalId: patchAppId, action: "approve", resolvedBy: "operator-bob" });
+      const patchRes = await patchHandler({
+        projectId,
+        path: "server.key",
+        expectedHash: writeRes.newHash,
+        replacements: [{ search: "KEYDATA", replace: "NEWKEYDATA" }],
+        approvalId: patchAppId,
+      });
+      expect(patchRes.replacementsApplied).toBe(1);
     });
   });
 
@@ -302,7 +571,7 @@ describe("Filesystem E2E Trust Policy Regression Tests", () => {
         })
       ).rejects.toThrowError(
         expect.objectContaining({
-          code: LocalBridgeErrorCode.PATH_NOT_ALLOWED,
+          code: LocalBridgeErrorCode.POLICY_DENIED,
         })
       );
     });

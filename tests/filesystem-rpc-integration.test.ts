@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -90,6 +90,15 @@ describe("Filesystem RPC End-to-End Integration (Phase 5)", () => {
     // Pre-authorize local project
     const authorized = runner.projectRegistry.add(sampleProjectDir, { name: "web-app" });
     sampleProjectId = authorized.id;
+    runner.projectRegistry.setTrustPolicy({
+      projectId: sampleProjectId,
+      trustPolicy: {
+        trustLevel: "standard",
+        filePolicy: "controlled",
+        commandPolicy: "ask",
+        protectedFilesPolicy: "deny",
+      },
+    });
 
     await runner.start();
 

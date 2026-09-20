@@ -151,6 +151,7 @@ export const FileStatParamsSchema = z
   .object({
     projectId: z.string(),
     path: z.string(),
+    approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
   })
   .strict();
 export type FileStatParams = z.infer<typeof FileStatParamsSchema>;
@@ -175,6 +176,7 @@ export const FileReadParamsSchema = z
     path: z.string(),
     startLine: z.number().int().min(1).default(1),
     maxLines: z.number().int().min(1).max(500).default(300),
+    approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
   })
   .strict();
 export type FileReadParams = z.infer<typeof FileReadParamsSchema>;

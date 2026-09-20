@@ -278,16 +278,17 @@ describe("file.read RPC & Filesystem Service", () => {
     );
   });
 
-  it("blocks sensitive files with SENSITIVE_FILE_BLOCKED", async () => {
-    fs.writeFileSync(path.join(projectDir, ".env"), "SECRET=xyz");
+  it("blocks absolute security boundary files with PATH_NOT_ALLOWED", async () => {
+    fs.mkdirSync(path.join(projectDir, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, ".git", "config"), "[core]");
 
     await expect(
       fsService.readText({
         projectId,
-        path: ".env",
+        path: ".git/config",
       })
     ).rejects.toThrowError(
-      expect.objectContaining({ code: LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED })
+      expect.objectContaining({ code: LocalBridgeErrorCode.PATH_NOT_ALLOWED })
     );
   });
 

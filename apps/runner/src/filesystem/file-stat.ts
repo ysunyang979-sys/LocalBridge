@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import {
-  LocalBridgeError,
-  LocalBridgeErrorCode,
-  type FileStatResult,
-} from "@localbridge/protocol";
-import { resolveProjectPath, isSensitiveFile } from "@localbridge/security";
+import type { FileStatResult } from "@localbridge/protocol";
+import { resolveProjectPath } from "@localbridge/security";
 import { sanitizeFsError } from "./errors.js";
 
 export interface StatFileOptions {
@@ -27,15 +23,7 @@ export function statFile(options: StatFileOptions): FileStatResult {
     allowSensitive: true,
   });
 
-  // 2. Sensitive file check on resolved relative path
-  if (isSensitiveFile(resolved.relativePath)) {
-    throw new LocalBridgeError(
-      LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED,
-      "Access to sensitive credential file is blocked"
-    );
-  }
-
-  // 3. Inspect target stats
+  // 2. Inspect target stats
   let stat: fs.Stats;
   try {
     stat = fs.statSync(resolved.canonicalPath);

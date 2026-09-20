@@ -27,6 +27,13 @@ export function createFileDeleteHandler(
       );
     }
 
+    if (!project.enabled) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_DISABLED,
+        `Project "${params.projectId}" is currently disabled`
+      );
+    }
+
     const isSessionTrusted = projectRegistry
       ? projectRegistry.isSessionTrusted(params.projectId)
       : false;

@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -177,19 +177,18 @@ describe("Filesystem Security and Sandboxing (Phase 5)", () => {
     });
   });
 
-  describe("Sensitive File Blocking", () => {
-    it("blocks file.stat and file.read on sensitive files", async () => {
-      await expect(
-        fsService.stat({ projectId, path: ".env" })
-      ).rejects.toMatchObject({ code: LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED });
+  describe("Absolute Boundary File Blocking", () => {
+    it("blocks file.stat and file.read on absolute deny paths", async () => {
+      fs.mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+      fs.writeFileSync(path.join(projectRoot, ".git", "config"), "[core]");
 
       await expect(
-        fsService.readText({ projectId, path: ".env" })
-      ).rejects.toMatchObject({ code: LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED });
+        fsService.stat({ projectId, path: ".git/config" })
+      ).rejects.toMatchObject({ code: LocalBridgeErrorCode.PATH_NOT_ALLOWED });
 
       await expect(
-        fsService.readText({ projectId, path: "id_rsa" })
-      ).rejects.toMatchObject({ code: LocalBridgeErrorCode.SENSITIVE_FILE_BLOCKED });
+        fsService.readText({ projectId, path: ".git/config" })
+      ).rejects.toMatchObject({ code: LocalBridgeErrorCode.PATH_NOT_ALLOWED });
     });
 
     it("filters out sensitive files during directory.list and flags sensitiveEntriesFiltered", async () => {

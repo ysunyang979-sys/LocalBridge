@@ -224,12 +224,20 @@ export class LocalBridgeRunner {
 
     this.rpcRouter.register(
       RunnerRpcMethods.FileStat,
-      createFileStatHandler(this.filesystemService)
+      createFileStatHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry
+      )
     );
 
     this.rpcRouter.register(
       RunnerRpcMethods.FileRead,
-      createFileReadHandler(this.filesystemService)
+      createFileReadHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry
+      )
     );
 
     this.rpcRouter.register(
