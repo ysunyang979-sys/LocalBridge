@@ -92,14 +92,36 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
           !Array.isArray(request.body)
             ? (request.body as Record<string, any>).id ?? null
             : null;
-        return reply.status(503).send({
-          jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "LocalBridge AI access is paused by local user",
-          },
-          id: bodyId,
-        });
+
+        const requestBody =
+          typeof request.body === "object" &&
+          request.body !== null &&
+          !Array.isArray(request.body)
+            ? (request.body as Record<string, any>)
+            : undefined;
+
+        const isPauseExemptTool =
+          requestBody?.method === "tools/call" &&
+          typeof requestBody?.params?.name === "string" &&
+          [
+            "localbridge_runtime_stop",
+            "localbridge_runtime_status",
+            "localbridge_runtime_logs",
+            "localbridge_job_cancel",
+            "localbridge_job_status",
+            "localbridge_job_logs",
+          ].includes(requestBody.params.name);
+
+        if (!isPauseExemptTool) {
+          return reply.status(503).send({
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message: "LocalBridge AI access is paused by local user",
+            },
+            id: bodyId,
+          });
+        }
       }
 
       // 3.1 DNS Rebinding Protection: Host Header Validation

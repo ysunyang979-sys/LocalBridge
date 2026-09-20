@@ -294,12 +294,27 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         }
       }
 
+      // 3. Stop all persistent runtimes without requiring approval
+      let stoppedRuntimesCount = 0;
+      let stoppedRuntimeIds: string[] = [];
+      if (mcpContext.persistentRuntimeManager) {
+        try {
+          const res = await mcpContext.persistentRuntimeManager.stopAllRuntimes(reason);
+          stoppedRuntimesCount = res.stoppedCount;
+          stoppedRuntimeIds = res.runtimeIds;
+        } catch (err) {
+          fastify.log.warn({ err }, "Failed to stop persistent runtimes during emergency stop");
+        }
+      }
+
       return reply.status(200).send({
         emergencyStopped: true,
         paused: true,
         runnersNotified: runners.length,
         cancelledJobsCount: totalCancelled,
         jobIds: allCancelledJobIds,
+        stoppedRuntimesCount,
+        runtimeIds: stoppedRuntimeIds,
         timestamp: Date.now(),
       });
     }
@@ -308,6 +323,13 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
   fastify.post<{ Body?: { reason?: string } }>("/shutdown", async (request, reply) => {
     mcpContext.setPaused(true);
     const reason = request.body?.reason || "Desktop shutdown";
+    if (mcpContext.persistentRuntimeManager) {
+      try {
+        await mcpContext.persistentRuntimeManager.stopAllRuntimes(reason);
+      } catch (err) {
+        fastify.log.warn({ err }, "Failed to stop runtimes during shutdown");
+      }
+    }
     for (const runner of runnerRegistry.list()) {
       try {
         await rpcService.request(runner.id, RunnerRpcMethods.JobCancelAll, { reason });
@@ -437,6 +459,9 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     "/management/projects/:id",
     async (request, reply) => {
       const { id } = request.params;
+      if (mcpContext.persistentRuntimeManager) {
+        await mcpContext.persistentRuntimeManager.stopProjectRuntimes(id, "Project removed");
+      }
       const project = projectService.getProject(id);
       const targetRunnerId =
         request.query.runnerId || project?.runnerId || getActiveRunnerId();
@@ -475,6 +500,9 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     "/management/projects/:id/disable",
     async (request, reply) => {
       const { id } = request.params;
+      if (mcpContext.persistentRuntimeManager) {
+        await mcpContext.persistentRuntimeManager.stopProjectRuntimes(id, "Project disabled");
+      }
       const project = projectService.getProject(id);
       const targetRunnerId =
         request.query.runnerId || project?.runnerId || getActiveRunnerId();

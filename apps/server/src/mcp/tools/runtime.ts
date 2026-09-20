@@ -35,6 +35,13 @@ export function registerRuntimeTools(server: McpServer, context: McpContext): vo
           );
         }
 
+        if (context.isPaused()) {
+          throw new LocalBridgeError(
+            LocalBridgeErrorCode.AI_ACCESS_PAUSED,
+            "LocalBridge AI access is paused by local user"
+          );
+        }
+
         context.logAudit("mcp_tool_started", {
           toolName: "localbridge_runtime_start",
           projectId,
@@ -216,6 +223,13 @@ export function registerRuntimeTools(server: McpServer, context: McpContext): vo
           throw new LocalBridgeError(
             LocalBridgeErrorCode.INTERNAL_ERROR,
             "ServerPersistentRuntimeManager is not initialized"
+          );
+        }
+
+        if (context.isPaused()) {
+          throw new LocalBridgeError(
+            LocalBridgeErrorCode.AI_ACCESS_PAUSED,
+            "LocalBridge AI access is paused by local user"
           );
         }
 

@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "node server.js",
     "failing-dev": "node fail.js",
-    "tree-dev": "node tree.js"
+    "tree-dev": "node tree.js",
+    "secret-check": "node secret-check.js",
+    "exit-with-code": "node exit-with-code.js",
+    "burst-logs": "node burst-logs.js",
+    "worktree-marker": "node worktree-marker.js"
   }
 }

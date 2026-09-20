@@ -213,9 +213,12 @@ export class PersistentRuntimeManager {
   private isMatchingLaunchSpec(a: RuntimeLaunchSpec, b: RuntimeLaunchSpec): boolean {
     if (a.kind !== b.kind) return false;
     if (a.kind === "package-script" && b.kind === "package-script") {
+      const aArgs = JSON.stringify(a.args ?? []);
+      const bArgs = JSON.stringify(b.args ?? []);
       return (
         a.manager === b.manager &&
         a.script === b.script &&
+        aArgs === bArgs &&
         (a.relativeCwd ?? "") === (b.relativeCwd ?? "")
       );
     }
@@ -677,7 +680,7 @@ export class PersistentRuntimeManager {
       genInfo.signal = signal;
       genInfo.stoppedAt = record.stoppedAt;
 
-      if (record.state === "stopping") {
+      if (record.state === "stopping" || record.state === "stopped") {
         record.state = "stopped";
         genInfo.state = "stopped";
       } else if (exitCode === 0) {
@@ -743,37 +746,48 @@ export class PersistentRuntimeManager {
       const pid = child.pid;
       this.logger?.debug({ runtimeId: record.id, pid, gracePeriodMs }, "Stopping runtime process");
 
-      // 1. Try graceful SIGTERM
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // Child might already be dead
-      }
-
-      // 2. Wait up to gracePeriodMs
-      const exitedGracefully = await new Promise<boolean>((resolve) => {
-        let timer: NodeJS.Timeout | null = null;
-        const onClose = () => {
-          if (timer) clearTimeout(timer);
-          resolve(true);
-        };
-        child.once("close", onClose);
-        timer = setTimeout(() => {
-          child.removeListener("close", onClose);
-          resolve(false);
-        }, gracePeriodMs);
-      });
-
-      // 3. Fall back to hard tree kill if still alive
-      if (!exitedGracefully) {
-        this.logger?.warn(
-          { runtimeId: record.id, pid },
-          "Runtime process did not exit gracefully, killing process tree"
-        );
+      if (process.platform === "win32") {
+        // On Windows, child_process.kill("SIGTERM") only terminates the root wrapper (e.g. npm.cmd),
+        // leaving spawned Node/child processes orphaned with active locks on working directories.
+        // killProcessTree uses taskkill /PID <pid> /T /F to cleanly terminate the entire tree.
         try {
           await killProcessTree(pid);
         } catch (err) {
-          this.logger?.warn({ err, pid }, "Failed to kill process tree");
+          this.logger?.warn({ err, pid }, "Failed to kill process tree on Windows");
+        }
+      } else {
+        // 1. Try graceful SIGTERM on POSIX
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // Child might already be dead
+        }
+
+        // 2. Wait up to gracePeriodMs
+        const exitedGracefully = await new Promise<boolean>((resolve) => {
+          let timer: NodeJS.Timeout | null = null;
+          const onClose = () => {
+            if (timer) clearTimeout(timer);
+            resolve(true);
+          };
+          child.once("close", onClose);
+          timer = setTimeout(() => {
+            child.removeListener("close", onClose);
+            resolve(false);
+          }, gracePeriodMs);
+        });
+
+        // 3. Fall back to hard tree kill if still alive
+        if (!exitedGracefully) {
+          this.logger?.warn(
+            { runtimeId: record.id, pid },
+            "Runtime process did not exit gracefully, killing process tree"
+          );
+          try {
+            await killProcessTree(pid);
+          } catch (err) {
+            this.logger?.warn({ err, pid }, "Failed to kill process tree");
+          }
         }
       }
 
@@ -1123,6 +1137,8 @@ export class PersistentRuntimeManager {
       runtimeId: r.id,
       name: r.name,
       state: r.state,
+      processState: r.state,
+      listeningPorts: [],
       generation: r.generation,
       projectId: r.projectId,
       sessionId: r.sessionId,

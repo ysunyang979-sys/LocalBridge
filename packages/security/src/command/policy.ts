@@ -82,6 +82,7 @@ export class CommandPolicy {
       };
     }
 
+
     // 5. Dangerous / Security Boundary Check
     if (assessment.risk === "DANGEROUS") {
       return {
@@ -107,6 +108,18 @@ export class CommandPolicy {
         category,
         reason: `Command category '${category}' requires project accessMode 'read-write'.`,
         requiredAccessMode: "read-write",
+        requiresApproval: false,
+      };
+    }
+ 
+    // 6b. Project Execution Mode Check
+    if (projectExecutionMode === "disabled") {
+      return {
+        decision: "deny",
+        allowed: false,
+        decisionSource: "execution-mode",
+        category,
+        reason: "Command execution is disabled for this project.",
         requiresApproval: false,
       };
     }
@@ -268,17 +281,6 @@ export class CommandPolicy {
     }
 
     // 10. Legacy executionMode Check (Migration & Backwards Compatibility)
-    if (projectExecutionMode === "disabled") {
-      return {
-        decision: "deny",
-        allowed: false,
-        decisionSource: "command-policy",
-        category,
-        reason: "Command execution is disabled for this project.",
-        requiresApproval: false,
-      };
-    }
-
     if (projectExecutionMode === "safe-only") {
       if (category === "inspect" || (category === "test" && assessment.risk === "SAFE")) {
         return {

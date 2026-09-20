@@ -36,6 +36,7 @@ export interface CommandPolicyDecision {
     | "pause"
     | "token-scope"
     | "project-enabled"
+    | "execution-mode"
     | "access-mode"
     | "security-boundary"
     | "command-policy"

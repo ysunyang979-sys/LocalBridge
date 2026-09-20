@@ -474,6 +474,59 @@ export class ServerPersistentRuntimeManager {
     return res;
   }
 
+  /**
+   * Stop all active runtimes across all projects (e.g. on emergency stop or system shutdown).
+   * Executes without requiring human approval.
+   */
+  async stopAllRuntimes(reason: string = "Emergency stop"): Promise<{ stoppedCount: number; runtimeIds: string[] }> {
+    const activeRows = this.db
+      .prepare(
+        `SELECT id FROM persistent_runtimes WHERE state IN ('starting', 'running', 'stopping')`
+      )
+      .all() as Array<{ id: string }>;
+
+    let stoppedCount = 0;
+    const runtimeIds: string[] = [];
+
+    for (const row of activeRows) {
+      try {
+        await this.stopRuntime({ runtimeId: row.id, gracePeriodMs: 1000 });
+        stoppedCount++;
+        runtimeIds.push(row.id);
+      } catch (err) {
+        this.logger?.warn({ err, runtimeId: row.id, reason }, "Failed to stop runtime during stopAllRuntimes");
+      }
+    }
+
+    return { stoppedCount, runtimeIds };
+  }
+
+  /**
+   * Stop all active runtimes for a given project (e.g. when project is disabled or removed).
+   */
+  async stopProjectRuntimes(projectId: string, reason: string = "Project disabled or removed"): Promise<{ stoppedCount: number; runtimeIds: string[] }> {
+    const activeRows = this.db
+      .prepare(
+        `SELECT id FROM persistent_runtimes WHERE project_id = ? AND state IN ('starting', 'running', 'stopping')`
+      )
+      .all(projectId) as Array<{ id: string }>;
+
+    let stoppedCount = 0;
+    const runtimeIds: string[] = [];
+
+    for (const row of activeRows) {
+      try {
+        await this.stopRuntime({ runtimeId: row.id, gracePeriodMs: 1000 });
+        stoppedCount++;
+        runtimeIds.push(row.id);
+      } catch (err) {
+        this.logger?.warn({ err, runtimeId: row.id, projectId, reason }, "Failed to stop runtime during stopProjectRuntimes");
+      }
+    }
+
+    return { stoppedCount, runtimeIds };
+  }
+
   hasActiveRuntimesForWorktree(worktreeId: string): boolean {
     const row = this.db
       .prepare(
@@ -511,6 +564,8 @@ export class ServerPersistentRuntimeManager {
       runtimeId: r.id,
       name: r.name ?? undefined,
       state: r.state as RuntimeState,
+      processState: r.state as RuntimeState,
+      listeningPorts: [],
       generation: r.generation,
       projectId: r.project_id,
       sessionId: r.session_id ?? undefined,

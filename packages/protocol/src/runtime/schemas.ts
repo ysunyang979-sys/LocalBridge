@@ -42,6 +42,8 @@ export const RuntimeSummarySchema = z
     runtimeId: z.string(),
     name: z.string().optional(),
     state: RuntimeStateSchema,
+    processState: RuntimeStateSchema.optional(),
+    listeningPorts: z.array(z.number()).optional(),
     generation: z.number(),
     projectId: z.string(),
     sessionId: z.string().optional(),

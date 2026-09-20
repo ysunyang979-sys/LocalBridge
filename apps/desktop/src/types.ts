@@ -349,6 +349,8 @@ export interface PersistentRuntime {
   runtimeId: string;
   name?: string;
   state: RuntimeState;
+  processState?: RuntimeState;
+  listeningPorts?: number[];
   generation: number;
   projectId: string;
   sessionId?: string;

@@ -540,7 +540,7 @@ export class ManagedWorktreeService {
     if (removeResult.exitCode !== 0 && fs.existsSync(record.worktreePath)) {
       // If git worktree remove failed, check if directory can be cleaned up
       try {
-        fs.rmSync(record.worktreePath, { recursive: true, force: true });
+        fs.rmSync(record.worktreePath, { recursive: true, force: true, maxRetries: 10, retryDelay: 150 });
       } catch (err) {
         throw new LocalBridgeError(
           LocalBridgeErrorCode.WORKTREE_REMOVAL_FAILED,
