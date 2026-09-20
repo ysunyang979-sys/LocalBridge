@@ -515,7 +515,8 @@ export class ProjectRegistry extends EventEmitter {
         commandPolicy: policy.commandPolicy ?? project.trustPolicy?.commandPolicy ?? "ask",
         protectedFilesPolicy:
           policy.protectedFilesPolicy ?? project.trustPolicy?.protectedFilesPolicy ?? "always-ask",
-        customRules: policy.customRules ?? project.trustPolicy?.customRules,
+        customRules:
+          "customRules" in policy ? policy.customRules : project.trustPolicy?.customRules,
         updatedAt: Date.now(),
       };
 
@@ -543,7 +544,8 @@ export class ProjectRegistry extends EventEmitter {
       commandPolicy: policy.commandPolicy ?? project.trustPolicy?.commandPolicy ?? "ask",
       protectedFilesPolicy:
         policy.protectedFilesPolicy ?? project.trustPolicy?.protectedFilesPolicy ?? "always-ask",
-      customRules: policy.customRules ?? project.trustPolicy?.customRules,
+      customRules:
+        "customRules" in policy ? policy.customRules : project.trustPolicy?.customRules,
       updatedAt: Date.now(),
     };
 

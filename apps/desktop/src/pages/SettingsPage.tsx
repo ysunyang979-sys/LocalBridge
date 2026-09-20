@@ -157,7 +157,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       ...prev,
       trustLevel: level,
       filePolicy: level === "session-trusted" ? "allow" : "ask",
-      customRules: level === "custom" ? (prev.customRules || defaultCustomRules) : prev.customRules,
+      customRules:
+        level === "custom"
+          ? {
+              ...prev.customRules,
+              files: prev.customRules?.files || defaultCustomRules.files,
+            }
+          : prev.customRules,
     }));
   };
 
@@ -176,6 +182,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setPolicySavedMsg(null);
     setPolicyErrorMsg(null);
     try {
+      const hasFileCustom = trustPolicy.trustLevel === "custom";
+      const hasCommandCustom =
+        trustPolicy.commandPolicy === "controlled" &&
+        Boolean(trustPolicy.customRules?.commands);
+
+      let customRulesToSave: ProjectCustomRules | undefined = undefined;
+      if (hasFileCustom || hasCommandCustom) {
+        customRulesToSave = {};
+        if (hasFileCustom) {
+          customRulesToSave.files = {
+            ...defaultCustomRules.files,
+            ...trustPolicy.customRules?.files,
+          };
+        }
+        if (hasCommandCustom) {
+          customRulesToSave.commands = {
+            ...defaultCustomRules.commands,
+            ...trustPolicy.customRules?.commands,
+          };
+        }
+      }
+
       const payload: ProjectTrustPolicy = {
         trustLevel: trustPolicy.trustLevel,
         filePolicy:
@@ -185,10 +213,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
             : "ask",
         commandPolicy: trustPolicy.commandPolicy ?? "ask",
         protectedFilesPolicy: trustPolicy.protectedFilesPolicy ?? "always-ask",
-        customRules:
-          trustPolicy.trustLevel === "custom"
-            ? (trustPolicy.customRules ?? defaultCustomRules)
-            : undefined,
+        customRules: customRulesToSave,
       };
 
       await bridge.setProjectTrustPolicy(selectedProjectId, payload);
@@ -1199,6 +1224,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                                   customRules: {
                                     ...prev.customRules,
                                     commands: {
+                                      ...defaultCustomRules.commands,
                                       ...prev.customRules?.commands,
                                       [key]: val,
                                     },
@@ -1268,6 +1294,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                           setTrustPolicy((prev) => ({
                             ...prev,
                             commandPolicy: "controlled",
+                            customRules: prev.customRules
+                              ? { ...prev.customRules, commands: undefined }
+                              : undefined,
                           })),
                       },
                       {
@@ -1362,6 +1391,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                                     customRules: {
                                       ...prev.customRules,
                                       commands: {
+                                        ...defaultCustomRules.commands,
                                         ...prev.customRules?.commands,
                                         [key]: val,
                                       },

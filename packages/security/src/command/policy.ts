@@ -146,8 +146,27 @@ export class CommandPolicy {
       };
     }
 
-    // 8. Custom Rules Check
-    if (trustPolicy?.trustLevel === "custom" && trustPolicy.customRules?.commands) {
+    // 8. Project Command Policy: Deny
+    if (trustPolicy?.commandPolicy === "deny") {
+      return {
+        decision: "deny",
+        allowed: false,
+        decisionSource: "command-policy",
+        category,
+        policyLevel: trustPolicy.trustLevel,
+        reason: "Command execution is disabled for this project.",
+        requiresApproval: false,
+      };
+    }
+
+    // 9. Custom Command Rules Check (Independent Axis)
+    // Evaluates whenever custom command matrix is active:
+    // (trustPolicy.commandPolicy === "controlled" || trustPolicy.trustLevel === "custom")
+    // and customRules.commands is present.
+    if (
+      trustPolicy?.customRules?.commands &&
+      (trustPolicy.commandPolicy === "controlled" || trustPolicy.trustLevel === "custom")
+    ) {
       const customCmd = trustPolicy.customRules.commands;
       const rule =
         category === "inspect"
@@ -178,7 +197,7 @@ export class CommandPolicy {
           allowed: rule === "allow",
           decisionSource: "custom-rule",
           category,
-          policyLevel: "custom",
+          policyLevel: trustPolicy.trustLevel,
           reason:
             rule === "ask"
               ? `Command category '${category}' requires human approval per custom project policy.`
@@ -190,28 +209,60 @@ export class CommandPolicy {
       }
     }
 
-    // 9. Full Project Trust Check (Independent Axis)
+    // 10. Project Command Policy: Ask
+    if (trustPolicy?.commandPolicy === "ask") {
+      return {
+        decision: "ask",
+        allowed: false,
+        decisionSource: "command-policy",
+        category,
+        policyLevel: trustPolicy.trustLevel,
+        reason: "Command execution requires human approval per project policy.",
+        requiresApproval: true,
+      };
+    }
+
+    // 11. Project Command Policy: Allow
+    if (trustPolicy?.commandPolicy === "allow") {
+      return {
+        decision: "allow",
+        allowed: true,
+        decisionSource: "command-policy",
+        category,
+        policyLevel: trustPolicy.trustLevel,
+        requiresApproval: false,
+      };
+    }
+
+    // 12. Full Project Trust Check (Independent Axis)
     if (trustPolicy?.trustLevel === "full-project-trust") {
       const cmdPolicy = trustPolicy.commandPolicy ?? "ask";
-      if (cmdPolicy === "deny") {
+      if (cmdPolicy === "controlled") {
+        if (
+          category === "inspect" ||
+          category === "test" ||
+          category === "lint" ||
+          category === "typecheck" ||
+          category === "git-read" ||
+          category === "custom-safe"
+        ) {
+          return {
+            decision: "allow",
+            allowed: true,
+            decisionSource: "command-policy",
+            category,
+            policyLevel: "full-project-trust",
+            requiresApproval: false,
+          };
+        }
         return {
-          decision: "deny",
+          decision: "ask",
           allowed: false,
           decisionSource: "command-policy",
           category,
           policyLevel: "full-project-trust",
-          reason: "Command execution is disabled for this project.",
-          requiresApproval: false,
-        };
-      }
-      if (cmdPolicy === "controlled" || cmdPolicy === "allow") {
-        return {
-          decision: "allow",
-          allowed: true,
-          decisionSource: "command-policy",
-          category,
-          policyLevel: "full-project-trust",
-          requiresApproval: false,
+          reason: `Command category '${category}' requires human approval under controlled policy.`,
+          requiresApproval: true,
         };
       }
     }

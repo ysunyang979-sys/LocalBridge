@@ -559,8 +559,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         filePolicy: normalizedFilePolicy,
         commandPolicy: trustPolicy.commandPolicy ?? "ask",
         protectedFilesPolicy: trustPolicy.protectedFilesPolicy ?? "always-ask",
-        customRules:
-          trustPolicy.trustLevel === "custom" ? trustPolicy.customRules : undefined,
+        customRules: trustPolicy.customRules,
       }
     );
 
