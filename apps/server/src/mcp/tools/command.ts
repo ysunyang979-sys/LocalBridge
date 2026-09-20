@@ -1,7 +1,8 @@
 import {
-  CommandClassifyParamsSchema,
-  CommandRunParamsSchema,
+  CommandClassifyToolInputSchema,
+  CommandRunToolInputSchema,
   RunnerRpcMethods,
+  sanitizeCommandSpec,
 } from "@localbridge/protocol";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { McpContext } from "../context.js";
@@ -16,7 +17,7 @@ export function registerCommandTools(server: McpServer, context: McpContext): vo
     {
       description:
         "Perform pre-flight risk evaluation and permission checking on a structured CommandSpec before execution.",
-      inputSchema: toMcpSchema(CommandClassifyParamsSchema),
+      inputSchema: toMcpSchema(CommandClassifyToolInputSchema),
       annotations: TOOL_ANNOTATIONS.localbridge_command_classify,
     },
     async (args: any) => {
@@ -29,10 +30,11 @@ export function registerCommandTools(server: McpServer, context: McpContext): vo
         });
 
         const runnerId = context.resolveProjectRunner(projectId);
+        const sanitizedArgs = sanitizeCommandSpec(args);
         const result = await context.request(
           runnerId,
           RunnerRpcMethods.CommandClassify,
-          args
+          sanitizedArgs
         );
 
         context.logAudit("mcp_tool_completed", {
@@ -63,7 +65,7 @@ export function registerCommandTools(server: McpServer, context: McpContext): vo
     {
       description:
         "Execute an authorized, classified command (tool version, node script, python script, or package script) within project bounds.",
-      inputSchema: toMcpSchema(CommandRunParamsSchema),
+      inputSchema: toMcpSchema(CommandRunToolInputSchema),
       annotations: TOOL_ANNOTATIONS.localbridge_command_run,
     },
     async (args: any) => {
@@ -76,10 +78,11 @@ export function registerCommandTools(server: McpServer, context: McpContext): vo
         });
 
         const runnerId = context.resolveProjectRunner(projectId);
+        const sanitizedArgs = sanitizeCommandSpec(args);
         const result = await context.request(
           runnerId,
           RunnerRpcMethods.CommandRun,
-          args
+          sanitizedArgs
         );
 
         context.logAudit("mcp_tool_completed", {

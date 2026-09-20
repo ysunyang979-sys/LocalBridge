@@ -159,4 +159,86 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
       expect(tool.inputSchema.type).toBe("object");
     }
   });
+
+  it("verifies localbridge_command_run exposes explicit object schema with approvalId for ChatGPT compatibility", () => {
+    const cmdRunTool = tools.find((t: any) => t.name === "localbridge_command_run");
+    expect(cmdRunTool).toBeDefined();
+    expect(cmdRunTool.inputSchema.type).toBe("object");
+    expect(cmdRunTool.inputSchema.properties).toBeDefined();
+    expect(cmdRunTool.inputSchema.anyOf).toBeUndefined();
+
+    // Required fields
+    expect(cmdRunTool.inputSchema.required).toContain("projectId");
+    expect(cmdRunTool.inputSchema.required).toContain("kind");
+
+    // Explicit properties
+    const props = cmdRunTool.inputSchema.properties;
+    expect(props.projectId).toBeDefined();
+    expect(props.projectId.type).toBe("string");
+
+    expect(props.kind).toBeDefined();
+    expect(props.kind.type).toBe("string");
+    expect(props.kind.enum).toEqual([
+      "tool-version",
+      "node-script",
+      "python-script",
+      "package-script",
+    ]);
+
+    expect(props.tool).toBeDefined();
+    expect(props.path).toBeDefined();
+    expect(props.manager).toBeDefined();
+    expect(props.script).toBeDefined();
+    expect(props.args).toBeDefined();
+    expect(props.cwd).toBeDefined();
+    expect(props.timeoutMs).toBeDefined();
+
+    // approvalId must be present, type string, optional (NOT in required)
+    expect(props.approvalId).toBeDefined();
+    expect(props.approvalId.type).toBe("string");
+    expect(cmdRunTool.inputSchema.required).not.toContain("approvalId");
+  });
+
+  it("verifies localbridge_command_classify exposes explicit object schema with properties", () => {
+    const classifyTool = tools.find((t: any) => t.name === "localbridge_command_classify");
+    expect(classifyTool).toBeDefined();
+    expect(classifyTool.inputSchema.type).toBe("object");
+    expect(classifyTool.inputSchema.properties).toBeDefined();
+    expect(classifyTool.inputSchema.anyOf).toBeUndefined();
+
+    expect(classifyTool.inputSchema.required).toContain("projectId");
+    expect(classifyTool.inputSchema.required).toContain("kind");
+    expect(classifyTool.inputSchema.properties.projectId.type).toBe("string");
+    expect(classifyTool.inputSchema.properties.kind.enum).toBeDefined();
+  });
+
+  it("verifies localbridge_job_start exposes explicit object schema with approvalId and nested command properties", () => {
+    const jobStartTool = tools.find((t: any) => t.name === "localbridge_job_start");
+    expect(jobStartTool).toBeDefined();
+    expect(jobStartTool.inputSchema.type).toBe("object");
+    expect(jobStartTool.inputSchema.properties).toBeDefined();
+
+    const props = jobStartTool.inputSchema.properties;
+    expect(props.approvalId).toBeDefined();
+    expect(props.approvalId.type).toBe("string");
+    expect(jobStartTool.inputSchema.required).not.toContain("approvalId");
+
+    expect(props.command).toBeDefined();
+    expect(props.command.type).toBe("object");
+    expect(props.command.properties).toBeDefined();
+    expect(props.command.properties.projectId).toBeDefined();
+    expect(props.command.properties.kind).toBeDefined();
+  });
+
+  it("verifies localbridge_build_start and localbridge_test_start expose explicit approvalId", () => {
+    for (const toolName of ["localbridge_build_start", "localbridge_test_start"]) {
+      const tool = tools.find((t: any) => t.name === toolName);
+      expect(tool).toBeDefined();
+      expect(tool.inputSchema.type).toBe("object");
+      expect(tool.inputSchema.properties).toBeDefined();
+      expect(tool.inputSchema.properties.approvalId).toBeDefined();
+      expect(tool.inputSchema.properties.approvalId.type).toBe("string");
+      expect(tool.inputSchema.required).not.toContain("approvalId");
+    }
+  });
 });

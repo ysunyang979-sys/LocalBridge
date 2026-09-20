@@ -3,10 +3,12 @@ import {
   JobCancelParamsSchema,
   JobListParamsSchema,
   JobLogsParamsSchema,
-  JobStartParamsSchema,
+  JobStartToolInputSchema,
   JobStatusParamsSchema,
   RunnerRpcMethods,
   TestStartParamsSchema,
+  sanitizeCommandSpec,
+  type JobStartParams,
   type JobSummary,
 } from "@localbridge/protocol";
 import type { McpServer } from "@modelcontextprotocol/server";
@@ -22,12 +24,12 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
     {
       description:
         "Start a long-running background command execution job within an authorized project and receive an asynchronous jobId.",
-      inputSchema: toMcpSchema(JobStartParamsSchema),
+      inputSchema: toMcpSchema(JobStartToolInputSchema),
       annotations: TOOL_ANNOTATIONS.localbridge_job_start,
     },
     async (args: any) => {
       const startTime = Date.now();
-      const projectId = args.command.projectId;
+      const projectId = args.command?.projectId;
       try {
         context.logAudit("mcp_tool_started", {
           toolName: "localbridge_job_start",
@@ -35,10 +37,19 @@ export function registerJobTools(server: McpServer, context: McpContext): void {
         });
 
         const runnerId = context.resolveProjectRunner(projectId);
+        const sanitizedCommand = sanitizeCommandSpec(args.command);
+        delete (sanitizedCommand as any).approvalId;
+        const approvalId = args.approvalId || args.command?.approvalId;
+        const rpcPayload: JobStartParams = {
+          command: sanitizedCommand as any,
+          timeoutMs: args.timeoutMs,
+          approvalId: approvalId && approvalId.trim() !== "" ? approvalId : undefined,
+        };
+
         const result = await context.request(
           runnerId,
           RunnerRpcMethods.JobStart,
-          args
+          rpcPayload
         );
 
         // Record job -> runner mapping in memory

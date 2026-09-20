@@ -529,6 +529,7 @@ export const PackageScriptCommandSchema = z
   .strict();
 export type PackageScriptCommand = z.infer<typeof PackageScriptCommandSchema>;
 
+// CommandSpec Discriminated Union
 export const CommandSpecSchema = z.discriminatedUnion("kind", [
   ToolVersionCommandSchema,
   NodeScriptCommandSchema,
@@ -536,6 +537,114 @@ export const CommandSpecSchema = z.discriminatedUnion("kind", [
   PackageScriptCommandSchema,
 ]);
 export type CommandSpec = z.infer<typeof CommandSpecSchema>;
+
+/**
+ * Explicit object schemas for MCP Tools (e.g. ChatGPT / OpenAI Tool Calling).
+ * OpenAI and MCP clients require a flat `{ type: "object", properties: { ... } }`
+ * schema to discover tool parameters instead of generic `{ [key: string]: any }`.
+ */
+export const CommandSpecToolSchema = z.object({
+  projectId: z.string().describe("Target project identifier"),
+  kind: z
+    .enum(["tool-version", "node-script", "python-script", "package-script"])
+    .describe("Kind of command to execute"),
+  tool: z
+    .enum(["node", "npm", "pnpm", "python"])
+    .optional()
+    .describe("Tool name for tool-version inspection (node, npm, pnpm, python)"),
+  path: z
+    .string()
+    .optional()
+    .describe("Relative path to script within project (required for node-script/python-script)"),
+  manager: z
+    .enum(["npm", "pnpm"])
+    .optional()
+    .describe("Package manager for package-script (npm, pnpm)"),
+  script: z
+    .string()
+    .optional()
+    .describe("Package script name (e.g. build, test, lint)"),
+  args: z
+    .array(z.string())
+    .max(64)
+    .default([])
+    .describe("Optional command arguments"),
+  cwd: z
+    .string()
+    .default(".")
+    .describe("Working directory relative to project root"),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(300000)
+    .default(60000)
+    .describe("Command timeout in milliseconds"),
+});
+export type CommandSpecTool = z.infer<typeof CommandSpecToolSchema>;
+
+export const CommandClassifyToolInputSchema = CommandSpecToolSchema;
+export type CommandClassifyToolInput = z.infer<typeof CommandClassifyToolInputSchema>;
+
+export const CommandRunToolInputSchema = CommandSpecToolSchema.extend({
+  approvalId: z
+    .string()
+    .optional()
+    .describe("Optional approval identifier used to retry an approved command request."),
+});
+export type CommandRunToolInput = z.infer<typeof CommandRunToolInputSchema>;
+
+export const JobStartToolInputSchema = z.object({
+  command: CommandSpecToolSchema.describe("Command specification to run in background"),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(3600000)
+    .default(600000)
+    .describe("Job timeout in milliseconds"),
+  approvalId: z
+    .string()
+    .optional()
+    .describe("Optional approval identifier used to retry an approved job request."),
+});
+export type JobStartToolInput = z.infer<typeof JobStartToolInputSchema>;
+
+/**
+ * Sanitize raw command arguments received from an AI/MCP client to strictly conform
+ * to the corresponding CommandSpec variant without unexpected undefined/null properties.
+ */
+export function sanitizeCommandSpec(raw: any): any {
+  if (!raw || typeof raw !== "object") return raw;
+  const kind = raw.kind;
+  const base: Record<string, any> = {
+    projectId: raw.projectId,
+    kind: raw.kind,
+  };
+  if (raw.approvalId !== undefined && raw.approvalId !== null && raw.approvalId !== "") {
+    base.approvalId = raw.approvalId;
+  }
+  if (kind === "tool-version") {
+    if (raw.tool !== undefined && raw.tool !== null) base.tool = raw.tool;
+    return base;
+  }
+  if (kind === "node-script" || kind === "python-script") {
+    if (raw.path !== undefined && raw.path !== null) base.path = raw.path;
+    if (raw.args !== undefined && raw.args !== null) base.args = raw.args;
+    if (raw.cwd !== undefined && raw.cwd !== null) base.cwd = raw.cwd;
+    if (raw.timeoutMs !== undefined && raw.timeoutMs !== null) base.timeoutMs = raw.timeoutMs;
+    return base;
+  }
+  if (kind === "package-script") {
+    if (raw.manager !== undefined && raw.manager !== null) base.manager = raw.manager;
+    if (raw.script !== undefined && raw.script !== null) base.script = raw.script;
+    if (raw.args !== undefined && raw.args !== null) base.args = raw.args;
+    if (raw.cwd !== undefined && raw.cwd !== null) base.cwd = raw.cwd;
+    if (raw.timeoutMs !== undefined && raw.timeoutMs !== null) base.timeoutMs = raw.timeoutMs;
+    return base;
+  }
+  return raw;
+}
 
 // 18. command.classify
 export const CommandClassifyParamsSchema = CommandSpecSchema;
