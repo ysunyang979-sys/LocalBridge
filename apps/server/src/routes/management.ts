@@ -709,10 +709,15 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
 
   fastify.post<{
     Params: { id: string };
-    Body: { action: "approve" | "deny"; resolvedBy?: string; runnerId?: string };
+    Body: {
+      action: "approve" | "deny";
+      resolvedBy?: string;
+      runnerId?: string;
+      decisionSource?: string;
+    };
   }>("/approvals/:id/resolve", async (request, reply) => {
     const { id } = request.params;
-    const { action, resolvedBy, runnerId } = request.body || {};
+    const { action, resolvedBy, runnerId, decisionSource } = request.body || {};
 
     if (!action || (action !== "approve" && action !== "deny")) {
       return reply.status(400).send({
@@ -730,6 +735,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         approvalId: id,
         action,
         resolvedBy: resolvedBy || opDisplayName || "desktop-user",
+        decisionSource: decisionSource || "desktop",
       }
     );
 
@@ -1028,6 +1034,28 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       return reply
         .status(200)
         .send({ displayName: projectService.getOperatorDisplayName() });
+    }
+  );
+
+  fastify.get("/management/settings/approval-routing", async (_request, reply) => {
+    const mode = projectService.getApprovalRoutingMode();
+    return reply.status(200).send({ mode });
+  });
+
+  fastify.post<{ Body: { mode: "chat" | "hybrid" | "desktop" } }>(
+    "/management/settings/approval-routing",
+    async (request, reply) => {
+      const { mode } = request.body || {};
+      if (mode !== "chat" && mode !== "hybrid" && mode !== "desktop") {
+        return reply.status(400).send({
+          code: LocalBridgeErrorCode.INVALID_REQUEST,
+          message: "Field 'mode' must be 'chat', 'hybrid', or 'desktop'",
+        });
+      }
+      projectService.setApprovalRoutingMode(mode);
+      return reply
+        .status(200)
+        .send({ mode: projectService.getApprovalRoutingMode() });
     }
   );
 };

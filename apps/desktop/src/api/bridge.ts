@@ -11,6 +11,7 @@ import type {
   AuditEvent,
   DesktopHealthStatus,
   ProjectTrustPolicy,
+  ApprovalRoutingMode,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -274,9 +275,13 @@ class ApiBridge {
         resolvedBy: resolvedBy ?? null,
       });
     }
-      return this.fetchJson<Approval>(`/api/approvals/${approvalId}/resolve`, {
+    return this.fetchJson<Approval>(`/api/approvals/${approvalId}/resolve`, {
       method: "POST",
-      body: JSON.stringify({ action, resolvedBy: resolvedBy || "desktop-user" }),
+      body: JSON.stringify({
+        action,
+        resolvedBy: resolvedBy || "desktop-user",
+        decisionSource: "desktop",
+      }),
     });
   }
 
@@ -425,6 +430,32 @@ class ApiBridge {
       {
         method: "POST",
         body: JSON.stringify({ displayName }),
+      }
+    );
+  }
+
+  async getApprovalRoutingMode(): Promise<{ mode: ApprovalRoutingMode }> {
+    if (isTauri()) {
+      return invoke<{ mode: ApprovalRoutingMode }>("desktop_get_approval_routing_mode");
+    }
+    return this.fetchJson<{ mode: ApprovalRoutingMode }>(
+      "/api/management/settings/approval-routing"
+    );
+  }
+
+  async setApprovalRoutingMode(
+    mode: ApprovalRoutingMode
+  ): Promise<{ mode: ApprovalRoutingMode }> {
+    if (isTauri()) {
+      return invoke<{ mode: ApprovalRoutingMode }>("desktop_set_approval_routing_mode", {
+        mode,
+      });
+    }
+    return this.fetchJson<{ mode: ApprovalRoutingMode }>(
+      "/api/management/settings/approval-routing",
+      {
+        method: "POST",
+        body: JSON.stringify({ mode }),
       }
     );
   }

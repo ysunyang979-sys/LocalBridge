@@ -248,5 +248,21 @@ export class ServerProjectService {
     const trimmed = name.trim() || "本机用户";
     this.stmtSetSystemSetting.run("operator_display_name", trimmed, Date.now());
   }
+
+  getApprovalRoutingMode(): "chat" | "hybrid" | "desktop" {
+    if (!this.db.open) return "chat";
+    const row = this.stmtGetSystemSetting.get("approval_routing_mode") as
+      | SystemSettingRow
+      | undefined;
+    if (row?.value === "hybrid" || row?.value === "desktop") {
+      return row.value;
+    }
+    return "chat";
+  }
+
+  setApprovalRoutingMode(mode: "chat" | "hybrid" | "desktop"): void {
+    if (!this.db.open) return;
+    this.stmtSetSystemSetting.run("approval_routing_mode", mode, Date.now());
+  }
 }
 

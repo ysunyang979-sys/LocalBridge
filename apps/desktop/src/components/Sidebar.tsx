@@ -2,7 +2,6 @@ import React from "react";
 import {
   LayoutDashboard,
   FolderLock,
-  ShieldAlert,
   Terminal,
   Activity,
   KeyRound,
@@ -55,13 +54,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: "overview" as NavPage, label: t.nav.overview, icon: LayoutDashboard },
     { id: "projects" as NavPage, label: t.nav.projects, icon: FolderLock },
     {
-      id: "approvals" as NavPage,
-      label: t.nav.approvals,
-      icon: ShieldAlert,
-      badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
-      badgeColor: "bg-red-500",
-    },
-    {
       id: "jobs" as NavPage,
       label: t.nav.jobs,
       icon: Terminal,
@@ -70,7 +62,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { id: "connections" as NavPage, label: t.nav.connections, icon: Activity },
     { id: "tokens" as NavPage, label: t.nav.tokens, icon: KeyRound },
-    { id: "activity" as NavPage, label: t.nav.activity, icon: FileText },
+    {
+      id: "activity" as NavPage,
+      label: t.nav.activity,
+      icon: FileText,
+      badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
+      badgeColor: "bg-amber-500",
+    },
     { id: "settings" as NavPage, label: t.nav.settings, icon: Settings },
   ];
 

@@ -26,6 +26,8 @@ export interface Project {
   updatedAt?: number;
 }
 
+export type ApprovalRoutingMode = "chat" | "hybrid" | "desktop";
+
 export interface Approval {
   id: string;
   projectId: string;
@@ -35,9 +37,10 @@ export interface Approval {
   payloadHash: string;
   createdAt: number;
   expiresAt: number;
-  status: "pending" | "approved" | "denied" | "expired";
+  status: "pending" | "approved" | "denied" | "expired" | "consumed";
   resolvedAt?: number | null;
   resolvedBy?: string | null;
+  decisionSource?: string | null;
 }
 
 export interface Job {

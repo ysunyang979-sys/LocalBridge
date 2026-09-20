@@ -1168,6 +1168,7 @@ export const ApprovalRequestSchema = z
     status: ApprovalStatusSchema,
     resolvedAt: z.number().int().nullable().optional(),
     resolvedBy: z.string().nullable().optional(),
+    decisionSource: z.string().nullable().optional(),
   })
   .strict();
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
@@ -1181,6 +1182,7 @@ export const ApprovalCreateParamsSchema = z
     summary: z.string(),
     payloadHash: z.string(),
     timeoutMs: z.number().int().min(1000).max(3600000).default(300000),
+    decisionSource: z.string().optional(),
   })
   .strict();
 export type ApprovalCreateParams = z.infer<typeof ApprovalCreateParamsSchema>;
@@ -1194,6 +1196,7 @@ export const ApprovalResolveParamsSchema = z
     approvalId: z.string(),
     action: z.enum(["approve", "deny"]),
     resolvedBy: z.string().default("local-user"),
+    decisionSource: z.string().optional(),
   })
   .strict();
 export type ApprovalResolveParams = z.infer<typeof ApprovalResolveParamsSchema>;

@@ -28,6 +28,7 @@ interface OverviewPageProps {
   onOpenCreateTokenModal: () => void;
   onOpenEmergencyStopModal: () => void;
   onSelectApproval: (approval: Approval) => void;
+  onQuickResolveApproval?: (approvalId: string, action: "approve" | "deny") => Promise<void>;
 }
 
 export const OverviewPage: React.FC<OverviewPageProps> = ({
@@ -42,6 +43,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
   onOpenCreateTokenModal,
   onOpenEmergencyStopModal,
   onSelectApproval,
+  onQuickResolveApproval,
 }) => {
   const { t } = useTranslation();
   const pendingApprovals = approvals.filter((a) => a.status === "pending");
@@ -56,18 +58,18 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
             <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0" />
             <div>
               <div className="text-sm font-semibold text-amber-500">
-                {pendingApprovals.length} {t.overview.pendingAlertTitle}
+                {pendingApprovals.length} {t.overview.pendingFallbackTitle}
               </div>
               <div className="text-xs text-amber-600/80 dark:text-amber-200/70">
-                {t.overview.pendingAlertDesc}
+                {t.overview.pendingFallbackDesc}
               </div>
             </div>
           </div>
           <button
-            onClick={() => onNavigate("approvals")}
+            onClick={() => onNavigate("activity")}
             className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold rounded-lg text-xs transition shadow-sm"
           >
-            {t.overview.reviewRequests}
+            {t.overview.viewInActivity}
           </button>
         </div>
       )}
@@ -209,7 +211,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
 
         {/* Card 4: Approvals */}
         <div
-          onClick={() => onNavigate("approvals")}
+          onClick={() => onNavigate("activity")}
           className="p-5 bg-theme-card border border-theme-card hover:border-indigo-500/50 rounded-xl space-y-3 cursor-pointer transition shadow-sm"
         >
           <div className="flex items-center justify-between">
@@ -266,10 +268,10 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-theme-primary">{t.overview.recentApprovals}</h3>
             <button
-              onClick={() => onNavigate("approvals")}
+              onClick={() => onNavigate("activity")}
               className="text-xs text-indigo-500 hover:text-indigo-400 font-medium flex items-center gap-1 transition"
             >
-              <span>{t.common.details}</span>
+              <span>{t.overview.viewInActivity}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -285,9 +287,9 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                 <div
                   key={app.id}
                   onClick={() => onSelectApproval(app)}
-                  className="p-3 bg-theme-card-muted border border-theme-subtle hover:border-indigo-500/40 rounded-lg cursor-pointer transition flex items-center justify-between"
+                  className="p-3 bg-theme-card-muted border border-theme-subtle hover:border-indigo-500/40 rounded-lg cursor-pointer transition flex items-center justify-between gap-3"
                 >
-                  <div className="space-y-1">
+                  <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span
                         className={`badge ${
@@ -296,13 +298,43 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                       >
                         {app.risk}
                       </span>
-                      <span className="text-xs font-semibold text-theme-primary">
+                      <span className="text-xs font-semibold text-theme-primary truncate">
                         {app.operation}
                       </span>
                     </div>
                     <p className="text-xs text-theme-muted line-clamp-1">{app.summary}</p>
                   </div>
-                  <div className="text-xs text-indigo-500 font-medium">{t.approvals.approveBtn}</div>
+
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {onQuickResolveApproval ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onQuickResolveApproval(app.id, "approve");
+                          }}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-semibold shadow-sm transition"
+                        >
+                          {t.overview.quickApproveBtn}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onQuickResolveApproval(app.id, "deny");
+                          }}
+                          className="px-2.5 py-1 bg-red-600/15 hover:bg-red-600/25 text-red-500 border border-red-500/30 rounded text-[11px] font-semibold transition"
+                        >
+                          {t.overview.quickDenyBtn}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-xs text-indigo-500 font-medium">
+                        {t.common.details}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

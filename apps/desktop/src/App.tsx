@@ -4,7 +4,6 @@ import { Sidebar, type NavPage } from "./components/Sidebar.js";
 import { Header } from "./components/Header.js";
 import { OverviewPage } from "./pages/OverviewPage.js";
 import { ProjectsPage } from "./pages/ProjectsPage.js";
-import { ApprovalsPage } from "./pages/ApprovalsPage.js";
 import { JobsPage } from "./pages/JobsPage.js";
 import { ConnectionsPage } from "./pages/ConnectionsPage.js";
 import { TokensPage } from "./pages/TokensPage.js";
@@ -176,8 +175,8 @@ export const App: React.FC = () => {
       subtitle: t.projects.subtitle,
     },
     approvals: {
-      title: t.approvals.title,
-      subtitle: t.approvals.subtitle,
+      title: t.activity.title,
+      subtitle: t.activity.subtitle,
     },
     jobs: {
       title: t.jobs.title,
@@ -271,6 +270,10 @@ export const App: React.FC = () => {
               onOpenCreateTokenModal={() => setIsCreateTokenModalOpen(true)}
               onOpenEmergencyStopModal={() => setIsEmergencyStopModalOpen(true)}
               onSelectApproval={setSelectedApproval}
+              onQuickResolveApproval={async (id, action) => {
+                await bridge.resolveApproval(id, action);
+                await loadData();
+              }}
             />
           )}
 
@@ -278,14 +281,6 @@ export const App: React.FC = () => {
             <ProjectsPage
               projects={projects}
               onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
-              onRefresh={loadData}
-            />
-          )}
-
-          {currentPage === "approvals" && (
-            <ApprovalsPage
-              approvals={approvals}
-              onSelectApproval={setSelectedApproval}
               onRefresh={loadData}
             />
           )}
@@ -310,8 +305,17 @@ export const App: React.FC = () => {
             />
           )}
 
-          {currentPage === "activity" && (
-            <ActivityPage events={auditEvents} onRefresh={loadData} />
+          {(currentPage === "activity" || (currentPage as string) === "approvals") && (
+            <ActivityPage
+              events={auditEvents}
+              approvals={approvals}
+              onRefresh={loadData}
+              initialFilter={(currentPage as string) === "approvals" ? "approvals" : "all"}
+              onResolveApproval={async (id, action) => {
+                await bridge.resolveApproval(id, action);
+                await loadData();
+              }}
+            />
           )}
 
           {currentPage === "settings" && (

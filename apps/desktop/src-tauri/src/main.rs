@@ -706,6 +706,22 @@ fn desktop_set_operator_name(
     desktop_management_call(state, "POST".into(), "/api/management/settings/operator".into(), Some(payload))
 }
 
+#[tauri::command]
+fn desktop_get_approval_routing_mode(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/management/settings/approval-routing".into(), None)
+}
+
+#[tauri::command]
+fn desktop_set_approval_routing_mode(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    mode: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "mode": mode });
+    desktop_management_call(state, "POST".into(), "/api/management/settings/approval-routing".into(), Some(payload))
+}
+
 
 #[tauri::command]
 fn desktop_list_jobs(
@@ -1437,7 +1453,9 @@ fn main() {
             desktop_reset_trust_defaults,
             desktop_clear_session_trusts,
             desktop_get_operator_name,
-            desktop_set_operator_name
+            desktop_set_operator_name,
+            desktop_get_approval_routing_mode,
+            desktop_set_approval_routing_mode
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;

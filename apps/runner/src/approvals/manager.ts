@@ -10,12 +10,40 @@ import {
   type ApprovalBulkResolveResult,
 } from "@localbridge/protocol";
 import type { Logger } from "@localbridge/shared";
+import {
+  type ApprovalProvider,
+  type ApprovalRoutingMode,
+  ChatApprovalProvider,
+  DesktopApprovalProvider,
+  HybridApprovalProvider,
+} from "./providers.js";
 
 export class ApprovalManager {
   private readonly approvals = new Map<string, ApprovalRequest>();
   private readonly consumedIds = new Set<string>();
+  private routingMode: ApprovalRoutingMode = "chat";
+  private readonly providers = new Map<ApprovalRoutingMode, ApprovalProvider>();
 
-  constructor(private readonly logger?: Logger) {}
+  constructor(private readonly logger?: Logger, defaultMode: ApprovalRoutingMode = "chat") {
+    this.providers.set("chat", new ChatApprovalProvider());
+    this.providers.set("desktop", new DesktopApprovalProvider());
+    this.providers.set("hybrid", new HybridApprovalProvider());
+    this.routingMode = defaultMode;
+  }
+
+  getRoutingMode(): ApprovalRoutingMode {
+    return this.routingMode;
+  }
+
+  setRoutingMode(mode: ApprovalRoutingMode): void {
+    this.routingMode = mode;
+    this.logger?.info({ mode }, "Approval routing mode updated");
+  }
+
+  getProvider(mode?: ApprovalRoutingMode): ApprovalProvider {
+    const targetMode = mode ?? this.routingMode;
+    return this.providers.get(targetMode) ?? this.providers.get("chat")!;
+  }
 
   /**
    * Helper to ensure expired pending requests are updated to "expired".
@@ -40,6 +68,8 @@ export class ApprovalManager {
     const now = Date.now();
     const timeoutMs = params.timeoutMs ?? 300000;
     const expiresAt = now + timeoutMs;
+    const provider = this.getProvider();
+    const decisionSource = params.decisionSource ?? provider.name;
 
     const request: ApprovalRequest = {
       id,
@@ -53,6 +83,7 @@ export class ApprovalManager {
       status: "pending",
       resolvedAt: null,
       resolvedBy: null,
+      decisionSource,
     };
 
     this.approvals.set(id, request);
@@ -106,12 +137,18 @@ export class ApprovalManager {
     req.status = params.action === "approve" ? "approved" : "denied";
     req.resolvedAt = Date.now();
     req.resolvedBy = params.resolvedBy || "local-user";
+    if (params.decisionSource) {
+      req.decisionSource = params.decisionSource;
+    } else if (!req.decisionSource) {
+      req.decisionSource = "desktop";
+    }
 
     this.logger?.info(
       {
         approvalId: req.id,
         status: req.status,
         resolvedBy: req.resolvedBy,
+        decisionSource: req.decisionSource,
       },
       `Approval request ${req.status}`
     );

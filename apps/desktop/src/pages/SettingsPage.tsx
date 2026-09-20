@@ -23,6 +23,7 @@ import {
   Sliders,
   Zap,
   X,
+  MessageSquare,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -34,6 +35,7 @@ import type {
   FileActionPolicy,
   ProtectedFilesPolicy,
   ProjectCustomRules,
+  ApprovalRoutingMode,
 } from "../types.js";
 
 interface SettingsPageProps {
@@ -116,6 +118,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   const [policySavedMsg, setPolicySavedMsg] = useState<string | null>(null);
   const [policyErrorMsg, setPolicyErrorMsg] = useState<string | null>(null);
 
+  // Approval Routing Mode State
+  const [approvalRoutingMode, setApprovalRoutingMode] = useState<ApprovalRoutingMode>("chat");
+  const [routingModeBusy, setRoutingModeBusy] = useState(false);
+  const [routingModeSavedMsg, setRoutingModeSavedMsg] = useState<string | null>(null);
+
   useEffect(() => {
     bridge.listProjects().then((res) => {
       setProjects(res.projects);
@@ -127,6 +134,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     bridge.getOperatorDisplayName().then((res) => {
       if (res.displayName) {
         setOperatorDisplayName(res.displayName);
+      }
+    }).catch(() => {});
+
+    bridge.getApprovalRoutingMode().then((res) => {
+      if (res.mode) {
+        setApprovalRoutingMode(res.mode);
       }
     }).catch(() => {});
   }, []);
@@ -155,6 +168,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       setTimeout(() => setOperatorSaved(false), 2000);
     } catch (err: any) {
       alert(err.message || String(err));
+    }
+  };
+
+  const handleSaveApprovalRoutingMode = async (mode: ApprovalRoutingMode) => {
+    setRoutingModeBusy(true);
+    setRoutingModeSavedMsg(null);
+    try {
+      await bridge.setApprovalRoutingMode(mode);
+      setApprovalRoutingMode(mode);
+      setRoutingModeSavedMsg(t.settings.approvalRoutingSaved);
+      setTimeout(() => setRoutingModeSavedMsg(null), 3000);
+      onRefresh();
+    } catch (err: any) {
+      alert(err?.message || String(err));
+    } finally {
+      setRoutingModeBusy(false);
     }
   };
 
@@ -968,6 +997,80 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               <p className="text-[11px] text-theme-muted mt-1">{t.trust.operatorDisplayNameHelp}</p>
             </div>
           </form>
+
+          {/* Approval Routing Mode */}
+          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+                <MessageSquare className="w-4 h-4 text-indigo-500" />
+                <span>{t.settings.approvalRoutingGroup}</span>
+              </div>
+              {routingModeSavedMsg && (
+                <span className="text-xs text-emerald-500 font-medium flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {routingModeSavedMsg}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-theme-muted">{t.settings.approvalRoutingDesc}</p>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              {[
+                {
+                  mode: "chat" as const,
+                  label: t.settings.modeChat,
+                  desc: t.settings.modeChatDesc,
+                  recommended: true,
+                },
+                {
+                  mode: "hybrid" as const,
+                  label: t.settings.modeHybrid,
+                  desc: t.settings.modeHybridDesc,
+                  recommended: false,
+                },
+                {
+                  mode: "desktop" as const,
+                  label: t.settings.modeDesktop,
+                  desc: t.settings.modeDesktopDesc,
+                  recommended: false,
+                },
+              ].map((item) => {
+                const active = approvalRoutingMode === item.mode;
+                return (
+                  <div
+                    key={item.mode}
+                    onClick={() => !routingModeBusy && handleSaveApprovalRoutingMode(item.mode)}
+                    className={`p-3 rounded-lg border cursor-pointer transition flex items-start gap-3 ${
+                      active
+                        ? "bg-indigo-500/10 border-indigo-500 shadow-sm"
+                        : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                    }`}
+                  >
+                    <div className="mt-0.5">
+                      <div
+                        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                          active
+                            ? "border-indigo-500 bg-indigo-500"
+                            : "border-theme-muted"
+                        }`}
+                      >
+                        {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-xs text-theme-primary flex items-center gap-1.5">
+                        <span>{item.label}</span>
+                        {item.recommended && (
+                          <span className="badge badge-green text-[10px]">Default</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-theme-muted mt-0.5">{item.desc}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Trust & Approval Policy */}
           <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-5 shadow-sm">

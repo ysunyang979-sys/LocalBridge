@@ -24,7 +24,7 @@ export function registerApprovalTools(server: McpServer, context: McpContext): v
     "localbridge_approval_status",
     {
       description:
-        "Check the real-time status of a human approval request (returns 'pending', 'approved', 'denied', 'expired', or 'consumed'). AI cannot approve requests; human must resolve via LocalBridge Desktop.",
+        "Check the real-time status of an approval request (returns 'pending', 'approved', 'denied', 'expired', or 'consumed'). Resolvable via chat or Nexus Desktop fallback.",
       inputSchema: toMcpSchema(ApprovalStatusParamsSchema),
       annotations: TOOL_ANNOTATIONS.localbridge_approval_status,
     },
@@ -88,6 +88,7 @@ export function registerApprovalTools(server: McpServer, context: McpContext): v
           status: approvalResult.status,
           risk: approvalResult.risk,
           summary: approvalResult.summary,
+          decisionSource: approvalResult.decisionSource,
           createdAt: approvalResult.createdAt,
           expiresAt: approvalResult.expiresAt,
           resolvedAt: approvalResult.resolvedAt,
