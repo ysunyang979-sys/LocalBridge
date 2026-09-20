@@ -1061,17 +1061,30 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     return reply.status(200).send({ mode });
   });
 
-  fastify.post<{ Body: { mode: "chat" | "hybrid" | "desktop" } }>(
+  fastify.post<{ Body: { mode: "chat" | "auto-trusted" | "desktop" | "hybrid" } }>(
     "/management/settings/approval-routing",
     async (request, reply) => {
       const { mode } = request.body || {};
-      if (mode !== "chat" && mode !== "hybrid" && mode !== "desktop") {
+      if (mode !== "chat" && mode !== "auto-trusted" && mode !== "desktop" && mode !== "hybrid") {
         return reply.status(400).send({
           code: LocalBridgeErrorCode.INVALID_REQUEST,
-          message: "Field 'mode' must be 'chat', 'hybrid', or 'desktop'",
+          message: "Field 'mode' must be 'chat', 'auto-trusted', 'desktop', or 'hybrid'",
         });
       }
       projectService.setApprovalRoutingMode(mode);
+
+      // Broadcast mode change to all connected runners
+      for (const runner of runnerRegistry.list()) {
+        try {
+          await rpcService.request(runner.id, RunnerRpcMethods.ApprovalSetMode, { mode });
+        } catch (err) {
+          fastify.log.warn(
+            { runnerId: runner.id, err },
+            "Failed to notify runner of approval mode update"
+          );
+        }
+      }
+
       return reply
         .status(200)
         .send({ mode: projectService.getApprovalRoutingMode() });

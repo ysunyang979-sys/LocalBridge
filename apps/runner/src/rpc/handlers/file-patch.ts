@@ -76,35 +76,17 @@ export function createFilePatchHandler(
         );
       }
 
-      if (!params.approvalId) {
-        const approval = approvalManager.create({
-          projectId: params.projectId,
-          operation: "file.patch",
-          risk: "CAUTION",
-          summary: `Patch file "${params.path}" in project "${params.projectId}"`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for patching "${params.path}". Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "file.patch",
-            projectId: params.projectId,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
-      }
-
-      approvalManager.verifyAndConsume(
-        params.approvalId,
-        params.projectId,
-        "file.patch",
-        pHash
-      );
+      approvalManager.handleOperationApproval({
+        projectId: params.projectId,
+        operation: "file.patch",
+        risk: "CAUTION",
+        summary: `Patch file "${params.path}" in project "${params.projectId}"`,
+        payloadHash: pHash,
+        approvalId: params.approvalId,
+        timeoutMs: 300000,
+        decisionSource: evalResult.decisionSource,
+        isProtectedFile: evalResult.decisionSource === "protected-file",
+      });
     }
 
     return fsService.patchFile(payload);

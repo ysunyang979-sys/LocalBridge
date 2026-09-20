@@ -36,11 +36,11 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   localbridge_git_branch_create: { readOnlyHint: false, idempotentHint: false },
   localbridge_git_branch_switch: { readOnlyHint: false, idempotentHint: false },
   localbridge_git_commit: { readOnlyHint: false, idempotentHint: false },
-  localbridge_command_run: { readOnlyHint: false },
-  localbridge_job_start: { readOnlyHint: false },
+  localbridge_command_run: { readOnlyHint: false, openWorldHint: true },
+  localbridge_job_start: { readOnlyHint: false, openWorldHint: true },
   localbridge_job_cancel: { readOnlyHint: false, destructiveHint: true },
-  localbridge_build_start: { readOnlyHint: false },
-  localbridge_test_start: { readOnlyHint: false },
+  localbridge_build_start: { readOnlyHint: false, openWorldHint: true },
+  localbridge_test_start: { readOnlyHint: false, openWorldHint: true },
 
   // Workflow Session tools
   localbridge_session_list: { readOnlyHint: true },

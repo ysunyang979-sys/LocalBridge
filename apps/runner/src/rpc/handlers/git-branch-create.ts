@@ -62,35 +62,17 @@ export function createGitBranchCreateHandler(
     const pHash = canonicalPayloadHash(payload);
 
     if (evalResult.decision === "ask") {
-      if (!params.approvalId) {
-        const approval = approvalManager.create({
-          projectId: params.projectId,
-          operation: "git.branchCreate",
-          risk: "CAUTION",
-          summary: `Create branch "${branchName}"${params.startPoint ? ` at "${params.startPoint}"` : ""} in project "${params.projectId}"`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for creating branch "${branchName}". Please review and approve in Nexus Desktop, and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "git.branchCreate",
-            projectId: params.projectId,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
-      }
-
-      approvalManager.verifyAndConsume(
-        params.approvalId,
-        params.projectId,
-        "git.branchCreate",
-        pHash
-      );
+      approvalManager.handleOperationApproval({
+        projectId: params.projectId,
+        operation: "git.branchCreate",
+        risk: "CAUTION",
+        summary: `Create branch "${branchName}"${params.startPoint ? ` at "${params.startPoint}"` : ""} in project "${params.projectId}"`,
+        payloadHash: pHash,
+        approvalId: params.approvalId,
+        timeoutMs: 300000,
+        decisionSource: evalResult.decisionSource,
+        isProtectedFile: evalResult.decisionSource === "protected-file",
+      });
     }
 
     return gitService.branchCreate({

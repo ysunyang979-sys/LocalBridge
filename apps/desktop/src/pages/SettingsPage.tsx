@@ -1023,9 +1023,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   recommended: true,
                 },
                 {
-                  mode: "hybrid" as const,
-                  label: t.settings.modeHybrid,
-                  desc: t.settings.modeHybridDesc,
+                  mode: "auto-trusted" as const,
+                  label: t.settings.modeAutoTrusted,
+                  desc: t.settings.modeAutoTrustedDesc,
                   recommended: false,
                 },
                 {

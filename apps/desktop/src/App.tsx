@@ -24,6 +24,7 @@ import type {
   RunnerInfo,
   Token,
   AuditEvent,
+  ApprovalRoutingMode,
 } from "./types.js";
 import { applyServerPollResult } from "./polling-state.js";
 
@@ -53,6 +54,7 @@ export const App: React.FC = () => {
   const [isCreateTokenModalOpen, setIsCreateTokenModalOpen] = useState(false);
   const [isEmergencyStopModalOpen, setIsEmergencyStopModalOpen] = useState(false);
   const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
+  const [approvalRoutingMode, setApprovalRoutingMode] = useState<ApprovalRoutingMode>("chat");
 
   // Fetch all state
   const loadData = useCallback(async () => {
@@ -70,6 +72,7 @@ export const App: React.FC = () => {
         healthRes,
         tunnelRes,
         sessionsRes,
+        routingRes,
       ] = await Promise.allSettled([
         bridge.getStatus(),
         bridge.getMcpStatus(),
@@ -82,6 +85,7 @@ export const App: React.FC = () => {
         bridge.getDesktopHealth(),
         bridge.getTunnelStatus(),
         bridge.listSessions({ state: "active" }),
+        bridge.getApprovalRoutingMode(),
       ]);
 
       if (generation !== refreshGeneration.current) return;
@@ -124,6 +128,9 @@ export const App: React.FC = () => {
       else setTunnelStatus(null);
       if (sessionsRes.status === "fulfilled") setActiveSessionsCount(sessionsRes.value.total || 0);
       else setActiveSessionsCount(0);
+      if (routingRes.status === "fulfilled" && routingRes.value?.mode) {
+        setApprovalRoutingMode(routingRes.value.mode);
+      }
     } catch {
       if (generation === refreshGeneration.current) {
         setServerStatus(null);
@@ -163,6 +170,17 @@ export const App: React.FC = () => {
       await loadData();
     } catch (err) {
       console.error("Failed to toggle pause:", err);
+    }
+  };
+
+  // Handle Approval Routing Mode Change
+  const handleChangeApprovalRoutingMode = async (mode: ApprovalRoutingMode) => {
+    try {
+      await bridge.setApprovalRoutingMode(mode);
+      setApprovalRoutingMode(mode);
+      await loadData();
+    } catch (err) {
+      console.error("Failed to update approval routing mode:", err);
     }
   };
 
@@ -207,8 +225,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-theme-app text-theme-primary overflow-hidden font-sans transition-colors duration-200">
-      {/* Sidebar */}
+    <div className="flex h-screen bg-theme-base text-theme-primary font-sans antialiased overflow-hidden select-none">
+      {/* Sidebar Navigation */}
       <Sidebar
         currentPage={currentPage}
         onSelectPage={setCurrentPage}
@@ -225,6 +243,8 @@ export const App: React.FC = () => {
           title={pageTitles[currentPage].title}
           subtitle={pageTitles[currentPage].subtitle}
           mcpStatus={mcpStatus}
+          approvalRoutingMode={approvalRoutingMode}
+          onChangeApprovalRoutingMode={handleChangeApprovalRoutingMode}
           onTogglePause={handleTogglePause}
           onTriggerEmergencyStop={() => setIsEmergencyStopModalOpen(true)}
           onRefreshAll={handleManualRefresh}

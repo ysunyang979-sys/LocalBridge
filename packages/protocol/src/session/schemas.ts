@@ -3,6 +3,13 @@ import { z } from "zod";
 export const WorkflowSessionStateSchema = z.enum(["active", "completed", "abandoned"]);
 export const WorkflowSessionOutcomeSchema = z.enum(["completed", "abandoned"]);
 
+export const SessionMetadataSchema = z
+  .object({
+    source: z.string().max(100, "source must be at most 100 characters").optional(),
+    clientLabel: z.string().max(100, "clientLabel must be at most 100 characters").optional(),
+  })
+  .strict();
+
 // 1. localbridge_session_start
 export const SessionStartParamsSchema = z
   .object({
@@ -10,8 +17,9 @@ export const SessionStartParamsSchema = z
     goal: z.string().max(1000, "goal must be at most 1000 characters").optional(),
     goals: z.array(z.string().max(500)).max(20).optional(),
     title: z.string().max(200, "title must be at most 200 characters").optional(),
+    metadata: SessionMetadataSchema.optional(),
   })
-  .passthrough();
+  .strict();
 
 export const SessionStartResultSchema = z
   .object({
@@ -37,7 +45,7 @@ export const SessionListParamsSchema = z
     offset: z.number().int().nonnegative().optional(),
     cursor: z.string().optional(),
   })
-  .passthrough();
+  .strict();
 
 export const WorkflowSessionSummarySchema = z
   .object({
@@ -71,7 +79,7 @@ export const SessionStatusParamsSchema = z
     sessionId: z.string().optional(),
     projectId: z.string().optional(),
   })
-  .passthrough();
+  .strict();
 
 export const SessionStatusResultSchema = z
   .object({
@@ -120,7 +128,7 @@ export const SessionEventsParamsSchema = z
     limit: z.number().int().positive().max(200).default(50).optional(),
     offset: z.number().int().nonnegative().optional(),
   })
-  .passthrough();
+  .strict();
 
 export const WorkflowSessionEventSchema = z
   .object({
@@ -164,8 +172,9 @@ export const SessionCheckpointParamsSchema = z
       .array(z.string().max(300, "Each blocker must be at most 300 characters"))
       .max(10, "blockers can have at most 10 items")
       .optional(),
+    metadata: SessionMetadataSchema.optional(),
   })
-  .passthrough();
+  .strict();
 
 export const SessionCheckpointResultSchema = z
   .object({
@@ -181,7 +190,7 @@ export const SessionHandoffParamsSchema = z
   .object({
     sessionId: z.string().min(1, "sessionId is required"),
   })
-  .passthrough();
+  .strict();
 
 export const SessionHandoffResultSchema = z
   .object({
@@ -285,7 +294,7 @@ export const SessionFinishParamsSchema = z
     reason: z.string().max(1000).optional(),
     notes: z.string().max(1000).optional(),
   })
-  .passthrough();
+  .strict();
 
 export const SessionFinishResultSchema = z
   .object({

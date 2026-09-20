@@ -178,6 +178,7 @@ export class WorkflowSessionManager {
         goals: cleanGoals,
         title: cleanTitle,
         createdBy,
+        ...(params.metadata ? { metadata: params.metadata } : {}),
       });
 
       this.db
@@ -620,6 +621,7 @@ export class WorkflowSessionManager {
           summary: cleanSummary,
           nextStepsCount: cleanNextSteps?.length ?? 0,
           blockersCount: cleanBlockers?.length ?? 0,
+          ...(params.metadata ? { metadata: params.metadata } : {}),
         },
       });
     });

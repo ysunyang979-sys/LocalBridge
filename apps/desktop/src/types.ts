@@ -37,7 +37,7 @@ export interface Project {
   updatedAt?: number;
 }
 
-export type ApprovalRoutingMode = "chat" | "hybrid" | "desktop";
+export type ApprovalRoutingMode = "chat" | "auto-trusted" | "desktop" | "hybrid";
 
 export interface Approval {
   id: string;

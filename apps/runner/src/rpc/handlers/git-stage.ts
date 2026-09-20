@@ -61,35 +61,17 @@ export function createGitStageHandler(
     const pHash = canonicalPayloadHash(payload);
 
     if (evalResult.decision === "ask") {
-      if (!params.approvalId) {
-        const approval = approvalManager.create({
-          projectId: params.projectId,
-          operation: "git.stage",
-          risk: "CAUTION",
-          summary: `Stage ${canonicalPaths.length} file(s) in project "${params.projectId}": ${canonicalPaths.slice(0, 3).join(", ")}${canonicalPaths.length > 3 ? "..." : ""}`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for staging ${canonicalPaths.length} file(s). Please review and approve in Nexus Desktop, and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "git.stage",
-            projectId: params.projectId,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
-      }
-
-      approvalManager.verifyAndConsume(
-        params.approvalId,
-        params.projectId,
-        "git.stage",
-        pHash
-      );
+      approvalManager.handleOperationApproval({
+        projectId: params.projectId,
+        operation: "git.stage",
+        risk: "CAUTION",
+        summary: `Stage ${canonicalPaths.length} file(s) in project "${params.projectId}": ${canonicalPaths.slice(0, 3).join(", ")}${canonicalPaths.length > 3 ? "..." : ""}`,
+        payloadHash: pHash,
+        approvalId: params.approvalId,
+        timeoutMs: 300000,
+        decisionSource: evalResult.decisionSource,
+        isProtectedFile: evalResult.decisionSource === "protected-file",
+      });
     }
 
     return gitService.stage({

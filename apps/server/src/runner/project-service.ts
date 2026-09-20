@@ -249,18 +249,18 @@ export class ServerProjectService {
     this.stmtSetSystemSetting.run("operator_display_name", trimmed, Date.now());
   }
 
-  getApprovalRoutingMode(): "chat" | "hybrid" | "desktop" {
+  getApprovalRoutingMode(): "chat" | "auto-trusted" | "desktop" | "hybrid" {
     if (!this.db.open) return "chat";
     const row = this.stmtGetSystemSetting.get("approval_routing_mode") as
       | SystemSettingRow
       | undefined;
-    if (row?.value === "hybrid" || row?.value === "desktop") {
+    if (row?.value === "auto-trusted" || row?.value === "desktop" || row?.value === "hybrid") {
       return row.value;
     }
     return "chat";
   }
 
-  setApprovalRoutingMode(mode: "chat" | "hybrid" | "desktop"): void {
+  setApprovalRoutingMode(mode: "chat" | "auto-trusted" | "desktop" | "hybrid"): void {
     if (!this.db.open) return;
     this.stmtSetSystemSetting.run("approval_routing_mode", mode, Date.now());
   }

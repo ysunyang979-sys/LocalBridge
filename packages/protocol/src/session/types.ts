@@ -202,12 +202,18 @@ export interface WorkflowHandoffPacket {
   continuationPrompt: string;
 }
 
+export interface SessionMetadata {
+  source?: string;
+  clientLabel?: string;
+}
+
 // 1. localbridge_session_start
 export interface SessionStartParams {
   projectId: string;
   goal?: string;
   goals?: string[];
   title?: string;
+  metadata?: SessionMetadata;
 }
 
 export interface SessionStartResult {
@@ -296,6 +302,7 @@ export interface SessionCheckpointParams {
   summary: string;
   nextSteps?: string[];
   blockers?: string[];
+  metadata?: SessionMetadata;
 }
 
 export interface SessionCheckpointResult {

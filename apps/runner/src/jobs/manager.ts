@@ -585,45 +585,26 @@ export class JobManager {
         );
       }
 
-      if (!approvalId) {
-        let summaryText: string = command.kind;
-        if (command.kind === "node-script" || command.kind === "python-script") {
-          summaryText = `run ${command.kind} "${command.path}"`;
-        } else if (command.kind === "package-script") {
-          summaryText = `run package script "${command.script}" via ${command.manager}`;
-        } else if (command.kind === "tool-version") {
-          summaryText = `check ${command.tool} version`;
-        }
-
-        const approval = this.approvalManager.create({
-          projectId: project.id,
-          operation: "job.start",
-          risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
-          summary: `Start background job: ${summaryText} in project "${project.id}"`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for job start. Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "job.start",
-            projectId: project.id,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
+      let summaryText: string = command.kind;
+      if (command.kind === "node-script" || command.kind === "python-script") {
+        summaryText = `run ${command.kind} "${command.path}"`;
+      } else if (command.kind === "package-script") {
+        summaryText = `run package script "${command.script}" via ${command.manager}`;
+      } else if (command.kind === "tool-version") {
+        summaryText = `check ${command.tool} version`;
       }
 
-      this.approvalManager.verifyAndConsume(
+      this.approvalManager.handleOperationApproval({
+        projectId: project.id,
+        operation: "job.start",
+        risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
+        summary: `Start background job: ${summaryText} in project "${project.id}"`,
+        payloadHash: pHash,
         approvalId,
-        project.id,
-        "job.start",
-        pHash
-      );
+        timeoutMs: 300000,
+        decisionSource: decision.decisionSource,
+        isProtectedFile: false,
+      });
     }
 
     // 8. Timeout bound

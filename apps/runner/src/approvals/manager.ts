@@ -13,10 +13,23 @@ import type { Logger } from "@localbridge/shared";
 import {
   type ApprovalProvider,
   type ApprovalRoutingMode,
-  ChatApprovalProvider,
+  ChatHostApprovalProvider,
+  AutoApprovalProvider,
   DesktopApprovalProvider,
   HybridApprovalProvider,
 } from "./providers.js";
+
+export interface OperationApprovalContext {
+  projectId: string;
+  operation: string;
+  risk: "SAFE" | "CAUTION" | "DANGEROUS";
+  summary: string;
+  payloadHash: string;
+  approvalId?: string;
+  timeoutMs?: number;
+  isProtectedFile?: boolean;
+  decisionSource?: string;
+}
 
 export class ApprovalManager {
   private readonly approvals = new Map<string, ApprovalRequest>();
@@ -24,8 +37,9 @@ export class ApprovalManager {
   private routingMode: ApprovalRoutingMode = "chat";
   private readonly providers = new Map<ApprovalRoutingMode, ApprovalProvider>();
 
-  constructor(private readonly logger?: Logger, defaultMode: ApprovalRoutingMode = "chat") {
-    this.providers.set("chat", new ChatApprovalProvider());
+  constructor(private readonly logger?: Logger, defaultMode: ApprovalRoutingMode = "desktop") {
+    this.providers.set("chat", new ChatHostApprovalProvider());
+    this.providers.set("auto-trusted", new AutoApprovalProvider());
     this.providers.set("desktop", new DesktopApprovalProvider());
     this.providers.set("hybrid", new HybridApprovalProvider());
     this.routingMode = defaultMode;
@@ -43,6 +57,16 @@ export class ApprovalManager {
   getProvider(mode?: ApprovalRoutingMode): ApprovalProvider {
     const targetMode = mode ?? this.routingMode;
     return this.providers.get(targetMode) ?? this.providers.get("chat")!;
+  }
+
+  /**
+   * Delegate operation approval evaluation to the active ApprovalProvider.
+   * Handles chat host action verification, auto-trusted immediate execution,
+   * or Desktop fallback without leaking pending requests in non-desktop modes.
+   */
+  handleOperationApproval(context: OperationApprovalContext): void {
+    const provider = this.getProvider();
+    provider.handleOperation(context, this);
   }
 
   /**
@@ -84,6 +108,7 @@ export class ApprovalManager {
       resolvedAt: null,
       resolvedBy: null,
       decisionSource,
+      approvalMode: this.routingMode,
     };
 
     this.approvals.set(id, request);
@@ -98,6 +123,60 @@ export class ApprovalManager {
     );
 
     // Limit in-memory retention to 1000 items
+    if (this.approvals.size > 1000) {
+      const oldestKey = this.approvals.keys().next().value;
+      if (oldestKey) this.approvals.delete(oldestKey);
+    }
+
+    return { ...request };
+  }
+
+  /**
+   * Record and immediately consume an approval (used by ChatHost and Auto-Trusted providers).
+   * Ensures anti-tamper, payload hash tracking, and audit trail without creating pending desktop items.
+   */
+  createImmediateResolved(params: {
+    projectId: string;
+    operation: string;
+    risk: "SAFE" | "CAUTION" | "DANGEROUS";
+    summary: string;
+    payloadHash: string;
+    decisionSource: string;
+    approvalMode: string;
+    resolvedBy: string;
+  }): ApprovalRequest {
+    const id = `approval_${crypto.randomUUID()}`;
+    const now = Date.now();
+    const request: ApprovalRequest = {
+      id,
+      projectId: params.projectId,
+      operation: params.operation,
+      risk: params.risk === "SAFE" ? "CAUTION" : params.risk,
+      summary: params.summary,
+      payloadHash: params.payloadHash,
+      createdAt: now,
+      expiresAt: now + 300000,
+      status: "consumed",
+      resolvedAt: now,
+      resolvedBy: params.resolvedBy,
+      decisionSource: params.decisionSource,
+      approvalMode: params.approvalMode,
+    };
+
+    this.approvals.set(id, request);
+    this.consumedIds.add(id);
+
+    this.logger?.info(
+      {
+        approvalId: id,
+        projectId: params.projectId,
+        operation: params.operation,
+        decisionSource: params.decisionSource,
+        approvalMode: params.approvalMode,
+      },
+      `Operation approved and consumed via ${params.approvalMode}`
+    );
+
     if (this.approvals.size > 1000) {
       const oldestKey = this.approvals.keys().next().value;
       if (oldestKey) this.approvals.delete(oldestKey);

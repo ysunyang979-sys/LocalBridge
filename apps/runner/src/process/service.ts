@@ -145,45 +145,26 @@ export class CommandExecutionService {
         );
       }
 
-      if (!approvalId) {
-        let summaryText: string = params.kind;
-        if (params.kind === "node-script" || params.kind === "python-script") {
-          summaryText = `run ${params.kind} "${params.path}"`;
-        } else if (params.kind === "package-script") {
-          summaryText = `run package script "${params.script}" via ${params.manager}`;
-        } else if (params.kind === "tool-version") {
-          summaryText = `check ${params.tool} version`;
-        }
-
-        const approval = this.approvalManager.create({
-          projectId: params.projectId,
-          operation: "command.run",
-          risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
-          summary: `Execute command: ${summaryText} in project "${params.projectId}"`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for command execution. Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "command.run",
-            projectId: params.projectId,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
+      let summaryText: string = params.kind;
+      if (params.kind === "node-script" || params.kind === "python-script") {
+        summaryText = `run ${params.kind} "${params.path}"`;
+      } else if (params.kind === "package-script") {
+        summaryText = `run package script "${params.script}" via ${params.manager}`;
+      } else if (params.kind === "tool-version") {
+        summaryText = `check ${params.tool} version`;
       }
 
-      this.approvalManager.verifyAndConsume(
+      this.approvalManager.handleOperationApproval({
+        projectId: params.projectId,
+        operation: "command.run",
+        risk: assessment.risk === "DANGEROUS" ? "DANGEROUS" : "CAUTION",
+        summary: `Execute command: ${summaryText} in project "${params.projectId}"`,
+        payloadHash: pHash,
         approvalId,
-        params.projectId,
-        "command.run",
-        pHash
-      );
+        timeoutMs: 300000,
+        decisionSource: decision.decisionSource,
+        isProtectedFile: false,
+      });
     }
 
     // 4. Resolve working directory

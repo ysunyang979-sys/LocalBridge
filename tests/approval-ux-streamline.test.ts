@@ -301,45 +301,28 @@ describe("Nexus Desktop Approval UX Streamline & Provider Architecture", () => {
     ).toThrowError(/already been consumed/i);
   });
 
-  // Criterion 8: Chat-native provider and Desktop provider do not bypass Policy Engine
-  it("Criterion 8: Chat-native and Desktop providers do not bypass Policy Engine (ASK requires human approval)", async () => {
+  // Criterion 8: Decoupled approval providers (chat / auto-trusted / desktop)
+  it("Criterion 8: Decoupled approval providers (chat / auto-trusted / desktop)", async () => {
     const manager = new ApprovalManager();
 
     // Verify providers
-    const chatProvider = new ChatApprovalProvider();
-    const desktopProvider = new DesktopApprovalProvider();
-    const hybridProvider = new HybridApprovalProvider(chatProvider, desktopProvider);
+    const chatProvider = manager.getProvider("chat");
+    const autoProvider = manager.getProvider("auto-trusted");
+    const desktopProvider = manager.getProvider("desktop");
 
     expect(chatProvider.name).toBe("chat");
+    expect(autoProvider.name).toBe("auto-trusted");
     expect(desktopProvider.name).toBe("desktop");
-    expect(hybridProvider.name).toBe("hybrid");
 
-    // Handler with manager requiring approval (Policy Engine = ASK)
     const fsService = {
       deleteFile: vi.fn().mockResolvedValue({ deleted: true }),
       assertDeleteAuthorized: vi.fn(),
     } as any;
     const handler = createFileDeleteHandler(fsService, manager);
 
-    // Attempt without approvalId must throw APPROVAL_REQUIRED regardless of routing mode
-    manager.setRoutingMode("chat");
-    let errorThrown: any = null;
-    try {
-      await handler(samplePayload as any);
-    } catch (err) {
-      errorThrown = err;
-    }
-
-    expect(errorThrown).not.toBeNull();
-    expect(errorThrown.code).toBe(LocalBridgeErrorCode.APPROVAL_REQUIRED);
-    const chatId = errorThrown.details.approvalId;
-    const chatReq = manager.get(chatId);
-    expect(chatReq?.status).toBe("pending");
-    expect(chatReq?.decisionSource).toBe("chat");
-
-    // Switch to desktop routing mode: still throws APPROVAL_REQUIRED
+    // 1. In desktop mode: throws APPROVAL_REQUIRED and creates pending approval
     manager.setRoutingMode("desktop");
-    errorThrown = null;
+    let errorThrown: any = null;
     try {
       await handler(samplePayload as any);
     } catch (err) {
@@ -353,9 +336,22 @@ describe("Nexus Desktop Approval UX Streamline & Provider Architecture", () => {
     expect(desktopReq?.status).toBe("pending");
     expect(desktopReq?.decisionSource).toBe("desktop");
 
-    // Without resolving approval, retry still fails (policy cannot be bypassed)
-    await expect(
-      handler({ ...samplePayload, approvalId: chatId } as any)
-    ).rejects.toThrowError(/not approved/);
+    // 2. In chat mode: executes without throwing APPROVAL_REQUIRED (no double approval)
+    manager.setRoutingMode("chat");
+    const chatRes = await handler(samplePayload as any);
+    expect(chatRes).toEqual({ deleted: true });
+    const chatApprovals = manager.list().filter((a) => a.decisionSource === "chat");
+    expect(chatApprovals.length).toBeGreaterThan(0);
+    expect(chatApprovals[0].approvalMode).toBe("chat");
+    expect(chatApprovals[0].status).toBe("consumed");
+
+    // 3. In auto-trusted mode: executes without throwing APPROVAL_REQUIRED
+    manager.setRoutingMode("auto-trusted");
+    const autoRes = await handler(samplePayload as any);
+    expect(autoRes).toEqual({ deleted: true });
+    const autoApprovals = manager.list().filter((a) => a.decisionSource === "auto");
+    expect(autoApprovals.length).toBeGreaterThan(0);
+    expect(autoApprovals[0].approvalMode).toBe("auto-trusted");
+    expect(autoApprovals[0].status).toBe("consumed");
   });
 });

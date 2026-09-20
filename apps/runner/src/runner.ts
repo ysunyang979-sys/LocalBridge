@@ -61,6 +61,7 @@ import { createApprovalResolveHandler } from "./rpc/handlers/approval-resolve.js
 import { createApprovalListHandler } from "./rpc/handlers/approval-list.js";
 import { createApprovalGetHandler } from "./rpc/handlers/approval-get.js";
 import { createApprovalBulkResolveHandler } from "./rpc/handlers/approval-bulk-resolve.js";
+import { createApprovalSetModeHandler } from "./rpc/handlers/approval-set-mode.js";
 import { createProjectSetTrustPolicyHandler } from "./rpc/handlers/project-set-trust-policy.js";
 import { createProjectSessionTrustHandler } from "./rpc/handlers/project-session-trust.js";
 import { ApprovalManager } from "./approvals/index.js";
@@ -459,6 +460,11 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.ApprovalBulkResolve,
       createApprovalBulkResolveHandler(this.approvalManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ApprovalSetMode,
+      createApprovalSetModeHandler(this.approvalManager)
     );
 
     this.rpcRouter.register(

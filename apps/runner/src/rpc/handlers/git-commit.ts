@@ -74,36 +74,18 @@ export function createGitCommitHandler(
     const pHash = canonicalPayloadHash(payload);
 
     if (evalResult.decision === "ask") {
-      if (!params.approvalId) {
-        const shortMsg = message.length > 80 ? message.slice(0, 77) + "..." : message;
-        const approval = approvalManager.create({
-          projectId: params.projectId,
-          operation: "git.commit",
-          risk: "DANGEROUS",
-          summary: `Commit staged changes in project "${params.projectId}": "${shortMsg}"`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for git commit: "${shortMsg}". Please review and approve in Nexus Desktop, and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "git.commit",
-            projectId: params.projectId,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
-      }
-
-      approvalManager.verifyAndConsume(
-        params.approvalId,
-        params.projectId,
-        "git.commit",
-        pHash
-      );
+      const shortMsg = message.length > 80 ? message.slice(0, 77) + "..." : message;
+      approvalManager.handleOperationApproval({
+        projectId: params.projectId,
+        operation: "git.commit",
+        risk: "DANGEROUS",
+        summary: `Commit staged changes in project "${params.projectId}": "${shortMsg}"`,
+        payloadHash: pHash,
+        approvalId: params.approvalId,
+        timeoutMs: 300000,
+        decisionSource: evalResult.decisionSource,
+        isProtectedFile: evalResult.decisionSource === "protected-file",
+      });
     }
 
     return gitService.commit({

@@ -41,6 +41,7 @@ export const RunnerRpcMethods = {
   ProjectSetTrustPolicy: "project.setTrustPolicy",
   ProjectSessionTrust: "project.sessionTrust",
   ApprovalBulkResolve: "approval.bulkResolve",
+  ApprovalSetMode: "approval.setMode",
   GitStage: "git.stage",
   GitUnstage: "git.unstage",
   GitBranchCreate: "git.branchCreate",

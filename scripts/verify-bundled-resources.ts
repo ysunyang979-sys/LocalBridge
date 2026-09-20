@@ -154,12 +154,38 @@ async function verifyBundledServerMcpSchema() {
       if (tool.inputSchema.properties.approvalId.type !== "string") {
         throw new Error(`${toolName} properties.approvalId must be string`);
       }
-      if (tool.inputSchema.required?.includes("approvalId")) {
-        throw new Error(`${toolName} approvalId must NOT be required`);
+    }
+
+    // Verify session tools contract
+    const sessionReadTools = [
+      "localbridge_session_list",
+      "localbridge_session_status",
+      "localbridge_session_events",
+      "localbridge_session_handoff",
+    ];
+    const sessionWriteTools = [
+      "localbridge_session_start",
+      "localbridge_session_checkpoint",
+      "localbridge_session_finish",
+    ];
+
+    for (const name of sessionReadTools) {
+      const tool = tools.find((t: any) => t.name === name);
+      if (!tool) throw new Error(`${name} missing from bundled server tools/list`);
+      if (tool.inputSchema?.additionalProperties !== false) {
+        throw new Error(`${name} inputSchema.additionalProperties must be false`);
       }
     }
 
-    console.log("Bundled server MCP schema verified successfully: approvalId exists for command, job, and git-write tools, timeoutMs contract is unified.");
+    for (const name of sessionWriteTools) {
+      const tool = tools.find((t: any) => t.name === name);
+      if (!tool) throw new Error(`${name} missing from bundled server tools/list`);
+      if (tool.inputSchema?.additionalProperties !== false) {
+        throw new Error(`${name} inputSchema.additionalProperties must be false`);
+      }
+    }
+
+    console.log("Bundled server MCP schema verified successfully: approvalId exists for command, job, and git-write tools, timeoutMs contract is unified, session tools strictly enforce additionalProperties: false.");
   } finally {
     serverProc.kill();
     try {

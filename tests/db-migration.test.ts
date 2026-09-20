@@ -33,8 +33,8 @@ describe("Database Migrations & Persistence", () => {
     const conn = initDatabase(dbFilePath, migrationsDir);
 
     try {
-      expect(conn.migrationResult.appliedCount).toBe(7);
-      expect(conn.migrationResult.currentVersion).toBe(7);
+      expect(conn.migrationResult.appliedCount).toBe(8);
+      expect(conn.migrationResult.currentVersion).toBe(8);
       expect(conn.migrationResult.appliedMigrations).toContain("0001_initial.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0002_projects_metadata.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0003_projects_access_mode.sql");
@@ -42,18 +42,20 @@ describe("Database Migrations & Persistence", () => {
       expect(conn.migrationResult.appliedMigrations).toContain("0005_projects_execution_mode.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0006_jobs.sql");
       expect(conn.migrationResult.appliedMigrations).toContain("0007_workflow_sessions.sql");
-      expect(getCurrentSchemaVersion(conn.db)).toBe(7);
+      expect(conn.migrationResult.appliedMigrations).toContain("0008_tighten_workflow_sessions.sql");
+      expect(getCurrentSchemaVersion(conn.db)).toBe(8);
 
       // Verify tables exist
       const tables = (
         conn.db
           .prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
           )
-          .all() as Array<{ name: string }>
+          .all() as { name: string }[]
       ).map((r) => r.name);
 
       expect(tables).toContain("schema_migrations");
+      expect(tables).toContain("system_settings");
       expect(tables).toContain("tokens");
       expect(tables).toContain("runners");
       expect(tables).toContain("projects");
@@ -68,12 +70,10 @@ describe("Database Migrations & Persistence", () => {
       const columns = (
         conn.db
           .prepare("PRAGMA table_info(projects)")
-          .all() as Array<{ name: string }>
-      ).map((c) => c.name);
+          .all() as { name: string }[]
+      ).map((r) => r.name);
+
       expect(columns).not.toContain("root");
-      expect(columns).toContain("runner_id");
-      expect(columns).toContain("name");
-      expect(columns).toContain("enabled");
       expect(columns).toContain("access_mode");
       expect(columns).toContain("execution_mode");
     } finally {
@@ -84,7 +84,7 @@ describe("Database Migrations & Persistence", () => {
   it("is idempotent when running migrations multiple times", () => {
     const conn1 = initDatabase(dbFilePath, migrationsDir);
     try {
-      expect(conn1.migrationResult.appliedCount).toBe(7);
+      expect(conn1.migrationResult.appliedCount).toBe(8);
     } finally {
       conn1.close();
     }
@@ -92,41 +92,36 @@ describe("Database Migrations & Persistence", () => {
     const conn2 = initDatabase(dbFilePath, migrationsDir);
     try {
       expect(conn2.migrationResult.appliedCount).toBe(0);
-      expect(conn2.migrationResult.currentVersion).toBe(7);
+      expect(conn2.migrationResult.currentVersion).toBe(8);
     } finally {
       conn2.close();
     }
   });
 
   it("persists token and project metadata across database reconnections", () => {
-    const rawToken = generateMcpToken();
-    const tokenHash = hashToken(rawToken);
-
-    // Session 1: Insert token and project
     const conn1 = initDatabase(dbFilePath, migrationsDir);
+    const tokenHash = "sha256:abc123def456";
     conn1.db
       .prepare(
-        `INSERT INTO tokens (id, type, token_hash, name, scopes, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        "INSERT INTO tokens (id, name, type, token_hash, scopes, created_at) VALUES (?, ?, ?, ?, ?, ?)"
       )
-      .run("tok_1", "mcp", tokenHash, "Test MCP Client", "[]", Date.now());
+      .run("tok_1", "Test Token", "mcp", tokenHash, JSON.stringify(["read"]), Date.now());
 
     conn1.db
       .prepare(
-        `INSERT INTO projects (id, runner_id, name, enabled, first_seen_at, last_seen_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        "INSERT INTO projects (id, runner_id, name, enabled, access_mode, execution_mode, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       )
-      .run("proj_1", "runner_1", "my-blog", 1, Date.now(), Date.now());
+      .run("proj_1", "runner_1", "my-blog", 1, "read-write", "safe-only", Date.now(), Date.now());
 
     conn1.close();
 
-    // Session 2: Reopen and read data
     const conn2 = initDatabase(dbFilePath, migrationsDir);
     const token = conn2.db
       .prepare("SELECT * FROM tokens WHERE id = ?")
       .get("tok_1") as TokenRow | undefined;
 
     expect(token).toBeDefined();
+    expect(token?.name).toBe("Test Token");
     expect(token?.type).toBe("mcp");
     expect(token?.token_hash).toBe(tokenHash);
 
@@ -137,6 +132,8 @@ describe("Database Migrations & Persistence", () => {
     expect(project).toBeDefined();
     expect(project?.name).toBe("my-blog");
     expect(project?.runner_id).toBe("runner_1");
+    expect(project?.access_mode).toBe("read-write");
+    expect(project?.execution_mode).toBe("safe-only");
     expect((project as Record<string, unknown>).root).toBeUndefined();
 
     conn2.close();
@@ -151,7 +148,7 @@ describe("Database Migrations & Persistence", () => {
 
     const futureMigrations = path.join(tmpDir, "future-migrations");
     fs.cpSync(migrationsDir, futureMigrations, { recursive: true });
-    fs.writeFileSync(path.join(futureMigrations, "0008_wal_backup_test.sql"), "CREATE TABLE migration_eight (id INTEGER PRIMARY KEY);");
+    fs.writeFileSync(path.join(futureMigrations, "0009_wal_backup_test.sql"), "CREATE TABLE migration_nine (id INTEGER PRIMARY KEY);");
     const conn = initDatabase(dbFilePath, futureMigrations);
     try {
       expect(conn.backupPath).toBeDefined();

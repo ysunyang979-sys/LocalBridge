@@ -1215,9 +1215,28 @@ export const ApprovalRequestSchema = z
     resolvedAt: z.number().int().nullable().optional(),
     resolvedBy: z.string().nullable().optional(),
     decisionSource: z.string().nullable().optional(),
+    approvalMode: z.string().nullable().optional(),
   })
   .strict();
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;
+
+export const ApprovalRoutingModeSchema = z.enum(["chat", "auto-trusted", "desktop", "hybrid"]);
+export type ApprovalRoutingMode = z.infer<typeof ApprovalRoutingModeSchema>;
+
+export const ApprovalSetModeParamsSchema = z
+  .object({
+    mode: ApprovalRoutingModeSchema,
+  })
+  .strict();
+export type ApprovalSetModeParams = z.infer<typeof ApprovalSetModeParamsSchema>;
+
+export const ApprovalSetModeResultSchema = z
+  .object({
+    mode: ApprovalRoutingModeSchema,
+    success: z.boolean(),
+  })
+  .strict();
+export type ApprovalSetModeResult = z.infer<typeof ApprovalSetModeResultSchema>;
 
 // 34. approval.create
 export const ApprovalCreateParamsSchema = z
@@ -1621,6 +1640,10 @@ export interface RunnerRpcMap {
     params: ApprovalBulkResolveParams;
     result: ApprovalBulkResolveResult;
   };
+  [RunnerRpcMethods.ApprovalSetMode]: {
+    params: ApprovalSetModeParams;
+    result: ApprovalSetModeResult;
+  };
   [RunnerRpcMethods.CodeDocumentSymbols]: {
     params: CodeDocumentSymbolsParams;
     result: DocumentSymbolsResult;
@@ -1834,6 +1857,10 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.ApprovalBulkResolve]: {
     params: ApprovalBulkResolveParamsSchema,
     result: ApprovalBulkResolveResultSchema,
+  },
+  [RunnerRpcMethods.ApprovalSetMode]: {
+    params: ApprovalSetModeParamsSchema,
+    result: ApprovalSetModeResultSchema,
   },
   [RunnerRpcMethods.GitStage]: {
     params: GitStageParamsSchema,

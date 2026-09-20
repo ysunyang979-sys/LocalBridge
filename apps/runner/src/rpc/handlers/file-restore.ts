@@ -74,35 +74,17 @@ export function createFileRestoreHandler(
       }
 
       const approvalId = (params as any).approvalId;
-      if (!approvalId) {
-        const approval = approvalManager.create({
-          projectId: params.projectId,
-          operation: "file.restore",
-          risk: "DANGEROUS",
-          summary: `Restore file for operation "${params.operationId}" in project "${params.projectId}"`,
-          payloadHash: pHash,
-          timeoutMs: 300000,
-        });
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.APPROVAL_REQUIRED,
-          `Operation requires human approval. Approval request "${approval.id}" created for restoring operation "${params.operationId}". Please ask the user to review and approve in LocalBridge Desktop, check status with localbridge_approval_status(approvalId: "${approval.id}"), and retry with approvalId: "${approval.id}".`,
-          {
-            code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
-            approvalId: approval.id,
-            operation: "file.restore",
-            projectId: params.projectId,
-            summary: approval.summary,
-            expiresAt: approval.expiresAt,
-          }
-        );
-      }
-
-      approvalManager.verifyAndConsume(
+      approvalManager.handleOperationApproval({
+        projectId: params.projectId,
+        operation: "file.restore",
+        risk: "DANGEROUS",
+        summary: `Restore file for operation "${params.operationId}" in project "${params.projectId}"`,
+        payloadHash: pHash,
         approvalId,
-        params.projectId,
-        "file.restore",
-        pHash
-      );
+        timeoutMs: 300000,
+        decisionSource: evalResult.decisionSource,
+        isProtectedFile: evalResult.decisionSource === "protected-file",
+      });
     }
 
     return fsService.restoreFile(payload);

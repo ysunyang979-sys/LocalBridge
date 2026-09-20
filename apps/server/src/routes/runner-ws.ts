@@ -296,6 +296,21 @@ export const runnerWsRoute: FastifyPluginAsync<RunnerWsOptions> = async (
                     `Failed to sync projects for runner "${helloParams.runnerId}"`
                   );
                 });
+
+              // Sync current approval routing mode to the connected runner
+              const currentRoutingMode = projectService.getApprovalRoutingMode();
+              activeConn
+                .request(RunnerRpcMethods.ApprovalSetMode, { mode: currentRoutingMode })
+                .catch((err) => {
+                  fastify.log.warn(
+                    {
+                      event: "runner_approval_mode_sync_failed",
+                      runnerId: helloParams.runnerId,
+                      err,
+                    },
+                    `Failed to sync approval mode to runner "${helloParams.runnerId}"`
+                  );
+                });
             }
 
             // Start heartbeat ping cycle
