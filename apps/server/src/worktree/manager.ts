@@ -373,6 +373,20 @@ export class ManagedWorktreeManager {
       );
     }
 
+    // Safety pre-check 1b: Check active persistent runtimes for this worktree
+    const activeRuntimes = this.db
+      .prepare(
+        "SELECT id, name, state FROM persistent_runtimes WHERE worktree_id = ? AND state IN ('starting', 'running', 'stopping')"
+      )
+      .all(params.worktreeId) as Array<{ id: string; name: string | null; state: string }>;
+
+    if (activeRuntimes.length > 0) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.WORKTREE_HAS_ACTIVE_RUNTIMES,
+        `Cannot remove worktree "${params.worktreeId}". It has ${activeRuntimes.length} active runtime(s): ${activeRuntimes.map((r) => r.name || r.id).join(", ")}. Stop all active runtimes first.`
+      );
+    }
+
     // Safety pre-check 2: Check pending approvals for this session
     if (row.session_id) {
       const pendingApprovalEvents = this.db

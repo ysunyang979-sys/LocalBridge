@@ -70,6 +70,32 @@ import {
   type WorktreeRemoveParams,
   type WorktreeRemoveResult,
 } from "../worktree/index.js";
+import {
+  RuntimeStartParamsSchema,
+  RuntimeStartResultSchema,
+  RuntimeListParamsSchema,
+  RuntimeListResultSchema,
+  RuntimeStatusParamsSchema,
+  RuntimeStatusResultSchema,
+  RuntimeLogsParamsSchema,
+  RuntimeLogsResultSchema,
+  RuntimeRestartParamsSchema,
+  RuntimeRestartResultSchema,
+  RuntimeStopParamsSchema,
+  RuntimeStopResultSchema,
+  type RuntimeStartParams,
+  type RuntimeStartResult,
+  type RuntimeListParams,
+  type RuntimeListResult,
+  type RuntimeStatusParams,
+  type RuntimeStatusResult,
+  type RuntimeLogsParams,
+  type RuntimeLogsResult,
+  type RuntimeRestartParams,
+  type RuntimeRestartResult,
+  type RuntimeStopParams,
+  type RuntimeStopResult,
+} from "../runtime/index.js";
 
 export const OperationIdSchema = z
   .string()
@@ -1783,6 +1809,30 @@ export interface RunnerRpcMap {
     params: WorktreeRemoveParams;
     result: WorktreeRemoveResult;
   };
+  [RunnerRpcMethods.RuntimeStart]: {
+    params: RuntimeStartParams;
+    result: RuntimeStartResult;
+  };
+  [RunnerRpcMethods.RuntimeList]: {
+    params: RuntimeListParams;
+    result: RuntimeListResult;
+  };
+  [RunnerRpcMethods.RuntimeStatus]: {
+    params: RuntimeStatusParams;
+    result: RuntimeStatusResult;
+  };
+  [RunnerRpcMethods.RuntimeLogs]: {
+    params: RuntimeLogsParams;
+    result: RuntimeLogsResult;
+  };
+  [RunnerRpcMethods.RuntimeRestart]: {
+    params: RuntimeRestartParams;
+    result: RuntimeRestartResult;
+  };
+  [RunnerRpcMethods.RuntimeStop]: {
+    params: RuntimeStopParams;
+    result: RuntimeStopResult;
+  };
 }
 
 export type RunnerRpcMethodName = keyof RunnerRpcMap;
@@ -2040,5 +2090,29 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.WorktreeRemove]: {
     params: WorktreeRemoveParamsSchema,
     result: WorktreeRemoveResultSchema,
+  },
+  [RunnerRpcMethods.RuntimeStart]: {
+    params: RuntimeStartParamsSchema,
+    result: RuntimeStartResultSchema,
+  },
+  [RunnerRpcMethods.RuntimeList]: {
+    params: RuntimeListParamsSchema,
+    result: RuntimeListResultSchema,
+  },
+  [RunnerRpcMethods.RuntimeStatus]: {
+    params: RuntimeStatusParamsSchema,
+    result: RuntimeStatusResultSchema,
+  },
+  [RunnerRpcMethods.RuntimeLogs]: {
+    params: RuntimeLogsParamsSchema,
+    result: RuntimeLogsResultSchema,
+  },
+  [RunnerRpcMethods.RuntimeRestart]: {
+    params: RuntimeRestartParamsSchema,
+    result: RuntimeRestartResultSchema,
+  },
+  [RunnerRpcMethods.RuntimeStop]: {
+    params: RuntimeStopParamsSchema,
+    result: RuntimeStopResultSchema,
   },
 } as const;

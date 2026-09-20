@@ -13,12 +13,17 @@ import {
   Layers,
   Flag,
   Loader2,
+  Server,
+  RotateCw,
+  Square,
+  Terminal,
 } from "lucide-react";
 import { bridge } from "../../api/bridge.js";
 import type {
   WorkflowSession,
   WorkflowSessionEvent,
   WorkflowHandoffPacket,
+  RuntimeLogChunk,
 } from "../../types.js";
 import { useTranslation } from "../../i18n/useTranslation.js";
 
@@ -36,13 +41,19 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   onRefresh,
 }) => {
   const { t, translateError } = useTranslation();
-  const [activeTab, setActiveTab] = useState<"checkpoints" | "events" | "handoff">("checkpoints");
+  const [activeTab, setActiveTab] = useState<"checkpoints" | "events" | "handoff" | "runtimes">("checkpoints");
   const [handoff, setHandoff] = useState<WorkflowHandoffPacket | null>(null);
   const [events, setEvents] = useState<WorkflowSessionEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
+
+  // Runtime tab state
+  const [selectedRuntimeId, setSelectedRuntimeId] = useState<string | null>(null);
+  const [runtimeLogs, setRuntimeLogs] = useState<RuntimeLogChunk[]>([]);
+  const [loadingRuntimeLogs, setLoadingRuntimeLogs] = useState(false);
+  const [runtimeActionId, setRuntimeActionId] = useState<string | null>(null);
 
   // Worktree state
   const [worktreeDiff, setWorktreeDiff] = useState<string | null>(null);
@@ -155,6 +166,52 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
       setError(translateError(err.code, err.message));
     } finally {
       setSubmittingFinish(false);
+    }
+  };
+
+  const handleLoadLogs = async (runtimeId: string) => {
+    if (selectedRuntimeId === runtimeId) {
+      setSelectedRuntimeId(null);
+      setRuntimeLogs([]);
+      return;
+    }
+    setSelectedRuntimeId(runtimeId);
+    setLoadingRuntimeLogs(true);
+    try {
+      const logsRes = await bridge.getRuntimeLogs(runtimeId, { limit: 200 });
+      setRuntimeLogs(logsRes.entries || []);
+    } catch (err: any) {
+      setError(translateError(err.code, err.message));
+    } finally {
+      setLoadingRuntimeLogs(false);
+    }
+  };
+
+  const handleRestartRuntime = async (runtimeId: string) => {
+    setRuntimeActionId(runtimeId);
+    setError(null);
+    try {
+      await bridge.restartRuntime(runtimeId);
+      await fetchSessionData();
+      onRefresh();
+    } catch (err: any) {
+      setError(translateError(err.code, err.message));
+    } finally {
+      setRuntimeActionId(null);
+    }
+  };
+
+  const handleStopRuntime = async (runtimeId: string) => {
+    setRuntimeActionId(runtimeId);
+    setError(null);
+    try {
+      await bridge.stopRuntime(runtimeId);
+      await fetchSessionData();
+      onRefresh();
+    } catch (err: any) {
+      setError(translateError(err.code, err.message));
+    } finally {
+      setRuntimeActionId(null);
     }
   };
 
@@ -365,6 +422,19 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
             <Send className="w-3.5 h-3.5" />
             <span>{t.workflow.handoff}</span>
           </button>
+          <button
+            onClick={() => setActiveTab("runtimes")}
+            className={`pb-2.5 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition ${
+              activeTab === "runtimes"
+                ? "border-indigo-500 text-indigo-500"
+                : "border-transparent text-theme-muted hover:text-theme-primary"
+            }`}
+          >
+            <Server className="w-3.5 h-3.5" />
+            <span>
+              {t.runtimes.title} ({handoff?.runtimes?.active?.length ?? 0})
+            </span>
+          </button>
         </div>
 
         {/* Tab Body */}
@@ -537,6 +607,110 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                 ))
               )}
             </div>
+          ) : activeTab === "runtimes" ? (
+            <div className="space-y-4">
+              {(!handoff?.runtimes ||
+                ((handoff.runtimes.active?.length ?? 0) === 0 &&
+                  (handoff.runtimes.recent?.length ?? 0) === 0)) ? (
+                <div className="text-center py-10 text-theme-muted">
+                  <Server className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <div>{t.runtimes.noActiveRuntimes}</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {[
+                    ...(handoff.runtimes.active || []),
+                    ...(handoff.runtimes.recent || []),
+                  ].map((rt) => {
+                    const isRunning = rt.state === "running" || rt.state === "starting";
+                    const isActioning = runtimeActionId === rt.runtimeId;
+                    const isLogsOpen = selectedRuntimeId === rt.runtimeId;
+
+                    return (
+                      <div
+                        key={rt.runtimeId}
+                        className="p-4 bg-theme-card-muted rounded-lg border border-theme-subtle space-y-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-semibold text-theme-primary truncate">
+                              {rt.name || rt.runtimeId}
+                            </span>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold ${
+                                rt.state === "running"
+                                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                  : rt.state === "starting"
+                                  ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                  : rt.state === "stopping"
+                                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                  : rt.state === "failed"
+                                  ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                                  : "bg-slate-500/10 text-slate-400 border border-slate-500/20"
+                              }`}
+                            >
+                              {rt.state}
+                            </span>
+                            <span className="text-[10px] text-theme-muted font-mono">
+                              gen {rt.generation}
+                            </span>
+                            <span className="badge badge-indigo text-[10px]">
+                              {rt.kind}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {isRunning && (
+                              <button
+                                onClick={() => handleStopRuntime(rt.runtimeId)}
+                                disabled={isActioning}
+                                className="flex items-center gap-1 px-2.5 py-1 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded text-xs transition disabled:opacity-50"
+                              >
+                                <Square className="w-3 h-3" />
+                                <span>{t.runtimes.stop}</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleRestartRuntime(rt.runtimeId)}
+                              disabled={isActioning}
+                              className="flex items-center gap-1 px-2.5 py-1 bg-theme-card hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle rounded text-xs transition disabled:opacity-50"
+                            >
+                              <RotateCw className={`w-3 h-3 ${isActioning ? "animate-spin" : ""}`} />
+                              <span>{t.runtimes.restart}</span>
+                            </button>
+                            <button
+                              onClick={() => handleLoadLogs(rt.runtimeId)}
+                              className="flex items-center gap-1 px-2.5 py-1 bg-theme-card hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle rounded text-xs transition"
+                            >
+                              <Terminal className="w-3 h-3" />
+                              <span>{isLogsOpen ? t.runtimes.hideLogs : t.runtimes.viewLogs}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {isLogsOpen && (
+                          <div className="mt-2 pt-2 border-t border-theme-subtle/50 space-y-1">
+                            <div className="flex items-center justify-between text-[11px] text-theme-muted">
+                              <span>{t.runtimes.logs}</span>
+                              {loadingRuntimeLogs && (
+                                <span className="flex items-center gap-1 text-[10px]">
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  Loading...
+                                </span>
+                              )}
+                            </div>
+                            <pre className="p-3 bg-black/40 rounded font-mono text-[11px] text-theme-secondary overflow-x-auto max-h-48 whitespace-pre-wrap">
+                              {runtimeLogs.length === 0
+                                ? "No log output recorded."
+                                : runtimeLogs.map((l) => `[${l.stream}] ${l.text}`).join("")}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           ) : (
             /* Handoff Packet Tab */
             handoff && (
@@ -621,14 +795,14 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Active Jobs & Approvals */}
+                  {/* Active Jobs, Runtimes & Approvals */}
                   <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle space-y-1">
                     <div className="text-[11px] font-semibold text-theme-muted flex items-center gap-1">
                       <Layers className="w-3.5 h-3.5 text-amber-400" />
                       Runtime Guards
                     </div>
                     <div className="text-theme-primary font-medium">
-                      {handoff.currentStatus.activeJobs.length} active jobs
+                      {handoff.runtimes?.active?.length ?? 0} runtimes &bull; {handoff.currentStatus.activeJobs.length} jobs
                     </div>
                     <div className="text-[11px] text-theme-muted">
                       {handoff.currentStatus.pendingApprovals.length} pending approvals

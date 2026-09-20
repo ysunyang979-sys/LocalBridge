@@ -158,3 +158,40 @@ export interface ManagedWorktreeRow {
   removed_at: number | null;
   created_by: string;
 }
+
+export interface PersistentRuntimeRow {
+  id: string;
+  project_id: string;
+  session_id: string | null;
+  worktree_id: string | null;
+  name: string | null;
+  kind: string;
+  command_category: string;
+  state: string;
+  generation: number;
+  launch_spec_json: string;
+  workspace_mode: string;
+  pid: number | null;
+  exit_code: number | null;
+  signal: string | null;
+  restart_count: number;
+  last_error_code: string | null;
+  last_error: string | null;
+  created_at: number;
+  started_at: number | null;
+  stopped_at: number | null;
+  updated_at: number;
+  created_by: string;
+}
+
+export interface RuntimeGenerationRow {
+  id: string;
+  runtime_id: string;
+  generation: number;
+  pid: number | null;
+  state: string;
+  exit_code: number | null;
+  signal: string | null;
+  started_at: number;
+  stopped_at: number | null;
+}

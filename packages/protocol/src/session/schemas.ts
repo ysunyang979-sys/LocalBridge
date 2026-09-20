@@ -133,6 +133,22 @@ export const SessionStatusResultSchema = z
       })
       .passthrough()
       .optional(),
+    runtimes: z
+      .object({
+        running: z.number(),
+        activeRuntimes: z
+          .array(
+            z.object({
+              runtimeId: z.string(),
+              name: z.string().optional(),
+              state: z.string(),
+              generation: z.number(),
+            })
+          )
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -295,6 +311,35 @@ export const SessionHandoffResultSchema = z
         recentDecisionSummary: z.array(z.string()),
       })
       .passthrough(),
+    runtimes: z
+      .object({
+        active: z.array(
+          z
+            .object({
+              runtimeId: z.string(),
+              name: z.string().optional(),
+              state: z.string(),
+              generation: z.number(),
+              kind: z.string(),
+            })
+            .passthrough()
+        ),
+        recent: z
+          .array(
+            z
+              .object({
+                runtimeId: z.string(),
+                name: z.string().optional(),
+                state: z.string(),
+                generation: z.number(),
+                kind: z.string(),
+              })
+              .passthrough()
+          )
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
     checkpoint: z
       .object({
         latestSummary: z.string().optional(),

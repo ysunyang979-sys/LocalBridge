@@ -599,6 +599,13 @@ export class RunnerRegistry {
   }
 
   /**
+   * Check if a runner is active.
+   */
+  has(runnerId: string): boolean {
+    return this.connections.has(runnerId);
+  }
+
+  /**
    * Find an active runner by ID.
    */
   get(runnerId: string): RunnerConnection | undefined {

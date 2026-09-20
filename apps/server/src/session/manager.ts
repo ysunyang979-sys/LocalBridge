@@ -27,6 +27,7 @@ import type {
   WorkflowSessionCheckpointRow,
   JobRow,
   ManagedWorktreeRow,
+  PersistentRuntimeRow,
 } from "../db/schema.js";
 import type { Logger } from "@localbridge/shared";
 import type { ServerProjectService } from "../runner/project-service.js";
@@ -412,6 +413,23 @@ export class WorkflowSessionManager {
       createdAt: j.created_at,
     }));
 
+    // Active runtimes for this session
+    const activeRuntimeRows = this.db
+      .prepare(
+        "SELECT id, name, kind, state, pid, generation, created_at FROM persistent_runtimes WHERE session_id = ? AND state IN ('starting', 'running', 'stopping')"
+      )
+      .all(session.id) as Array<{ id: string; name: string | null; kind: string; state: string; pid: number | null; generation: number; created_at: number }>;
+
+    const runtimes = {
+      running: activeRuntimeRows.length,
+      activeRuntimes: activeRuntimeRows.map((r) => ({
+        runtimeId: r.id,
+        name: r.name ?? undefined,
+        state: r.state,
+        generation: r.generation,
+      })),
+    };
+
     // Resolve workspace (managed worktree or primary project root)
     const wtRow = this.db
       .prepare(
@@ -466,6 +484,7 @@ export class WorkflowSessionManager {
       checkpointCount: cpCountRow.count,
       latestCheckpoint,
       activeJobs: activeJobs.length > 0 ? activeJobs : undefined,
+      runtimes,
       workspace,
       session: sessionObj,
       activeSession: session.state === "active" ? sessionObj : null,
@@ -952,6 +971,33 @@ export class WorkflowSessionManager {
           projectRoot: (project as any)?.canonicalRoot ?? "",
         };
 
+    const runtimeRows = this.db
+      .prepare(
+        "SELECT * FROM persistent_runtimes WHERE session_id = ? ORDER BY created_at DESC"
+      )
+      .all(sessionId) as PersistentRuntimeRow[];
+
+    const activeRuntimeRows = runtimeRows.filter(
+      (r) => r.state === "starting" || r.state === "running" || r.state === "stopping"
+    );
+
+    const runtimesData = {
+      active: activeRuntimeRows.map((r) => ({
+        runtimeId: r.id,
+        name: r.name ?? undefined,
+        state: r.state,
+        generation: r.generation,
+        kind: r.kind,
+      })),
+      recent: runtimeRows.slice(0, 10).map((r) => ({
+        runtimeId: r.id,
+        name: r.name ?? undefined,
+        state: r.state,
+        generation: r.generation,
+        kind: r.kind,
+      })),
+    };
+
     const promptLines: string[] = [
       "# Nexus Workflow Session Context",
       `Session ID: ${session.id}`,
@@ -989,6 +1035,15 @@ export class WorkflowSessionManager {
       ...(touchedFiles.length > 0
         ? touchedFiles.slice(0, 20).map((f) => `- ${f}`)
         : ["- No files touched yet"]),
+      ...(activeRuntimeRows.length > 0
+        ? [
+            "",
+            "## Active Runtimes:",
+            ...activeRuntimeRows.map(
+              (r) => `- ${r.name ? `"${r.name}" ` : ""}(${r.kind}, state: ${r.state}, gen: ${r.generation})`
+            ),
+          ]
+        : []),
     ];
     const continuationPrompt = sanitizeSessionString(promptLines.join("\n"));
 
@@ -1028,6 +1083,7 @@ export class WorkflowSessionManager {
         pendingCount,
         recentDecisionSummary,
       },
+      runtimes: runtimesData,
       checkpoint: checkpointData,
       recentCheckpoints,
       recentEvents,
@@ -1070,6 +1126,20 @@ export class WorkflowSessionManager {
       throw new LocalBridgeError(
         LocalBridgeErrorCode.SESSION_HAS_ACTIVE_JOBS,
         `Cannot finish session: ${activeJobsCount.count} background job(s) are still active or queued. Wait for completion or cancel them first.`
+      );
+    }
+
+    // 1b. Guard against active persistent runtimes for this session
+    const activeRuntimesCount = this.db
+      .prepare(
+        "SELECT COUNT(*) as count FROM persistent_runtimes WHERE session_id = ? AND state IN ('starting', 'running', 'stopping')"
+      )
+      .get(sessionId) as { count: number };
+
+    if (activeRuntimesCount.count > 0) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.SESSION_HAS_ACTIVE_RUNTIMES,
+        `Cannot finish session: ${activeRuntimesCount.count} persistent runtime(s) are still active. Stop all active runtimes first.`
       );
     }
 

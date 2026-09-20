@@ -10,6 +10,7 @@ import type { RunnerRpcService } from "../runner/rpc-service.js";
 import type { ServerProjectService } from "../runner/project-service.js";
 import { WorkflowSessionManager } from "../session/manager.js";
 import { ManagedWorktreeManager } from "../worktree/manager.js";
+import { ServerPersistentRuntimeManager } from "../runtime/index.js";
 import type { McpPrincipal } from "./types.js";
 
 export interface McpContextDeps {
@@ -20,6 +21,7 @@ export interface McpContextDeps {
   logger?: Logger;
   workflowSessionManager?: WorkflowSessionManager;
   worktreeManager?: ManagedWorktreeManager;
+  persistentRuntimeManager?: ServerPersistentRuntimeManager;
 }
 
 export interface SafeAuditMetadata {
@@ -50,6 +52,7 @@ export class McpContext {
   public readonly logger?: Logger;
   public readonly workflowSessionManager?: WorkflowSessionManager;
   public readonly worktreeManager?: ManagedWorktreeManager;
+  public readonly persistentRuntimeManager?: ServerPersistentRuntimeManager;
 
   // In-memory mapping from jobId to runnerId for background jobs
   private readonly jobToRunnerMap = new Map<string, string>();
@@ -88,6 +91,18 @@ export class McpContext {
             runnerRegistry: deps.runnerRegistry,
             rpcService: deps.rpcService,
             workflowSessionManager: this.workflowSessionManager,
+            logger: deps.logger,
+          })
+        : undefined);
+
+    this.persistentRuntimeManager =
+      deps.persistentRuntimeManager ??
+      (deps.db
+        ? new ServerPersistentRuntimeManager({
+            db: deps.db,
+            projectService: deps.projectService,
+            runnerRegistry: deps.runnerRegistry,
+            rpcService: deps.rpcService,
             logger: deps.logger,
           })
         : undefined);

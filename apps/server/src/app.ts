@@ -103,7 +103,7 @@ export async function buildApp(
     });
   const rateLimiter = options.rateLimiter ?? new McpRateLimiter();
 
-  // Startup Crash Recovery: mark orphaned running/queued jobs as interrupted in SQLite
+  // Startup Crash Recovery: mark orphaned running/queued jobs and active runtimes as interrupted in SQLite
   try {
     const now = Date.now();
     db.db
@@ -111,11 +111,17 @@ export async function buildApp(
         `UPDATE jobs SET state = 'interrupted', finished_at = ?, error_code = 'JOB_RUNNER_INTERRUPTED', error_message = 'Job was interrupted due to server restart or crash' WHERE state IN ('running', 'queued')`
       )
       .run(now);
+
+    db.db
+      .prepare(
+        `UPDATE persistent_runtimes SET state = 'interrupted', stopped_at = ?, last_error_code = 'RUNTIME_SERVER_RESTARTED', last_error = 'Server restarted while runtime was active' WHERE state IN ('starting', 'running', 'stopping')`
+      )
+      .run(now);
   } catch (err) {
-    logger.warn({ err }, "Failed to run startup crash recovery for jobs table");
+    logger.warn({ err }, "Failed to run startup crash recovery for jobs or persistent_runtimes table");
   }
 
-  // Handle runner disconnect: mark running jobs as interrupted, queued jobs as cancelled
+  // Handle runner disconnect: mark running jobs & runtimes as interrupted, queued jobs as cancelled
   runnerRegistry.onDisconnect((runnerId: string) => {
     try {
       const now = Date.now();
@@ -130,8 +136,17 @@ export async function buildApp(
           `UPDATE jobs SET state = 'cancelled', finished_at = ?, error_code = 'JOB_RUNNER_DISCONNECTED', error_message = 'Runner disconnected while job was queued' WHERE runner_id = ? AND state = 'queued'`
         )
         .run(now, runnerId);
+
+      const projects = projectService.listProjects().filter((p) => p.runnerId === runnerId);
+      for (const p of projects) {
+        db.db
+          .prepare(
+            `UPDATE persistent_runtimes SET state = 'interrupted', stopped_at = ?, last_error_code = 'RUNTIME_RUNNER_DISCONNECTED', last_error = 'Runner disconnected while runtime was active' WHERE project_id = ? AND state IN ('starting', 'running', 'stopping')`
+          )
+          .run(now, p.id);
+      }
     } catch (err) {
-      logger.warn({ err, runnerId }, "Failed to update jobs on runner disconnect");
+      logger.warn({ err, runnerId }, "Failed to update jobs/runtimes on runner disconnect");
     }
   });
 

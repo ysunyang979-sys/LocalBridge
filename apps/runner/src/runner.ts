@@ -93,6 +93,13 @@ import { createWorktreeListHandler } from "./rpc/handlers/worktree-list.js";
 import { createWorktreeStatusHandler } from "./rpc/handlers/worktree-status.js";
 import { createWorktreeDiffHandler } from "./rpc/handlers/worktree-diff.js";
 import { createWorktreeRemoveHandler } from "./rpc/handlers/worktree-remove.js";
+import { PersistentRuntimeManager } from "./runtime/index.js";
+import { createRuntimeStartHandler } from "./rpc/handlers/runtime-start.js";
+import { createRuntimeListHandler } from "./rpc/handlers/runtime-list.js";
+import { createRuntimeStatusHandler } from "./rpc/handlers/runtime-status.js";
+import { createRuntimeLogsHandler } from "./rpc/handlers/runtime-logs.js";
+import { createRuntimeRestartHandler } from "./rpc/handlers/runtime-restart.js";
+import { createRuntimeStopHandler } from "./rpc/handlers/runtime-stop.js";
 
 export const RUNNER_VERSION = "1.1.0";
 
@@ -120,6 +127,7 @@ export class LocalBridgeRunner {
   readonly lspManager: LspManager;
   readonly worktreeService: ManagedWorktreeService;
   readonly workspaceResolver: WorkspaceResolver;
+  readonly runtimeManager: PersistentRuntimeManager;
   readonly runnerStateDir: string;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
@@ -230,6 +238,15 @@ export class LocalBridgeRunner {
     this.filesystemService.onFileChange((projectId, path, content) => {
       this.lspManager.onFileModified(projectId, path, content).catch(() => {});
     });
+
+    this.runtimeManager = new PersistentRuntimeManager(
+      this.projectRegistry,
+      this.executableRegistry,
+      this.approvalManager,
+      this.logger,
+      { runnerStateDir, persistState: true }
+    );
+    this.runtimeManager.setWorkspaceResolver(this.workspaceResolver);
 
     this.rpcRouter = new RpcRouter(this.logger);
     this.registerDefaultHandlers();
@@ -591,6 +608,36 @@ export class LocalBridgeRunner {
         this.lspManager
       )
     );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.RuntimeStart,
+      createRuntimeStartHandler(this.runtimeManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.RuntimeList,
+      createRuntimeListHandler(this.runtimeManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.RuntimeStatus,
+      createRuntimeStatusHandler(this.runtimeManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.RuntimeLogs,
+      createRuntimeLogsHandler(this.runtimeManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.RuntimeRestart,
+      createRuntimeRestartHandler(this.runtimeManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.RuntimeStop,
+      createRuntimeStopHandler(this.runtimeManager)
+    );
   }
 
   get router(): RpcRouter {
@@ -678,6 +725,7 @@ export class LocalBridgeRunner {
     this.heartbeatMonitor.stop();
     await this.jobManager.stop();
     await this.lspManager.stopAll();
+    await this.runtimeManager.shutdown();
     this.approvalManager.expireAll();
 
     if (this.client) {

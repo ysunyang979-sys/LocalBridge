@@ -183,10 +183,28 @@ export interface WorkflowHandoffPacket {
       commandKind: string;
       state: string;
       exitCode?: number | null;
+      signal?: string | null;
       createdAt: number;
       finishedAt?: number | null;
+      error?: string | null;
     }>;
     truncated?: boolean;
+  };
+  runtimes?: {
+    active: Array<{
+      runtimeId: string;
+      name?: string;
+      state: string;
+      generation: number;
+      kind: string;
+    }>;
+    recent?: Array<{
+      runtimeId: string;
+      name?: string;
+      state: string;
+      generation: number;
+      kind: string;
+    }>;
   };
   approvals: {
     pendingCount: number;
@@ -303,6 +321,15 @@ export interface SessionStatusResult {
     isClean?: boolean;
     dirty?: boolean;
     projectRoot?: string;
+  };
+  runtimes?: {
+    running: number;
+    activeRuntimes?: Array<{
+      runtimeId: string;
+      name?: string;
+      state: string;
+      generation: number;
+    }>;
   };
   activeSession?: any;
   session?: any;

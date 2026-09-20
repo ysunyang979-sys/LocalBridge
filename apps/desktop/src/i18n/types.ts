@@ -559,6 +559,23 @@ export interface I18nDictionary {
     continuationPrompt: string;
     activeCount: string;
   };
+  runtimes: {
+    title: string;
+    subtitle: string;
+    activeRuntimes: string;
+    noActiveRuntimes: string;
+    startRuntime: string;
+    restart: string;
+    stop: string;
+    generation: string;
+    uptime: string;
+    pid: string;
+    logs: string;
+    viewLogs: string;
+    hideLogs: string;
+    autoScroll: string;
+    clearLogs: string;
+  };
   errors: {
     unknown: string;
     PROJECT_ALREADY_AUTHORIZED: string;
@@ -603,5 +620,21 @@ export interface I18nDictionary {
     SESSION_CHECKPOINT_TOO_LARGE: string;
     SESSION_EVENT_LIMIT: string;
     SESSION_INTERNAL_ERROR: string;
+    WORKTREE_HAS_ACTIVE_RUNTIMES: string;
+    SESSION_HAS_ACTIVE_RUNTIMES: string;
+    RUNTIME_NOT_FOUND: string;
+    RUNTIME_ALREADY_RUNNING: string;
+    RUNTIME_INVALID_STATE: string;
+    RUNTIME_START_FAILED: string;
+    RUNTIME_STOP_FAILED: string;
+    RUNTIME_RESTART_FAILED: string;
+    RUNTIME_CONCURRENCY_LIMIT: string;
+    RUNTIME_RUNNER_INTERRUPTED: string;
+    RUNTIME_PROJECT_DISABLED: string;
+    RUNTIME_SESSION_MISMATCH: string;
+    RUNTIME_WORKTREE_MISMATCH: string;
+    RUNTIME_WORKSPACE_UNAVAILABLE: string;
+    RUNTIME_PROCESS_EXITED: string;
+    RUNTIME_LOG_LIMIT: string;
   };
 }

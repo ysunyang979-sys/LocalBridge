@@ -318,6 +318,63 @@ export interface WorkflowHandoffPacket {
     target: string | null;
     createdAt: number;
   }[];
+  runtimes?: {
+    active: {
+      runtimeId: string;
+      name?: string;
+      state: string;
+      generation: number;
+      kind: string;
+    }[];
+    recent?: {
+      runtimeId: string;
+      name?: string;
+      state: string;
+      generation: number;
+      kind: string;
+    }[];
+  };
   continuationPrompt: string;
+}
+
+export type RuntimeState =
+  | "starting"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "failed"
+  | "interrupted";
+
+export interface PersistentRuntime {
+  runtimeId: string;
+  name?: string;
+  state: RuntimeState;
+  generation: number;
+  projectId: string;
+  sessionId?: string;
+  worktreeId?: string;
+  kind: "package-script" | "registered-command";
+  commandCategory: string;
+  workspaceMode: "direct" | "managed-worktree";
+  startedAt?: number | null;
+  stoppedAt?: number | null;
+  uptimeMs?: number;
+  pid?: number | null;
+  exitCode?: number | null;
+  signal?: string | null;
+  restartCount: number;
+  lastErrorCode?: string | null;
+  lastError?: string | null;
+  outputTruncated?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RuntimeLogChunk {
+  seq: number;
+  stream: "stdout" | "stderr";
+  timestamp: number;
+  text: string;
+  generation?: number;
 }
 

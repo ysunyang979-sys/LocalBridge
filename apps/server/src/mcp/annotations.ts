@@ -57,4 +57,12 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   localbridge_worktree_diff: { readOnlyHint: true },
   localbridge_worktree_create: { readOnlyHint: false, destructiveHint: false },
   localbridge_worktree_remove: { readOnlyHint: false, destructiveHint: true },
+
+  // Persistent Runtime tools
+  localbridge_runtime_list: { readOnlyHint: true },
+  localbridge_runtime_status: { readOnlyHint: true },
+  localbridge_runtime_logs: { readOnlyHint: true },
+  localbridge_runtime_start: { readOnlyHint: false, openWorldHint: true },
+  localbridge_runtime_restart: { readOnlyHint: false, openWorldHint: true },
+  localbridge_runtime_stop: { readOnlyHint: false, destructiveHint: true },
 };

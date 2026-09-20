@@ -17,6 +17,8 @@ import type {
   WorkflowCheckpoint,
   WorkflowSessionEvent,
   WorkflowHandoffPacket,
+  PersistentRuntime,
+  RuntimeLogChunk,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -849,6 +851,74 @@ class ApiBridge {
     return this.fetchJson<{ worktreeId: string; diff: string }>(
       `/api/management/worktrees/${worktreeId}/diff`
     );
+  }
+
+  async listRuntimes(params?: {
+    projectId?: string;
+    sessionId?: string;
+    worktreeId?: string;
+    state?: string;
+  }): Promise<{ runtimes: PersistentRuntime[]; total: number }> {
+    const query = new URLSearchParams();
+    if (params?.projectId) query.set("projectId", params.projectId);
+    if (params?.sessionId) query.set("sessionId", params.sessionId);
+    if (params?.worktreeId) query.set("worktreeId", params.worktreeId);
+    if (params?.state) query.set("state", params.state);
+    const qs = query.toString();
+    return this.fetchJson<{ runtimes: PersistentRuntime[]; total: number }>(
+      `/api/management/runtimes${qs ? `?${qs}` : ""}`
+    );
+  }
+
+  async startRuntime(payload: any): Promise<any> {
+    return this.fetchJson<any>("/api/management/runtimes/start", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getRuntimeStatus(runtimeId: string): Promise<PersistentRuntime> {
+    return this.fetchJson<PersistentRuntime>(`/api/management/runtimes/${runtimeId}`);
+  }
+
+  async getRuntimeLogs(
+    runtimeId: string,
+    options?: { generation?: number; afterSequence?: number; limit?: number }
+  ): Promise<{
+    runtimeId: string;
+    generation: number;
+    entries: RuntimeLogChunk[];
+    nextSequence: number;
+    hasMore: boolean;
+    outputTruncated: boolean;
+  }> {
+    const query = new URLSearchParams();
+    if (options?.generation) query.set("generation", String(options.generation));
+    if (options?.afterSequence) query.set("afterSequence", String(options.afterSequence));
+    if (options?.limit) query.set("limit", String(options.limit));
+    const qs = query.toString();
+    return this.fetchJson<{
+      runtimeId: string;
+      generation: number;
+      entries: RuntimeLogChunk[];
+      nextSequence: number;
+      hasMore: boolean;
+      outputTruncated: boolean;
+    }>(`/api/management/runtimes/${runtimeId}/logs${qs ? `?${qs}` : ""}`);
+  }
+
+  async restartRuntime(runtimeId: string, approvalId?: string): Promise<any> {
+    return this.fetchJson<any>(`/api/management/runtimes/${runtimeId}/restart`, {
+      method: "POST",
+      body: JSON.stringify({ approvalId }),
+    });
+  }
+
+  async stopRuntime(runtimeId: string, gracePeriodMs?: number): Promise<any> {
+    return this.fetchJson<any>(`/api/management/runtimes/${runtimeId}/stop`, {
+      method: "POST",
+      body: JSON.stringify({ gracePeriodMs }),
+    });
   }
 }
 

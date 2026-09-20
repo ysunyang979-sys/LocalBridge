@@ -63,6 +63,12 @@ export const RunnerRpcMethods = {
   WorktreeStatus: "worktree.status",
   WorktreeDiff: "worktree.diff",
   WorktreeRemove: "worktree.remove",
+  RuntimeStart: "runtime.start",
+  RuntimeList: "runtime.list",
+  RuntimeStatus: "runtime.status",
+  RuntimeLogs: "runtime.logs",
+  RuntimeRestart: "runtime.restart",
+  RuntimeStop: "runtime.stop",
 } as const;
 
 export type RunnerRpcMethod =
@@ -101,6 +107,12 @@ export const RunnerMethod = {
   WORKTREE_STATUS: RunnerRpcMethods.WorktreeStatus,
   WORKTREE_DIFF: RunnerRpcMethods.WorktreeDiff,
   WORKTREE_REMOVE: RunnerRpcMethods.WorktreeRemove,
+  RUNTIME_START: RunnerRpcMethods.RuntimeStart,
+  RUNTIME_LIST: RunnerRpcMethods.RuntimeList,
+  RUNTIME_STATUS: RunnerRpcMethods.RuntimeStatus,
+  RUNTIME_LOGS: RunnerRpcMethods.RuntimeLogs,
+  RUNTIME_RESTART: RunnerRpcMethods.RuntimeRestart,
+  RUNTIME_STOP: RunnerRpcMethods.RuntimeStop,
 } as const;
 
 export type RunnerMethod = (typeof RunnerMethod)[keyof typeof RunnerMethod];

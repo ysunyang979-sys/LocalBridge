@@ -1452,5 +1452,137 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       return reply.status(200).send(res);
     }
   );
+
+  // ================= Persistent Runtime Endpoints =================
+
+  fastify.get<{ Params: { id: string } }>(
+    "/management/projects/:id/runtimes",
+    async (request, reply) => {
+      if (!mcpContext.persistentRuntimeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ServerPersistentRuntimeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.persistentRuntimeManager.listRuntimes({
+        projectId: request.params.id,
+      });
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.get<{
+    Querystring: {
+      projectId?: string;
+      sessionId?: string;
+      worktreeId?: string;
+      state?: any;
+      limit?: number;
+      cursor?: string;
+    };
+  }>("/management/runtimes", async (request, reply) => {
+    if (!mcpContext.persistentRuntimeManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "ServerPersistentRuntimeManager is not initialized",
+      });
+    }
+    const res = await mcpContext.persistentRuntimeManager.listRuntimes(request.query);
+    return reply.status(200).send(res);
+  });
+
+  fastify.post<{ Body: Record<string, any> }>(
+    "/management/runtimes/start",
+    async (request, reply) => {
+      if (!mcpContext.persistentRuntimeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ServerPersistentRuntimeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.persistentRuntimeManager.startRuntime({
+        ...(request.body as any),
+        createdBy: "desktop",
+      });
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    "/management/runtimes/:id",
+    async (request, reply) => {
+      if (!mcpContext.persistentRuntimeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ServerPersistentRuntimeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.persistentRuntimeManager.getRuntimeStatus({
+        runtimeId: request.params.id,
+      });
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { generation?: string; afterSequence?: string; limit?: string };
+  }>("/management/runtimes/:id/logs", async (request, reply) => {
+    if (!mcpContext.persistentRuntimeManager) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: "ServerPersistentRuntimeManager is not initialized",
+      });
+    }
+    const generation = request.query.generation
+      ? Number(request.query.generation)
+      : undefined;
+    const afterSequence = request.query.afterSequence
+      ? Number(request.query.afterSequence)
+      : undefined;
+    const limit = request.query.limit ? Number(request.query.limit) : undefined;
+
+    const res = await mcpContext.persistentRuntimeManager.getRuntimeLogs({
+      runtimeId: request.params.id,
+      generation,
+      afterSequence,
+      limit,
+    });
+    return reply.status(200).send(res);
+  });
+
+  fastify.post<{ Params: { id: string }; Body?: { approvalId?: string } }>(
+    "/management/runtimes/:id/restart",
+    async (request, reply) => {
+      if (!mcpContext.persistentRuntimeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ServerPersistentRuntimeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.persistentRuntimeManager.restartRuntime({
+        runtimeId: request.params.id,
+        approvalId: request.body?.approvalId,
+      });
+      return reply.status(200).send(res);
+    }
+  );
+
+  fastify.post<{ Params: { id: string }; Body?: { gracePeriodMs?: number } }>(
+    "/management/runtimes/:id/stop",
+    async (request, reply) => {
+      if (!mcpContext.persistentRuntimeManager) {
+        return reply.status(500).send({
+          code: LocalBridgeErrorCode.INTERNAL_ERROR,
+          message: "ServerPersistentRuntimeManager is not initialized",
+        });
+      }
+      const res = await mcpContext.persistentRuntimeManager.stopRuntime({
+        runtimeId: request.params.id,
+        gracePeriodMs: request.body?.gracePeriodMs,
+      });
+      return reply.status(200).send(res);
+    }
+  );
 };
 

@@ -1,0 +1,10 @@
+{
+  "name": "persistent-runtime-project",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "failing-dev": "node fail.js",
+    "tree-dev": "node tree.js"
+  }
+}
