@@ -23,9 +23,9 @@ export const MAX_RUNNING_JOBS_PER_RUNNER = 4;
 export const MAX_RUNNING_JOBS_PER_PROJECT = 2;
 export const MAX_JOB_STARTS_PER_MINUTE = 20;
 
-export const DEFAULT_JOB_TIMEOUT_MS = 600000; // 10 minutes
+export const DEFAULT_JOB_TIMEOUT_MS = 60000; // 1 minute
 export const MIN_JOB_TIMEOUT_MS = 1000; // 1 second
-export const MAX_JOB_TIMEOUT_MS = 3600000; // 60 minutes
+export const MAX_JOB_TIMEOUT_MS = 300000; // 5 minutes
 
 export const MAX_JOB_LOG_BYTES = 4 * 1024 * 1024; // 4 MiB ring buffer
 export const MAX_LOG_RESPONSE_BYTES = 128 * 1024; // 128 KiB max per job.logs RPC

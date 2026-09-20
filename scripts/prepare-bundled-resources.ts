@@ -72,14 +72,10 @@ async function main() {
   fs.mkdirSync(serverDir, { recursive: true });
   fs.mkdirSync(runnerDir, { recursive: true });
 
-  // Ensure workspace packages are built before bundling server/runner
-  const sharedDist = path.resolve(rootDir, "packages/shared/dist/index.js");
-  const protocolDist = path.resolve(rootDir, "packages/protocol/dist/index.js");
-  const securityDist = path.resolve(rootDir, "packages/security/dist/index.js");
-  if (!fs.existsSync(sharedDist) || !fs.existsSync(protocolDist) || !fs.existsSync(securityDist)) {
-    console.log("Building workspace packages first...");
-    child_process.execSync("pnpm -r --filter=./packages/* run build", { cwd: rootDir, stdio: "inherit" });
-  }
+  // Ensure workspace packages are freshly built from source before bundling server/runner.
+  // Rebuilding packages is fast (<2s) and eliminates stale package bundle drift.
+  console.log("Building workspace packages to ensure latest code is bundled...");
+  child_process.execSync("pnpm -r --filter=./packages/* run build", { cwd: rootDir, stdio: "inherit" });
 
   // 2. Locate and verify Node.js binary
   const nodeSrc = process.execPath;

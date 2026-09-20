@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import child_process from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,3 +29,123 @@ if (!fs.existsSync(tunnelExe) || !fs.existsSync(cloudflaredExe) || !fs.existsSyn
 }
 
 console.log("Bundled resources contain verified tunnel runtime and no database or migration-backup artifacts.");
+
+// Section 9: Build Artifact Regression Test
+// Verify the bundled server runtime directly by launching it and fetching tools/list
+async function verifyBundledServerMcpSchema() {
+  console.log("Verifying bundled server MCP tools/list schema...");
+  const serverDir = path.join(resources, "server");
+  const nodeExe = path.join(resources, "runtime/node.exe");
+
+  if (!fs.existsSync(path.join(serverDir, "index.js")) || !fs.existsSync(nodeExe)) {
+    throw new Error("Bundled server or runtime missing for schema verification.");
+  }
+
+  const tmpDbDir = fs.mkdtempSync(path.join(process.env.TEMP || "C:/temp", "lb-verify-tools-"));
+  const dbPath = path.join(tmpDbDir, "verify.db");
+  const testPort = "18998";
+  const mgmtToken = "lm_verify_secret_token_12345";
+
+  const serverProc = child_process.spawn(nodeExe, ["index.js"], {
+    cwd: serverDir,
+    env: {
+      ...process.env,
+      LOCALBRIDGE_SERVER_HOST: "127.0.0.1",
+      LOCALBRIDGE_SERVER_PORT: testPort,
+      LOCALBRIDGE_SERVER_DB_PATH: dbPath,
+      LOCALBRIDGE_LOG_LEVEL: "silent",
+      LOCALBRIDGE_MANAGEMENT_TOKEN: mgmtToken,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  try {
+    // Wait for server ready
+    let ready = false;
+    for (let i = 0; i < 30; i++) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${testPort}/api/mcp/status`, {
+          headers: { authorization: `Bearer ${mgmtToken}` },
+        });
+        if (res.status === 200) {
+          ready = true;
+          break;
+        }
+      } catch {}
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (!ready) {
+      throw new Error("Bundled server failed to start within timeout during resource verification.");
+    }
+
+    // Create an MCP token
+    const tokenRes = await fetch(`http://127.0.0.1:${testPort}/api/tokens`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${mgmtToken}`,
+      },
+      body: JSON.stringify({
+        name: "verify-mcp-token",
+        type: "mcp",
+        scopes: ["read", "write", "execute"],
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    const mcpToken = tokenData.token;
+
+    // Call tools/list
+    const listRes = await fetch(`http://127.0.0.1:${testPort}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${mcpToken}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "verify-list",
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    const listData = await listRes.json();
+    const tools = listData.result?.tools ?? [];
+
+    const cmdRun = tools.find((t: any) => t.name === "localbridge_command_run");
+    if (!cmdRun) throw new Error("localbridge_command_run tool missing from bundled server tools/list");
+    if (cmdRun.inputSchema?.type !== "object") throw new Error("localbridge_command_run inputSchema is not an object");
+    if (!cmdRun.inputSchema?.properties?.approvalId) {
+      throw new Error("BUILD ARTIFACT REGRESSION: localbridge_command_run inputSchema is missing properties.approvalId!");
+    }
+    if (cmdRun.inputSchema.properties.approvalId.type !== "string") {
+      throw new Error("localbridge_command_run properties.approvalId must be string");
+    }
+    if (cmdRun.inputSchema.required?.includes("approvalId")) {
+      throw new Error("localbridge_command_run approvalId must NOT be required");
+    }
+    if (cmdRun.inputSchema.properties.timeoutMs?.maximum !== 300000 || cmdRun.inputSchema.properties.timeoutMs?.default !== 60000) {
+      throw new Error(`localbridge_command_run timeoutMs contract mismatch: expected max 300000, default 60000`);
+    }
+
+    const jobStart = tools.find((t: any) => t.name === "localbridge_job_start");
+    if (!jobStart?.inputSchema?.properties?.approvalId) {
+      throw new Error("BUILD ARTIFACT REGRESSION: localbridge_job_start inputSchema is missing properties.approvalId!");
+    }
+    if (jobStart.inputSchema.properties.timeoutMs?.maximum !== 300000 || jobStart.inputSchema.properties.timeoutMs?.default !== 60000) {
+      throw new Error(`localbridge_job_start timeoutMs contract mismatch: expected max 300000, default 60000`);
+    }
+
+    console.log("Bundled server MCP schema verified successfully: approvalId exists and timeoutMs contract is unified.");
+  } finally {
+    serverProc.kill();
+    try {
+      fs.rmSync(tmpDbDir, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+verifyBundledServerMcpSchema().catch((err) => {
+  console.error("Bundled resource verification failed:", err);
+  process.exit(1);
+});

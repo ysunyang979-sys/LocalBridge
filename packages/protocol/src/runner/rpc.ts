@@ -600,8 +600,8 @@ export const JobStartToolInputSchema = z.object({
     .number()
     .int()
     .min(1000)
-    .max(3600000)
-    .default(600000)
+    .max(300000)
+    .default(60000)
     .describe("Job timeout in milliseconds"),
   approvalId: z
     .string()
@@ -696,7 +696,7 @@ export type JobState = z.infer<typeof JobStateSchema>;
 export const JobStartParamsSchema = z
   .object({
     command: CommandSpecSchema,
-    timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
   })
   .strict();
@@ -823,7 +823,7 @@ export const BuildStartParamsSchema = z
     script: z.string().default("build"),
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
-    timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
   })
   .strict();
@@ -846,7 +846,7 @@ export const TestStartParamsSchema = z
     script: z.string().default("test"),
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
-    timeoutMs: z.number().int().min(1000).max(3600000).default(600000),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
   })
   .strict();
