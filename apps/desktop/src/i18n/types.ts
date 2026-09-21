@@ -391,6 +391,13 @@ export interface I18nDictionary {
     endpointReachableAuthRequired: string;
     secureTunnelOffline: string;
     endpointCopied: string;
+    completeAuth: string;
+    quickConfigure: string;
+    addConfig: string;
+    configure: string;
+    authRequiredReason: string;
+    configRequiredReason: string;
+    tunnelManagedReason: string;
   };
   tokens: {
     title: string;

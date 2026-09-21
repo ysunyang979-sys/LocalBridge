@@ -13,6 +13,7 @@ import {
   Copy,
   Check,
   RefreshCw,
+  Star,
 } from "lucide-react";
 import type {
   AIConnectionDto,
@@ -285,7 +286,7 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
                 <button
                   type="button"
                   onClick={() => handleCopyEndpoint(tunnelRes.endpoint!)}
-                  className="px-2 py-0.5 rounded bg-theme-card hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle text-[11px] font-medium shrink-0 transition flex items-center gap-1"
+                  className="btn-secondary px-2 py-0.5 rounded text-[11px] font-medium shrink-0 transition flex items-center gap-1"
                 >
                   {copiedEndpoint ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                   <span>{copiedEndpoint ? (t.common.copied || "已复制") : (t.aiConnections?.copyEndpoint || "复制")}</span>
@@ -301,7 +302,7 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
                   <button
                     type="button"
                     onClick={onOpenTunnel}
-                    className="px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-amber-600 hover:bg-amber-500 text-white transition shrink-0"
+                    className="btn-primary px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0"
                   >
                     {isZh ? "启用隧道" : "Open"}
                   </button>
@@ -374,143 +375,212 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
       </div>
 
       {/* ==================== ACTION FOOTER ==================== */}
-      <div className="pt-3 border-t border-theme-subtle flex items-center justify-between gap-2 mt-3">
-        <div className="flex items-center gap-1.5">
-          {!isPrimary && (
+      <div className="pt-3.5 mt-3 border-t border-slate-200 dark:border-white/10 flex items-center justify-between gap-3 flex-wrap">
+        {/* Left: Secondary Status / Set as Primary */}
+        <div className="flex items-center gap-2 min-w-0">
+          {!isPrimary ? (
             <button
+              type="button"
               onClick={() => onSetPrimary(vm.id)}
-              className="text-[11px] px-2 py-1 rounded text-theme-muted hover:text-theme-primary hover:bg-theme-card-hover transition"
+              className="btn-tertiary text-xs px-2.5 py-1 rounded-md transition flex items-center gap-1 shrink-0"
               title={t.aiConnections?.setAsPrimary || "设为主 AI"}
             >
-              {t.aiConnections?.setAsPrimary || "设为首选"}
+              <Star className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+              <span>{t.aiConnections?.setAsPrimary || "设为首选"}</span>
             </button>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+              <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+              <span>{t.aiConnections?.isPrimary || "主要"}</span>
+            </span>
+          )}
+
+          {/* Contextual status hint on the left */}
+          {vm.status === "auth_required" && (
+            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium truncate">
+              {t.aiConnections?.authRequiredReason || "等待授权"}
+            </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* ==================== CHATGPT ACTIONS ==================== */}
+        {/* Right: Main Action Buttons (Max 2 visible in Standard Mode) */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* ==================== 1. CHATGPT ACTIONS ==================== */}
           {isChatGPT && (
             <button
+              type="button"
               onClick={() => onOpenDetails(connection)}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-theme-primary text-theme-inverse hover:opacity-90 transition flex items-center gap-1 shadow-xs"
+              className="btn-secondary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1.5 shadow-xs"
+              title={t.aiConnections?.tunnelManagedReason || "当前连接已由 Secure MCP Tunnel 管理"}
             >
-              <Settings className="w-3.5 h-3.5" />
+              <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
               <span>{t.aiConnections?.viewDetails || "查看详情"}</span>
             </button>
           )}
 
-          {/* ==================== KIMI WEB ACTIONS ==================== */}
+          {/* ==================== 2. KIMI WEB ACTIONS ==================== */}
           {isKimiWeb && (
             <>
-              {/* If unconfigured: show [连接 Kimi] and [安装步骤] */}
               {!isConfigured ? (
                 <>
                   {onOpenKimiPlugin && (
                     <button
                       type="button"
                       onClick={() => onOpenKimiPlugin(connection, "guide")}
-                      className="px-2.5 py-1.5 text-xs font-medium rounded-lg bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle transition flex items-center gap-1"
+                      className="btn-secondary px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1"
                     >
-                      <FileCode className="w-3.5 h-3.5" />
+                      <FileCode className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                       <span>{t.aiConnections?.installationGuide || "安装步骤"}</span>
                     </button>
                   )}
-
                   <button
                     type="button"
                     onClick={() => onOpenDetails(connection)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition flex items-center gap-1"
+                    className="btn-primary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>{t.aiConnections?.connectKimi || "连接 Kimi"}</span>
                   </button>
                 </>
+              ) : vm.status === "auth_required" ? (
+                <>
+                  {onOpenKimiPlugin && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenKimiPlugin(connection, "guide")}
+                      className="btn-secondary px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                      <span>{t.aiConnections?.installationGuide || "安装步骤"}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onOpenDetails(connection)}
+                    className="btn-primary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{t.aiConnections?.completeAuth || "完成授权"}</span>
+                  </button>
+                </>
               ) : (
-                /* When configured / connected: show quick actions and details */
                 <>
                   {tunnelRes.isAvailable && (
                     <button
                       type="button"
                       onClick={handleCopyPrompt}
-                      className="px-2 py-1 text-xs font-medium rounded-lg bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle transition flex items-center gap-1"
+                      className="btn-secondary px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1"
                       title={t.aiConnections?.copyPluginBuilderPrompt || "复制提示词"}
                     >
-                      {copiedPrompt ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                      {copiedPrompt ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-slate-500 dark:text-slate-400" />}
                       <span>{copiedPrompt ? (t.common.copied || "已复制") : (t.aiConnections?.copyPluginBuilderPrompt || "复制提示词")}</span>
                     </button>
                   )}
-
                   <button
+                    type="button"
                     onClick={() => onOpenDetails(connection)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-theme-primary text-theme-inverse hover:opacity-90 transition flex items-center gap-1 shadow-xs"
+                    className="btn-secondary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1"
                   >
-                    <Settings className="w-3.5 h-3.5" />
-                    <span>{t.aiConnections?.viewDetails || "配置与详情"}</span>
+                    <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                    <span>{t.aiConnections?.viewDetails || "查看详情"}</span>
                   </button>
                 </>
               )}
             </>
           )}
 
-          {/* ==================== OTHER NATIVE MCP ACTIONS ==================== */}
+          {/* ==================== 3. CLAUDE & GEMINI (NATIVE MCP) ==================== */}
           {isNativeMcp && !isChatGPT && !isKimiWeb && (
             <>
-              {onApplyConfig && vm.status !== "connected" && (
-                <button
-                  onClick={() => onApplyConfig(connection)}
-                  disabled={isApplying}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30 transition disabled:opacity-50"
-                  title={t.aiConnections?.applyConfig || "一键配置客户端"}
-                >
-                  {isApplying
-                    ? (t.aiConnections?.applyingConfig || "...")
-                    : (t.aiConnections?.quickSetup || "一键配置")}
-                </button>
-              )}
+              {!isConnected ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenDetails(connection)}
+                    className="btn-secondary px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                    <span>{t.aiConnections?.viewDetails || "查看详情"}</span>
+                  </button>
 
-              {isConnected && (
-                <button
-                  onClick={() => onTest(vm.id)}
-                  disabled={isTesting}
-                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle transition disabled:opacity-50 flex items-center gap-1"
-                  title={t.aiConnections?.testConnection || "测试连接"}
-                >
-                  {isTesting && <RefreshCw className="w-3 h-3 animate-spin text-sky-500" />}
-                  <span>{isTesting ? "..." : (t.aiConnections?.testConnection || "测试")}</span>
-                </button>
-              )}
+                  {onApplyConfig && (
+                    <button
+                      type="button"
+                      onClick={() => onApplyConfig(connection)}
+                      disabled={isApplying}
+                      className="btn-primary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                      title={isApplying ? t.aiConnections?.applyingConfig : (t.aiConnections?.applyConfig || "一键配置客户端")}
+                    >
+                      {isApplying && <RefreshCw className="w-3 h-3 animate-spin text-white" />}
+                      <span>{isApplying ? (t.aiConnections?.applyingConfig || "...") : (t.aiConnections?.quickConfigure || "一键配置")}</span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onTest(vm.id)}
+                    disabled={isTesting}
+                    className="btn-secondary px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                    title={t.aiConnections?.testConnection || "测试连接"}
+                  >
+                    {isTesting && <RefreshCw className="w-3 h-3 animate-spin text-sky-500" />}
+                    <span>{isTesting ? "..." : (t.aiConnections?.testConnection || "测试")}</span>
+                  </button>
 
-              <button
-                onClick={() => onOpenDetails(connection)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-theme-primary text-theme-inverse hover:opacity-90 transition flex items-center gap-1 shadow-xs"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>{t.aiConnections?.viewDetails || "配置与详情"}</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenDetails(connection)}
+                    className="btn-secondary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                    <span>{t.aiConnections?.viewDetails || "查看详情"}</span>
+                  </button>
+                </>
+              )}
             </>
           )}
 
-          {/* ==================== TOOL / API ADAPTERS ACTIONS ==================== */}
+          {/* ==================== 4. DEEPSEEK & OPENAI-COMPATIBLE (API ADAPTERS) ==================== */}
           {!isNativeMcp && (
             <>
-              {isConnected && (
+              {!isConfigured ? (
                 <button
-                  onClick={() => onTest(vm.id)}
-                  disabled={isTesting}
-                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle transition disabled:opacity-50 flex items-center gap-1"
+                  type="button"
+                  onClick={() => onOpenDetails(connection)}
+                  className="btn-primary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1"
                 >
-                  {isTesting && <RefreshCw className="w-3 h-3 animate-spin text-sky-500" />}
-                  <span>{isTesting ? "..." : (t.aiConnections?.testConnection || "测试")}</span>
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>
+                    {vm.clientType === "deepseek"
+                      ? (t.aiConnections?.configure || "配置")
+                      : (t.aiConnections?.addConfig || "添加配置")}
+                  </span>
                 </button>
-              )}
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenDetails(connection)}
+                    className="btn-secondary px-2.5 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                    <span>{t.aiConnections?.viewDetails || "查看详情"}</span>
+                  </button>
 
-              <button
-                onClick={() => onOpenDetails(connection)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-theme-primary text-theme-inverse hover:opacity-90 transition flex items-center gap-1 shadow-xs"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>{t.aiConnections?.viewDetails || "配置与详情"}</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => onTest(vm.id)}
+                    disabled={isTesting}
+                    className="btn-primary px-3 py-1.5 text-xs rounded-lg flex items-center gap-1"
+                    title={t.aiConnections?.testConnection || "测试连接"}
+                  >
+                    {isTesting && <RefreshCw className="w-3 h-3 animate-spin text-white" />}
+                    <span>{isTesting ? "..." : (t.aiConnections?.testConnection || "测试连接")}</span>
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>

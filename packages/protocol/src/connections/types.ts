@@ -14,6 +14,8 @@ export type AIConnectionStatus =
   | "connected"
   | "connecting"
   | "configured"
+  | "detected"
+  | "auth_required"
   | "not_configured"
   | "offline"
   | "error"

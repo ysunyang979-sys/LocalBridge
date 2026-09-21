@@ -148,6 +148,7 @@ input:disabled, textarea:disabled, select:disabled {
 .bg-theme-card-muted { background-color: var(--surface-muted); }
 .bg-theme-header { background-color: var(--bg-header); }
 .bg-theme-input { background-color: var(--input-bg); }
+.bg-theme-primary { background-color: var(--accent); }
 
 .border-theme-subtle { border-color: var(--border); }
 .border-theme-card { border-color: var(--border); }
@@ -160,11 +161,126 @@ input:disabled, textarea:disabled, select:disabled {
 .text-theme-subtle { color: var(--text-subtle, #7C8A9D); }
 .text-theme-inverse { color: var(--text-inverse); }
 
-/* Accessible Disabled Button Rules: Ensure opacity >= 0.5 and legible text */
+/* ==================== ACTION BUTTON DESIGN SYSTEM ==================== */
+/* Primary Action Button: Clear brand color, white text, legible border */
+.btn-primary {
+  background-color: #0284c7;
+  color: #ffffff !important;
+  border: 1px solid #0369a1;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #0369a1;
+  border-color: #075985;
+}
+.btn-primary:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+/* Secondary Action Button: Crisp high-contrast neutral button */
+.btn-secondary {
+  background-color: #f8fafc;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a !important;
+}
+.btn-secondary:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+/* Tertiary Action Button: Transparent hover button */
+.btn-tertiary {
+  background-color: transparent;
+  color: #475569 !important;
+  border: 1px solid transparent;
+  font-weight: 500;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-tertiary:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  color: #0f172a !important;
+}
+.btn-tertiary:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+/* Disabled Action Button: Neutral background, clear border, opacity >= 0.6 */
+.btn-disabled,
+button:disabled.btn-primary,
+button:disabled.btn-secondary,
+button:disabled.btn-tertiary,
 button:disabled,
 button[disabled] {
-  opacity: 0.52 !important;
+  background-color: #f1f5f9 !important;
+  color: #64748b !important;
+  border: 1px solid #d7dfea !important;
+  opacity: 0.65 !important;
   cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+/* Dark Theme Overrides */
+[data-theme="dark"] .btn-primary {
+  background-color: #0284c7;
+  color: #ffffff !important;
+  border: 1px solid #38bdf8;
+}
+[data-theme="dark"] .btn-primary:hover:not(:disabled) {
+  background-color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+[data-theme="dark"] .btn-secondary {
+  background-color: #1e293b;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+[data-theme="dark"] .btn-secondary:hover:not(:disabled) {
+  background-color: #334155;
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .btn-tertiary {
+  background-color: transparent;
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .btn-tertiary:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9 !important;
+}
+
+[data-theme="dark"] .btn-disabled,
+[data-theme="dark"] button:disabled.btn-primary,
+[data-theme="dark"] button:disabled.btn-secondary,
+[data-theme="dark"] button:disabled.btn-tertiary,
+[data-theme="dark"] button:disabled,
+[data-theme="dark"] button[disabled] {
+  background-color: #0f172a !important;
+  color: #64748b !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  opacity: 0.65 !important;
 }
 
 /* Scrollbars */
