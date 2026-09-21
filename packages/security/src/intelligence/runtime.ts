@@ -72,7 +72,7 @@ export function ensureManagedRuntime(): boolean {
     ].filter(Boolean);
 
     let foundScript = candidateWorkerScripts.find((s) => fs.existsSync(s));
-    if (foundScript && !fs.existsSync(workerScriptPath)) {
+    if (foundScript) {
       try {
         fs.copyFileSync(foundScript, workerScriptPath);
       } catch {}

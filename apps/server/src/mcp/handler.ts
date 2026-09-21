@@ -277,6 +277,18 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
             id: body.id ?? null,
           });
         }
+
+        const clientDisplayName = tokenRecord.name?.startsWith("AI Client: ")
+          ? tokenRecord.name.slice(11)
+          : tokenRecord.name || "AI Client";
+
+        mcpContext.logAudit("mcp_tool_started", {
+          principal,
+          toolName,
+          clientId: tokenRecord.id,
+          clientName: clientDisplayName,
+          actorDisplayName: clientDisplayName,
+        });
       }
 
       // 3.7 Rate Limiting & Concurrency Tracking

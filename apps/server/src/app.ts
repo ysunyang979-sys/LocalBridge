@@ -13,6 +13,8 @@ import {
 } from "@localbridge/protocol";
 import { initDatabase, type DatabaseConnection } from "./db/index.js";
 import { TokenService } from "./db/token-service.js";
+import { ConnectionService } from "./db/connection-service.js";
+import { AdapterRegistry } from "./adapters/index.js";
 import { RunnerRegistry } from "./runner/registry.js";
 import { RunnerRpcService } from "./runner/rpc-service.js";
 import { ServerProjectService } from "./runner/project-service.js";
@@ -224,6 +226,9 @@ export async function buildApp(
     managementSecret,
     requireManagementAuth,
   });
+  const connectionService = new ConnectionService(db.db, tokenService);
+  const adapterRegistry = new AdapterRegistry(connectionService, mcpContext);
+
   await app.register(managementRoutes, {
     prefix: "/api",
     tokenService,
@@ -231,6 +236,8 @@ export async function buildApp(
     rpcService,
     projectService,
     mcpContext,
+    connectionService,
+    adapterRegistry,
     db: db.db,
     managementSecret,
     requireManagementAuth,

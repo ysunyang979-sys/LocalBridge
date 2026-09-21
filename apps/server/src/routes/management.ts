@@ -19,6 +19,8 @@ import type { McpContext } from "../mcp/context.js";
 import { canonicalPayloadHash } from "@localbridge/shared";
 import type Database from "better-sqlite3";
 import type { JobRow } from "../db/schema.js";
+import { ConnectionService } from "../db/connection-service.js";
+import { AdapterRegistry } from "../adapters/index.js";
 
 export interface ManagementRoutesOptions {
   tokenService: TokenService;
@@ -26,6 +28,8 @@ export interface ManagementRoutesOptions {
   rpcService: RunnerRpcService;
   projectService: ServerProjectService;
   mcpContext: McpContext;
+  connectionService?: ConnectionService;
+  adapterRegistry?: AdapterRegistry;
   db?: Database.Database;
   managementSecret?: string;
   requireManagementAuth?: boolean;
@@ -164,7 +168,9 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
   fastify,
   opts
 ) => {
-  const { tokenService, runnerRegistry, rpcService, projectService, mcpContext, db } = opts;
+  const { tokenService, runnerRegistry, rpcService, projectService, mcpContext, connectionService, adapterRegistry, db } = opts;
+  const connService = connectionService || (db ? new ConnectionService(db, tokenService) : null);
+  const adpRegistry = adapterRegistry || (connService ? new AdapterRegistry(connService, mcpContext) : null);
 
   // Middleware: Enforce loopback check and security for all routes in this plugin
   fastify.addHook("onRequest", async (request, reply) => {
@@ -1741,5 +1747,122 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     const advice = await mcpContext.getDecisionAdvice(context);
     return reply.status(200).send(advice);
   });
+
+  // AI Connection Center Routes
+  fastify.get("/management/connections", async (_request, reply) => {
+    if (!connService) {
+      return reply.status(503).send({ error: "Connection service not initialized" });
+    }
+    const connections = connService.listConnections();
+    return reply.status(200).send({ connections });
+  });
+
+  fastify.get("/management/connections/presets", async (_request, reply) => {
+    const presets = adpRegistry ? adpRegistry.getPresets() : [];
+    return reply.status(200).send({ presets });
+  });
+
+  fastify.get<{ Params: { id: string } }>("/management/connections/:id", async (request, reply) => {
+    if (!connService) {
+      return reply.status(503).send({ error: "Connection service not initialized" });
+    }
+    const conn = connService.getConnection(request.params.id);
+    if (!conn) {
+      return reply.status(404).send({ error: "Connection not found" });
+    }
+    return reply.status(200).send(conn);
+  });
+
+  fastify.post<{ Body: Record<string, any> }>("/management/connections", async (request, reply) => {
+    if (!connService) {
+      return reply.status(503).send({ error: "Connection service not initialized" });
+    }
+    const input = request.body as any;
+    if (!input || !input.id || !input.clientType || !input.name) {
+      return reply.status(400).send({ error: "Missing required fields (id, clientType, name)" });
+    }
+    const updated = connService.createOrUpdateConnection(input);
+    return reply.status(200).send(updated);
+  });
+
+  fastify.delete<{ Params: { id: string } }>("/management/connections/:id", async (request, reply) => {
+    if (!connService) {
+      return reply.status(503).send({ error: "Connection service not initialized" });
+    }
+    const success = connService.deleteConnection(request.params.id);
+    return reply.status(200).send({ success, id: request.params.id });
+  });
+
+  fastify.post<{ Params: { id: string } }>("/management/connections/:id/primary", async (request, reply) => {
+    if (!connService) {
+      return reply.status(503).send({ error: "Connection service not initialized" });
+    }
+    const success = connService.setPrimary(request.params.id);
+    return reply.status(200).send({ success, id: request.params.id });
+  });
+
+  fastify.post<{ Params: { id: string }; Body?: { scopes?: string[] } }>(
+    "/management/connections/:id/token/rotate",
+    async (request, reply) => {
+      if (!connService) {
+        return reply.status(503).send({ error: "Connection service not initialized" });
+      }
+      try {
+        const res = connService.createOrRotateToken(request.params.id, request.body?.scopes);
+        return reply.status(200).send(res);
+      } catch (err: any) {
+        return reply.status(400).send({ error: err?.message || String(err) });
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string } }>("/management/connections/:id/test", async (request, reply) => {
+    if (!adpRegistry) {
+      return reply.status(503).send({ error: "Adapter registry not initialized" });
+    }
+    const res = await adpRegistry.testConnection(request.params.id);
+    return reply.status(200).send(res);
+  });
+
+  fastify.post<{ Params: { id: string }; Body: { token: string } }>(
+    "/management/connections/:id/config-preview",
+    async (request, reply) => {
+      if (!connService) {
+        return reply.status(503).send({ error: "Connection service not initialized" });
+      }
+      try {
+        const preview = connService.previewConfigPatch(request.params.id, request.body?.token);
+        return reply.status(200).send(preview);
+      } catch (err: any) {
+        return reply.status(400).send({ error: err?.message || String(err) });
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string }; Body: { token: string } }>(
+    "/management/connections/:id/config-apply",
+    async (request, reply) => {
+      if (!connService) {
+        return reply.status(503).send({ error: "Connection service not initialized" });
+      }
+      try {
+        const result = connService.applyConfigPatch(request.params.id, request.body?.token);
+        return reply.status(200).send(result);
+      } catch (err: any) {
+        return reply.status(400).send({ error: err?.message || String(err) });
+      }
+    }
+  );
+
+  fastify.post<{ Body: { targetPath: string; backupPath: string } }>(
+    "/management/connections/config-rollback",
+    async (request, reply) => {
+      if (!connService) {
+        return reply.status(503).send({ error: "Connection service not initialized" });
+      }
+      const ok = connService.rollbackConfigPatch(request.body.targetPath, request.body.backupPath);
+      return reply.status(200).send({ success: ok });
+    }
+  );
 };
 

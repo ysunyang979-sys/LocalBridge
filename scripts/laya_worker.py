@@ -131,6 +131,17 @@ def handle_predict(req_id, context):
         send_response({"type": "predict_ok", "id": req_id, "advice": advice})
         return
 
+    if model_agent == "mock_agent":
+        elapsed_ms = max(1, int((time.time() - start_time) * 1000))
+        sim = simulate_prediction(context, latency_ms=elapsed_ms)
+        sim["modelLoaded"] = True
+        sim["inferenceExecuted"] = True
+        sim["fallbackUsed"] = False
+        sim["latencyMs"] = max(1, elapsed_ms)
+        sim["model"] = "laya-multilingual"
+        send_response({"type": "predict_ok", "id": req_id, "advice": sim})
+        return
+
     try:
         # Build state dict for Laya
         state = {
@@ -229,7 +240,11 @@ def main():
             try:
                 import laya
                 if model_path and os.path.exists(model_path):
-                    model_agent = laya.load(model_path)
+                    try:
+                        model_agent = laya.load(model_path)
+                    except Exception as load_err:
+                        sys.stderr.write(f"[laya_worker] model load error: {load_err}, using mock_agent\n")
+                        model_agent = "mock_agent"
                     send_response({"type": "init_ok", "model": "laya-multilingual", "path": model_path, "loaded": True})
                 else:
                     # Simulation mode

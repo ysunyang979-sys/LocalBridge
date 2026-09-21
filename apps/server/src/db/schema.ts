@@ -195,3 +195,23 @@ export interface RuntimeGenerationRow {
   started_at: number;
   stopped_at: number | null;
 }
+
+export interface AiConnectionRow {
+  id: string;
+  client_type: string;
+  name: string;
+  category: string;
+  status: string;
+  transport: string;
+  endpoint: string;
+  token_id: string | null;
+  config_json: string | null;
+  detected_config_path: string | null;
+  is_primary: number;
+  tool_allowlist_json: string | null;
+  created_at: number;
+  updated_at: number;
+  last_seen_at: number | null;
+  last_connected_at: number | null;
+  last_error: string | null;
+}

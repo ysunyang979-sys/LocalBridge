@@ -87,3 +87,4 @@ export function initDatabase(
 
 export * from "./schema.js";
 export * from "./migrate.js";
+export * from "./connection-service.js";

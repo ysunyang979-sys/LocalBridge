@@ -317,8 +317,8 @@ export class ModelDownloadManager {
       return this.getStatus();
     }
 
-    // Copy to managed AppData directory
-    const destDir = getDefaultModelDir();
+    // Copy to managed directory
+    const destDir = this.targetDir || getDefaultModelDir();
     this.status = "verifying";
     this.lastError = null;
     this.downloadStartTime = Date.now();
