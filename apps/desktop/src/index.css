@@ -5,65 +5,65 @@
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg-app: #0b0f19;
-  --bg-sidebar: #060911;
-  --bg-card: #0f172a;
-  --bg-card-hover: #1e293b;
-  --bg-card-muted: #131d31;
-  --bg-header: rgba(15, 23, 42, 0.85);
-  --bg-modal-overlay: rgba(0, 0, 0, 0.75);
-  --bg-input: #020617;
-  --bg-tag: #1e293b;
-  --border-subtle: #1e293b;
-  --border-card: #1e293b;
-  --border-input: #334155;
-  --border-focus: #6366f1;
-  --text-primary: #f8fafc;
+  --bg-app: #080c14;
+  --bg-sidebar: #060810;
+  --bg-card: #0d1320;
+  --bg-card-hover: #121a2c;
+  --bg-card-muted: #090e18;
+  --bg-header: rgba(8, 12, 20, 0.85);
+  --bg-modal-overlay: rgba(3, 6, 12, 0.8);
+  --bg-input: #050810;
+  --bg-tag: #121a2c;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-card: rgba(255, 255, 255, 0.08);
+  --border-input: rgba(255, 255, 255, 0.12);
+  --border-focus: #38bdf8;
+  --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-  --accent-primary: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-soft: rgba(99, 102, 241, 0.15);
-  --accent-border: rgba(99, 102, 241, 0.35);
-  --scrollbar-thumb: #334155;
-  --scrollbar-hover: #475569;
+  --accent-primary: #38bdf8;
+  --accent-hover: #0ea5e9;
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --accent-border: rgba(56, 189, 248, 0.28);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-hover: rgba(255, 255, 255, 0.22);
 }
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg-app: #f5f7fb;
-  --bg-sidebar: #e8ecf4;
+  --bg-app: #f4f6fb;
+  --bg-sidebar: #e7ebf3;
   --bg-card: #ffffff;
   --bg-card-hover: #f8fafc;
-  --bg-card-muted: #f1f5f9;
-  --bg-header: rgba(255, 255, 255, 0.85);
+  --bg-card-muted: #edf2f7;
+  --bg-header: rgba(244, 246, 251, 0.85);
   --bg-modal-overlay: rgba(15, 23, 42, 0.45);
   --bg-input: #ffffff;
-  --bg-tag: #f1f5f9;
-  --border-subtle: #e2e8f0;
-  --border-card: #e2e8f0;
-  --border-input: #cbd5e1;
-  --border-focus: #6366f1;
+  --bg-tag: #edf2f7;
+  --border-subtle: rgba(0, 0, 0, 0.07);
+  --border-card: rgba(0, 0, 0, 0.09);
+  --border-input: rgba(0, 0, 0, 0.14);
+  --border-focus: #0284c7;
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
-  --accent-primary: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-soft: rgba(99, 102, 241, 0.1);
-  --accent-border: rgba(99, 102, 241, 0.3);
-  --scrollbar-thumb: #cbd5e1;
-  --scrollbar-hover: #94a3b8;
+  --accent-primary: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-soft: rgba(2, 132, 199, 0.1);
+  --accent-border: rgba(2, 132, 199, 0.25);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --scrollbar-hover: rgba(0, 0, 0, 0.25);
 }
 
 body {
   margin: 0;
   padding: 0;
-  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, Roboto, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   background-color: var(--bg-app);
   color: var(--text-primary);
   user-select: none;
   overflow: hidden;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.15s ease-out, color 0.15s ease-out;
 }
 
 /* Theme Tokens Utility Helpers */
@@ -153,4 +153,47 @@ body {
 }
 [data-theme="dark"] .badge-purple {
   color: #c084fc;
+}
+
+.badge-cyan {
+  background-color: rgba(56, 189, 248, 0.12);
+  color: #0284c7;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+[data-theme="dark"] .badge-cyan {
+  color: #38bdf8;
+}
+
+.badge-gray {
+  background-color: rgba(148, 163, 184, 0.12);
+  color: #64748b;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+[data-theme="dark"] .badge-gray {
+  color: #94a3b8;
+}
+
+/* Hairline borders & command center utils */
+.border-hairline {
+  border-width: 1px;
+  border-color: var(--border-subtle);
+}
+
+.command-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 0.75rem;
+  transition: border-color 0.15s ease-out, background-color 0.15s ease-out;
+}
+.command-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="light"] .command-card:hover {
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+.quiet-terminal {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background-color: #05070d;
+  color: #cbd5e1;
 }

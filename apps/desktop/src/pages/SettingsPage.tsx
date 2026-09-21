@@ -28,6 +28,7 @@ import {
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import { useTheme, type ThemeMode } from "../theme/ThemeContext.js";
+import nexusLogo from "../assets/nexus.png";
 import type {
   Project,
   ProjectTrustPolicy,
@@ -47,6 +48,7 @@ interface SettingsPageProps {
 export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefresh }) => {
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useTheme();
+  const [activeTab, setActiveTab] = useState<"tunnel" | "security" | "general" | "about">("tunnel");
 
   // Server URL State
   const [serverUrl, setServerUrl] = useState(bridge.getBaseUrl());
@@ -601,15 +603,71 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   };
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto select-none">
       <div>
-        <h2 className="text-xl font-bold text-theme-primary">{t.settings.title}</h2>
+        <h2 className="text-xl font-bold text-theme-primary tracking-tight">{t.settings.title}</h2>
         <p className="text-xs text-theme-muted">{t.settings.subtitle}</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Column: Secure MCP Tunnel (P0) */}
-        <div className="space-y-6">
+      {/* Settings Navigation Tabs */}
+      <div className="flex items-center gap-1 bg-[#0d1320] border border-white/[0.06] p-1 rounded-xl overflow-x-auto">
+        <button
+          type="button"
+          onClick={() => setActiveTab("tunnel")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "tunnel"
+              ? "bg-white/[0.1] text-white shadow-sm"
+              : "text-theme-muted hover:text-theme-primary"
+          }`}
+        >
+          <Radio className="w-3.5 h-3.5 text-sky-400" />
+          <span>Secure Tunnel & Proxy</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("security")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "security"
+              ? "bg-white/[0.1] text-white shadow-sm"
+              : "text-theme-muted hover:text-theme-primary"
+          }`}
+        >
+          <Shield className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Security & Trust Policies</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("general")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "general"
+              ? "bg-white/[0.1] text-white shadow-sm"
+              : "text-theme-muted hover:text-theme-primary"
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5 text-slate-300" />
+          <span>General & Core Server</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("about")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "about"
+              ? "bg-white/[0.1] text-white shadow-sm"
+              : "text-theme-muted hover:text-theme-primary"
+          }`}
+        >
+          <Info className="w-3.5 h-3.5 text-emerald-400" />
+          <span>About Nexus</span>
+        </button>
+      </div>
+
+      <div className="space-y-6">
+        {/* Tab 1: Secure Tunnel (P0) */}
+        {activeTab === "tunnel" && (
+          <div className="max-w-4xl space-y-6">
           <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
@@ -1046,97 +1104,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               )}
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Server Connection */}
-          <form
-            onSubmit={handleSaveServer}
-            className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm"
-          >
-            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-              <Server className="w-4 h-4 text-indigo-500" />
-              <span>{t.settings.serverConnectionGroup}</span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-theme-secondary mb-1.5">
-                {t.settings.serverUrlLabel}
-              </label>
-              <input
-                type="text"
-                value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
-                className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-mono text-theme-primary focus:outline-none focus:border-indigo-500"
-              />
-              <p className="text-[11px] text-theme-muted mt-1">{t.settings.serverUrlHelp}</p>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="submit"
-                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition"
-              >
-                {saved ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-300" />
-                    <span>{t.common.saved}</span>
-                  </>
-                ) : (
-                  <span>{t.settings.saveChanges}</span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleResetServer}
-                className="flex items-center gap-1 px-3 py-2 bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary rounded-lg text-xs font-medium border border-theme-subtle transition"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>{t.settings.resetDefault}</span>
-              </button>
-            </div>
-          </form>
-
-          {/* Local Operator Settings */}
-          <form
-            onSubmit={handleSaveOperator}
-            className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm"
-          >
-            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-              <User className="w-4 h-4 text-indigo-500" />
-              <span>{t.trust.operatorSettingsTitle}</span>
-            </div>
-            <p className="text-xs text-theme-muted">{t.trust.operatorSettingsDesc}</p>
-
-            <div>
-              <label className="block text-xs font-medium text-theme-secondary mb-1.5">
-                {t.trust.operatorDisplayNameLabel}
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={operatorDisplayName}
-                  onChange={(e) => setOperatorDisplayName(e.target.value)}
-                  placeholder="本机用户"
-                  className="flex-1 bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-medium text-theme-primary focus:outline-none focus:border-indigo-500"
-                />
-                <button
-                  type="submit"
-                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shrink-0"
-                >
-                  {operatorSaved ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-300" />
-                      <span>{t.common.saved}</span>
-                    </>
-                  ) : (
-                    <span>{t.common.save}</span>
-                  )}
-                </button>
-              </div>
-              <p className="text-[11px] text-theme-muted mt-1">{t.trust.operatorDisplayNameHelp}</p>
-            </div>
-          </form>
-
+      {/* Tab 2: Security & Trust Policies */}
+      {activeTab === "security" && (
+        <div className="max-w-4xl space-y-6">
           {/* Approval Routing Mode */}
           <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -1799,13 +1772,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
             </div>
           </div>
         </div>
+      )}
 
-        {/* Right Column: General, Security & About */}
-        <div className="space-y-6">
+      {/* Tab 3: General & Core Server */}
+      {activeTab === "general" && (
+        <div className="max-w-4xl space-y-6">
           {/* General: Language */}
           <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-              <Globe className="w-4 h-4 text-indigo-500" />
+              <Globe className="w-4 h-4 text-sky-500" />
               <span>{t.settings.generalGroup}</span>
             </div>
 
@@ -1819,8 +1794,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   onClick={() => setLanguage("zh-CN")}
                   className={`p-3 rounded-lg border text-xs font-medium transition text-left ${
                     language === "zh-CN"
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                      : "bg-theme-input border-theme-input text-theme-secondary hover:border-indigo-500"
+                      ? "bg-sky-600 text-white border-sky-600 shadow-sm"
+                      : "bg-theme-input border-theme-input text-theme-secondary hover:border-sky-500"
                   }`}
                 >
                   <div className="font-semibold">{t.settings.languageZh}</div>
@@ -1832,8 +1807,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   onClick={() => setLanguage("en-US")}
                   className={`p-3 rounded-lg border text-xs font-medium transition text-left ${
                     language === "en-US"
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                      : "bg-theme-input border-theme-input text-theme-secondary hover:border-indigo-500"
+                      ? "bg-sky-600 text-white border-sky-600 shadow-sm"
+                      : "bg-theme-input border-theme-input text-theme-secondary hover:border-sky-500"
                   }`}
                 >
                   <div className="font-semibold">{t.settings.languageEn}</div>
@@ -1846,7 +1821,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
           {/* Appearance: Theme */}
           <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-              <SunMoon className="w-4 h-4 text-indigo-500" />
+              <SunMoon className="w-4 h-4 text-sky-500" />
               <span>{t.settings.appearanceGroup}</span>
             </div>
 
@@ -1870,14 +1845,139 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                       onClick={() => setThemeMode(mode)}
                       className={`p-3 rounded-lg border text-xs font-medium transition text-center ${
                         active
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                          : "bg-theme-input border-theme-input text-theme-secondary hover:border-indigo-500"
+                          ? "bg-sky-600 text-white border-sky-600 shadow-sm"
+                          : "bg-theme-input border-theme-input text-theme-secondary hover:border-sky-500"
                       }`}
                     >
                       {label}
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Server Connection */}
+          <form
+            onSubmit={handleSaveServer}
+            className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm"
+          >
+            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+              <Server className="w-4 h-4 text-sky-500" />
+              <span>{t.settings.serverConnectionGroup}</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-theme-secondary mb-1.5">
+                {t.settings.serverUrlLabel}
+              </label>
+              <input
+                type="text"
+                value={serverUrl}
+                onChange={(e) => setServerUrl(e.target.value)}
+                className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-mono text-theme-primary focus:outline-none focus:border-sky-500"
+              />
+              <p className="text-[11px] text-theme-muted mt-1">{t.settings.serverUrlHelp}</p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="submit"
+                className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition shadow-sm"
+              >
+                {saved ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>{t.common.saved}</span>
+                  </>
+                ) : (
+                  <span>{t.settings.saveChanges}</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetServer}
+                className="flex items-center gap-1 px-3 py-2 bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary rounded-lg text-xs font-medium border border-theme-subtle transition"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{t.settings.resetDefault}</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Local Operator Settings */}
+          <form
+            onSubmit={handleSaveOperator}
+            className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm"
+          >
+            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+              <User className="w-4 h-4 text-sky-500" />
+              <span>{t.trust.operatorSettingsTitle}</span>
+            </div>
+            <p className="text-xs text-theme-muted">{t.trust.operatorSettingsDesc}</p>
+
+            <div>
+              <label className="block text-xs font-medium text-theme-secondary mb-1.5">
+                {t.trust.operatorDisplayNameLabel}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={operatorDisplayName}
+                  onChange={(e) => setOperatorDisplayName(e.target.value)}
+                  placeholder="本机用户"
+                  className="flex-1 bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-medium text-theme-primary focus:outline-none focus:border-sky-500"
+                />
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition shrink-0 shadow-sm"
+                >
+                  {operatorSaved ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>{t.common.saved}</span>
+                    </>
+                  ) : (
+                    <span>{t.common.save}</span>
+                  )}
+                </button>
+              </div>
+              <p className="text-[11px] text-theme-muted mt-1">{t.trust.operatorDisplayNameHelp}</p>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Tab 4: About Nexus */}
+      {activeTab === "about" && (
+        <div className="max-w-4xl space-y-6">
+          {/* About Section */}
+          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 text-xs shadow-sm">
+            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+              <Info className="w-4 h-4 text-sky-500" />
+              <span>{t.settings.aboutGroup}</span>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <img
+                src={nexusLogo}
+                alt="Nexus"
+                className="w-12 h-12 rounded-xl object-cover shadow-sm border border-white/10"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = "/nexus.png";
+                }}
+              />
+              <div className="space-y-0.5">
+                <div className="font-bold text-base text-theme-primary">
+                  {t.settings.appName || "Nexus"}
+                </div>
+                <div className="text-theme-secondary font-mono text-[11px]">
+                  Local AI Control Plane &bull; v2.0.0
+                </div>
+                <div className="text-[10px] font-mono text-theme-muted">
+                  Build {typeof __BUILD_COMMIT__ !== "undefined" ? __BUILD_COMMIT__ : "ui-2.0"} &bull; Node Bundled Runtime
+                </div>
               </div>
             </div>
           </div>
@@ -1889,7 +1989,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               <span>{t.settings.securityTitle}</span>
             </div>
 
-            <ul className="space-y-3 text-theme-secondary list-disc list-inside">
+            <ul className="space-y-3 text-theme-secondary list-disc list-inside font-mono text-[11px]">
               <li>
                 <strong className="text-theme-primary">{t.settings.loopbackGuarantee}:</strong>{" "}
                 {t.settings.loopbackGuaranteeDesc}
@@ -1908,33 +2008,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               </li>
             </ul>
           </div>
-
-          {/* About Section */}
-          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-3 text-xs shadow-sm">
-            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-              <Info className="w-4 h-4 text-indigo-500" />
-              <span>{t.settings.aboutGroup}</span>
-            </div>
-
-            <div className="flex items-center gap-3 pt-1">
-              <img
-                src="/app-icon.png"
-                alt="Nexus"
-                className="w-10 h-10 rounded-lg object-contain shadow-sm"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = "/favicon.png";
-                }}
-              />
-              <div>
-                <div className="font-bold text-sm text-theme-primary">{t.settings.appName}</div>
-                <div className="text-theme-muted">
-                  {t.settings.versionLabel} 1.2.0 P0 Pre-release &bull; Build {typeof __BUILD_COMMIT__ !== "undefined" ? __BUILD_COMMIT__ : "dev"}
-                </div>
-              </div>
-            </div>
-
-          </div>
         </div>
+      )}
       </div>
 
       {/* Full Project Trust Confirmation Modal */}

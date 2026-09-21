@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { OctagonAlert } from "lucide-react";
 import { Sidebar, type NavPage } from "./components/Sidebar.js";
 import { Header } from "./components/Header.js";
-import { OverviewPage } from "./pages/OverviewPage.js";
+import { NexusPulseLoading } from "./components/NexusPulseLoading.js";
+import { ControlPage } from "./pages/ControlPage.js";
 import { ProjectsPage } from "./pages/ProjectsPage.js";
 import { JobsPage } from "./pages/JobsPage.js";
 import { ConnectionsPage } from "./pages/ConnectionsPage.js";
@@ -33,6 +34,7 @@ export const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<NavPage>("overview");
 
   // State
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
@@ -224,24 +226,41 @@ export const App: React.FC = () => {
     },
   };
 
+  const handleNavigate = (page: NavPage) => {
+    if (page !== "projects") {
+      setSelectedProjectId(null);
+    }
+    setCurrentPage(page);
+  };
+
   return (
     <div className="flex h-screen bg-theme-base text-theme-primary font-sans antialiased overflow-hidden select-none">
       {/* Sidebar Navigation */}
       <Sidebar
         currentPage={currentPage}
-        onSelectPage={setCurrentPage}
+        onSelectPage={handleNavigate}
         pendingApprovalsCount={pendingApprovalsCount}
         activeJobsCount={activeJobsCount}
         serverStatus={serverStatus}
         mcpStatus={mcpStatus}
         runnersCount={runners.length}
+        tunnelStatus={tunnelStatus}
       />
 
       {/* Main Container */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header
-          title={pageTitles[currentPage].title}
-          subtitle={pageTitles[currentPage].subtitle}
+          title={
+            currentPage === "projects" && selectedProjectId
+              ? (projects.find((p) => p.id === selectedProjectId)?.name || "Project Detail")
+              : pageTitles[currentPage].title
+          }
+          subtitle={
+            currentPage === "projects" && selectedProjectId
+              ? (projects.find((p) => p.id === selectedProjectId)?.root || pageTitles[currentPage].subtitle)
+              : pageTitles[currentPage].subtitle
+          }
+          breadcrumb={currentPage === "projects" && selectedProjectId ? "Project Detail" : undefined}
           mcpStatus={mcpStatus}
           approvalRoutingMode={approvalRoutingMode}
           onChangeApprovalRoutingMode={handleChangeApprovalRoutingMode}
@@ -251,6 +270,16 @@ export const App: React.FC = () => {
           isRefreshing={isRefreshing}
           serverAvailable={serverStatus !== null}
           lastSuccessfulRefresh={lastSuccessfulRefresh}
+        />
+
+        <NexusPulseLoading
+          isReady={serverStatus !== null}
+          tunnelConnected={
+            tunnelStatus?.status === "Connected" ||
+            tunnelStatus?.control_plane_connected === true
+          }
+          runnerConnected={runners.length > 0}
+          mcpActive={mcpStatus !== null && !mcpStatus.paused}
         />
 
         {startupError && (
@@ -284,7 +313,7 @@ export const App: React.FC = () => {
 
         <main className="flex-1 overflow-y-auto">
           {currentPage === "overview" && (
-            <OverviewPage
+            <ControlPage
               serverStatus={serverStatus}
               mcpStatus={mcpStatus}
               tunnelStatus={tunnelStatus}
@@ -292,11 +321,14 @@ export const App: React.FC = () => {
               approvals={approvals}
               jobs={jobs}
               activeSessionsCount={activeSessionsCount}
-              onNavigate={setCurrentPage}
+              onNavigate={handleNavigate}
+              onSelectProject={(id) => {
+                setSelectedProjectId(id);
+                setCurrentPage("projects");
+              }}
               onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
               onOpenCreateTokenModal={() => setIsCreateTokenModalOpen(true)}
               onOpenEmergencyStopModal={() => setIsEmergencyStopModalOpen(true)}
-              onSelectApproval={setSelectedApproval}
               onQuickResolveApproval={async (id, action) => {
                 await bridge.resolveApproval(id, action);
                 await loadData();
@@ -309,6 +341,8 @@ export const App: React.FC = () => {
               projects={projects}
               onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
               onRefresh={loadData}
+              selectedProjectId={selectedProjectId}
+              onSelectProject={setSelectedProjectId}
             />
           )}
 
