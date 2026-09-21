@@ -119,6 +119,20 @@ pub mod dpapi {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TunnelNetworkMode {
+    Direct,
+    System,
+    Custom,
+}
+
+impl Default for TunnelNetworkMode {
+    fn default() -> Self {
+        TunnelNetworkMode::System
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TunnelConfig {
     pub tunnel_id: String,
@@ -128,6 +142,10 @@ pub struct TunnelConfig {
     pub auto_reconnect: bool,
     #[serde(default = "default_health_port")]
     pub health_port: u16,
+    #[serde(default)]
+    pub network_mode: TunnelNetworkMode,
+    #[serde(default)]
+    pub custom_proxy_url: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -215,6 +233,14 @@ pub struct TunnelStatusDto {
     pub has_mcp_token: bool,
     pub auto_reconnect: bool,
     pub health_port: u16,
+    pub network_mode: String,
+    pub custom_proxy_url: Option<String>,
+    pub active_proxy_url: Option<String>,
+    pub proxy_status: Option<String>,
+    pub control_plane_status: Option<String>,
+    pub local_mcp_status: Option<String>,
+    pub last_successful_poll_at: Option<u64>,
+    pub poll_errors: u64,
     pub error_message: Option<String>,
     pub reconnect_attempts: u32,
 }
@@ -226,6 +252,12 @@ pub struct TunnelSupervisor {
     pub config: Option<TunnelConfig>,
     pub reconnect_attempts: u32,
     pub should_run: bool,
+    pub active_proxy_url: Option<String>,
+    pub proxy_status: Option<String>,
+    pub control_plane_status: Option<String>,
+    pub local_mcp_status: Option<String>,
+    pub last_successful_poll_at: Option<u64>,
+    pub poll_errors: u64,
 }
 
 impl Default for TunnelSupervisor {
@@ -237,6 +269,12 @@ impl Default for TunnelSupervisor {
             config: None,
             reconnect_attempts: 0,
             should_run: false,
+            active_proxy_url: None,
+            proxy_status: None,
+            control_plane_status: None,
+            local_mcp_status: None,
+            last_successful_poll_at: None,
+            poll_errors: 0,
         }
     }
 }
@@ -262,15 +300,21 @@ impl TunnelSupervisor {
 
     pub fn get_status_dto(&self) -> TunnelStatusDto {
         let has_config = self.config.is_some();
-        let (tunnel_id, has_api_key, has_mcp_token, auto_reconnect, health_port) = match &self.config {
+        let (tunnel_id, has_api_key, has_mcp_token, auto_reconnect, health_port, network_mode, custom_proxy_url) = match &self.config {
             Some(c) => (
                 Some(c.tunnel_id.clone()),
                 !c.runtime_api_key.trim().is_empty(),
                 !c.mcp_token.trim().is_empty(),
                 c.auto_reconnect,
                 c.health_port,
+                match c.network_mode {
+                    TunnelNetworkMode::Direct => "direct".to_string(),
+                    TunnelNetworkMode::System => "system".to_string(),
+                    TunnelNetworkMode::Custom => "custom".to_string(),
+                },
+                c.custom_proxy_url.clone(),
             ),
-            None => (None, false, false, true, 8080),
+            None => (None, false, false, true, 8080, "system".to_string(), None),
         };
 
         TunnelStatusDto {
@@ -281,6 +325,14 @@ impl TunnelSupervisor {
             has_mcp_token,
             auto_reconnect,
             health_port,
+            network_mode,
+            custom_proxy_url,
+            active_proxy_url: self.active_proxy_url.clone(),
+            proxy_status: self.proxy_status.clone(),
+            control_plane_status: self.control_plane_status.clone(),
+            local_mcp_status: self.local_mcp_status.clone(),
+            last_successful_poll_at: self.last_successful_poll_at,
+            poll_errors: self.poll_errors,
             error_message: self.error_message.clone(),
             reconnect_attempts: self.reconnect_attempts,
         }
@@ -304,6 +356,11 @@ impl TunnelSupervisor {
         self.error_message = None;
         self.reconnect_attempts = 0;
         self.should_run = false;
+        self.active_proxy_url = None;
+        self.proxy_status = None;
+        self.control_plane_status = None;
+        self.last_successful_poll_at = None;
+        self.poll_errors = 0;
         Ok(())
     }
 
@@ -335,10 +392,184 @@ impl TunnelSupervisor {
             self.status = TunnelStatus::NotConfigured;
         }
         self.reconnect_attempts = 0;
+        self.control_plane_status = Some("Idle".into());
     }
 
     pub fn shutdown(&mut self) {
         self.stop();
+    }
+}
+
+pub fn normalize_proxy_server(raw: &str) -> String {
+    let mut target = raw.trim();
+    if target.contains(';') {
+        let parts: Vec<&str> = target.split(';').collect();
+        let mut https_part = None;
+        let mut http_part = None;
+        for p in parts.iter() {
+            let p = p.trim();
+            if p.starts_with("https=") {
+                https_part = Some(&p[6..]);
+            } else if p.starts_with("http=") {
+                http_part = Some(&p[5..]);
+            }
+        }
+        if let Some(h) = https_part {
+            target = h;
+        } else if let Some(h) = http_part {
+            target = h;
+        } else if let Some(first) = parts.first() {
+            target = first.trim();
+        }
+    }
+
+    if target.starts_with("https=") {
+        target = &target[6..];
+    } else if target.starts_with("http=") {
+        target = &target[5..];
+    }
+
+    if target.starts_with("http://") || target.starts_with("https://") {
+        target.to_string()
+    } else {
+        format!("http://{}", target)
+    }
+}
+
+pub fn resolve_windows_system_proxy() -> Result<Option<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new("reg");
+        cmd.args(["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.output().map_err(|e| format!("Failed to query Windows registry: {}", e))?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut proxy_enable = 0u32;
+        let mut proxy_server: Option<String> = None;
+        let mut auto_config_url: Option<String> = None;
+
+        for line in text.lines() {
+            let line = line.trim();
+            if line.starts_with("ProxyEnable") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let val = parts[2].trim_start_matches("0x");
+                    proxy_enable = u32::from_str_radix(val, 16).unwrap_or(0);
+                }
+            } else if line.starts_with("ProxyServer") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    proxy_server = Some(parts[2..].join(" "));
+                }
+            } else if line.starts_with("AutoConfigURL") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    auto_config_url = Some(parts[2..].join(" "));
+                }
+            }
+        }
+
+        if auto_config_url.is_some() && (proxy_server.is_none() || proxy_enable == 0) {
+            return Err("PAC proxy detected but unsupported".to_string());
+        }
+
+        if proxy_enable == 1 {
+            if let Some(srv) = proxy_server {
+                return Ok(Some(normalize_proxy_server(&srv)));
+            }
+        }
+        Ok(None)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(p) = std::env::var("HTTPS_PROXY").or_else(|_| std::env::var("HTTP_PROXY")) {
+            if !p.trim().is_empty() {
+                return Ok(Some(normalize_proxy_server(&p)));
+            }
+        }
+        Ok(None)
+    }
+}
+
+pub fn parse_metrics_poll_info(metrics_text: &str) -> (Option<u64>, u64) {
+    let mut last_poll = None;
+    let mut poll_errors = 0u64;
+
+    for line in metrics_text.lines() {
+        let line = line.trim();
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+        if line.starts_with("commands_poll_last_successful_timestamp_seconds") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(val) = parts[parts.len() - 1].parse::<f64>() {
+                    if val > 0.0 {
+                        last_poll = Some(val as u64);
+                    }
+                }
+            }
+        } else if line.starts_with("commands_poll_errors_total") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(val) = parts[parts.len() - 1].parse::<f64>() {
+                    poll_errors = val as u64;
+                }
+            }
+        }
+    }
+
+    (last_poll, poll_errors)
+}
+
+pub fn test_proxy_connectivity(proxy_url: &str) -> Result<(), String> {
+    let raw = proxy_url.trim_start_matches("http://").trim_start_matches("https://");
+    let host_port = raw.split('/').next().unwrap_or(raw);
+    let hp = if !host_port.contains(':') {
+        format!("{}:80", host_port)
+    } else {
+        host_port.to_string()
+    };
+    use std::net::ToSocketAddrs;
+    let mut addrs = hp.to_socket_addrs().map_err(|e| format!("Invalid proxy address {}: {}", hp, e))?;
+    let addr = addrs.next().ok_or_else(|| format!("Could not resolve proxy address {}", hp))?;
+    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(3))
+        .map_err(|e| format!("Proxy unreachable at {}: {}", hp, e))?;
+    drop(stream);
+    Ok(())
+}
+
+pub fn test_proxy_openai_connect(proxy_url: &str) -> Result<(), String> {
+    let raw = proxy_url.trim_start_matches("http://").trim_start_matches("https://");
+    let host_port = raw.split('/').next().unwrap_or(raw);
+    let hp = if !host_port.contains(':') {
+        format!("{}:80", host_port)
+    } else {
+        host_port.to_string()
+    };
+    use std::net::ToSocketAddrs;
+    let mut addrs = hp.to_socket_addrs().map_err(|e| format!("Invalid proxy address {}: {}", hp, e))?;
+    let addr = addrs.next().ok_or_else(|| format!("Could not resolve proxy address {}", hp))?;
+
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(4))
+        .map_err(|e| format!("Proxy connection failed: {}", e))?;
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(4))).ok();
+
+    use std::io::{Read, Write};
+    let req = "CONNECT api.openai.com:443 HTTP/1.1\r\nHost: api.openai.com:443\r\nUser-Agent: Nexus-Tunnel-Test\r\n\r\n";
+    stream.write_all(req.as_bytes()).map_err(|e| format!("Failed to send CONNECT to proxy: {}", e))?;
+
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf).map_err(|e| format!("Proxy CONNECT read timeout/failed: {}", e))?;
+    let resp = String::from_utf8_lossy(&buf[..n]);
+    if resp.contains(" 200") || resp.contains("HTTP/1.1 200") || resp.contains("HTTP/1.0 200") {
+        Ok(())
+    } else {
+        Err(format!("Proxy rejected CONNECT to api.openai.com:443: {}", resp.lines().next().unwrap_or("unknown response")))
     }
 }
 
@@ -354,10 +585,11 @@ pub fn ureq_get(url: &str) -> Result<String, String> {
         } else {
             host_port.to_string()
         };
-        let mut stream = TcpStream::connect_timeout(
-            &host_port_string.parse().map_err(|e| format!("Invalid address {}: {}", host_port_string, e))?,
-            Duration::from_millis(500),
-        ).map_err(|e| e.to_string())?;
+        use std::net::ToSocketAddrs;
+        let mut addrs = host_port_string.to_socket_addrs().map_err(|e| format!("Invalid address {}: {}", host_port_string, e))?;
+        let addr = addrs.next().ok_or_else(|| format!("Could not resolve address {}", host_port_string))?;
+        let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(800))
+            .map_err(|e| e.to_string())?;
 
         stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
         stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
@@ -407,6 +639,30 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_proxy_server() {
+        assert_eq!(normalize_proxy_server("127.0.0.1:10808"), "http://127.0.0.1:10808");
+        assert_eq!(normalize_proxy_server("http://127.0.0.1:10808"), "http://127.0.0.1:10808");
+        assert_eq!(normalize_proxy_server("https://127.0.0.1:10808"), "https://127.0.0.1:10808");
+        assert_eq!(
+            normalize_proxy_server("http=127.0.0.1:8080;https=127.0.0.1:10808"),
+            "http://127.0.0.1:10808"
+        );
+    }
+
+    #[test]
+    fn test_parse_metrics_poll_info() {
+        let metrics = "
+# HELP commands_poll_last_successful_timestamp_seconds Last successful poll timestamp
+# TYPE commands_poll_last_successful_timestamp_seconds gauge
+commands_poll_last_successful_timestamp_seconds 1726912345.123
+commands_poll_errors_total 2
+";
+        let (last_poll, poll_errors) = parse_metrics_poll_info(metrics);
+        assert_eq!(last_poll, Some(1726912345));
+        assert_eq!(poll_errors, 2);
+    }
+
+    #[test]
     fn test_tunnel_config_encrypted_persistence() {
         let temp_dir = std::env::temp_dir().join(format!("lb_test_tunnel_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&temp_dir);
@@ -417,6 +673,8 @@ mod tests {
             mcp_token: "lb_test_token".into(),
             auto_reconnect: true,
             health_port: 8080,
+            network_mode: TunnelNetworkMode::System,
+            custom_proxy_url: Some("http://127.0.0.1:10808".into()),
         };
 
         cfg.save_encrypted(&temp_dir).expect("save succeeds");
@@ -433,12 +691,16 @@ mod tests {
         assert_eq!(loaded.tunnel_id, "tunnel_test_123");
         assert_eq!(loaded.runtime_api_key, "sk-runtime-key");
         assert_eq!(loaded.mcp_token, "lb_test_token");
+        assert_eq!(loaded.network_mode, TunnelNetworkMode::System);
+        assert_eq!(loaded.custom_proxy_url.as_deref(), Some("http://127.0.0.1:10808"));
 
         let mut sup = TunnelSupervisor::default();
         sup.init_from_disk(&temp_dir);
         let dto = sup.get_status_dto();
         assert!(dto.configured);
         assert_eq!(dto.tunnel_id.as_deref(), Some("tunnel_test_123"));
+        assert_eq!(dto.network_mode, "system");
+        assert_eq!(dto.custom_proxy_url.as_deref(), Some("http://127.0.0.1:10808"));
         assert!(dto.has_api_key);
         assert!(dto.has_mcp_token);
 

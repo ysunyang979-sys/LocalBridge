@@ -380,3 +380,11 @@ export interface RuntimeLogChunk {
   generation?: number;
 }
 
+export type {
+  TunnelNetworkMode,
+  TunnelSaveConfigInput,
+  TunnelTestConnectionParams,
+  TunnelTestConnectionResult,
+  TunnelStatusDto,
+} from "./api/bridge.js";
+

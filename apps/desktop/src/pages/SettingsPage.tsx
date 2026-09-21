@@ -36,6 +36,7 @@ import type {
   ProtectedFilesPolicy,
   ProjectCustomRules,
   ApprovalRoutingMode,
+  TunnelNetworkMode,
 } from "../types.js";
 
 interface SettingsPageProps {
@@ -58,6 +59,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   const [isEditingKey, setIsEditingKey] = useState(!tunnelStatus?.has_api_key);
   const [isEditingToken, setIsEditingToken] = useState(!tunnelStatus?.has_mcp_token);
   const [autoReconnect, setAutoReconnect] = useState(tunnelStatus?.auto_reconnect ?? true);
+  const [networkMode, setNetworkMode] = useState<TunnelNetworkMode>(
+    tunnelStatus?.network_mode || "system"
+  );
+  const [customProxyUrl, setCustomProxyUrl] = useState(
+    tunnelStatus?.custom_proxy_url || ""
+  );
   const [tokenScopes, setTokenScopes] = useState<string[]>(["read", "write"]);
   const [tunnelBusy, setTunnelBusy] = useState(false);
   const [tunnelSuccessMsg, setTunnelSuccessMsg] = useState<string | null>(null);
@@ -339,6 +346,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     if (tunnelStatus?.has_mcp_token && !mcpToken) {
       setIsEditingToken(false);
     }
+    if (tunnelStatus?.network_mode) {
+      setNetworkMode(tunnelStatus.network_mode);
+    }
+    if (tunnelStatus?.custom_proxy_url !== undefined) {
+      setCustomProxyUrl(tunnelStatus.custom_proxy_url || "");
+    }
   }, [tunnelStatus]);
 
   const handleSaveServer = (e: React.FormEvent) => {
@@ -360,6 +373,30 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   // Helper for user-friendly, secret-safe error mapping
   const formatTunnelError = (err: unknown): string => {
     const raw = err instanceof Error ? err.message : String(err);
+    if (raw.includes("TUNNEL_PROXY_AUTH_UNSUPPORTED") || raw.includes("PROXY_CREDENTIALS_UNSUPPORTED")) {
+      return t.errors.PROXY_CREDENTIALS_UNSUPPORTED;
+    }
+    if (raw.includes("PAC_PROXY_UNSUPPORTED")) {
+      return t.errors.PAC_PROXY_UNSUPPORTED;
+    }
+    if (raw.includes("TUNNEL_PROXY_INVALID")) {
+      return t.errors.TUNNEL_PROXY_INVALID;
+    }
+    if (raw.includes("TUNNEL_PROXY_UNREACHABLE")) {
+      return t.errors.TUNNEL_PROXY_UNREACHABLE;
+    }
+    if (raw.includes("TUNNEL_CONTROL_PLANE_UNREACHABLE")) {
+      return t.errors.TUNNEL_CONTROL_PLANE_UNREACHABLE;
+    }
+    if (raw.includes("TUNNEL_CONTROL_PLANE_TIMEOUT")) {
+      return t.errors.TUNNEL_CONTROL_PLANE_TIMEOUT;
+    }
+    if (raw.includes("TUNNEL_NETWORK_MODE_INVALID")) {
+      return t.errors.TUNNEL_NETWORK_MODE_INVALID;
+    }
+    if (raw.includes("TUNNEL_RESTART_FAILED")) {
+      return t.errors.TUNNEL_RESTART_FAILED;
+    }
     if (raw.includes("missing required key") || raw.includes("invalid args")) {
       return `${t.tunnel.errorConfigFailed} (IPC_ARGUMENT_ERROR)`;
     }
@@ -382,12 +419,25 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTunnelSuccessMsg(null);
     setTunnelErrorMsg(null);
     try {
+      if (networkMode === "custom") {
+        if (customProxyUrl.includes("@")) {
+          setTunnelErrorMsg(t.errors.PROXY_CREDENTIALS_UNSUPPORTED);
+          return;
+        }
+        if (!customProxyUrl.trim()) {
+          setTunnelErrorMsg(t.errors.TUNNEL_PROXY_INVALID);
+          return;
+        }
+      }
+
       await bridge.tunnel.saveConfig({
         tunnelId: tunnelId.trim(),
         runtimeApiKey: runtimeApiKey.trim() || undefined,
         mcpToken: mcpToken.trim() || undefined,
         autoReconnect,
         connectNow: andStart,
+        networkMode,
+        customProxyUrl: networkMode === "custom" ? customProxyUrl.trim() : undefined,
       });
 
       setTunnelSuccessMsg(t.tunnel.configuredSuccess);
@@ -456,6 +506,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       setTunnelId("");
       setRuntimeApiKey("");
       setMcpToken("");
+      setNetworkMode("system");
+      setCustomProxyUrl("");
       setIsEditingKey(true);
       setIsEditingToken(true);
       onRefresh();
@@ -470,16 +522,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     setTunnelBusy(true);
     setTestResult(null);
     try {
-      const res = await bridge.testTunnelConnection();
-      if (res.mcpServerOnline) {
+      const res = await bridge.testTunnelConnection({
+        networkMode,
+        customProxyUrl: networkMode === "custom" ? customProxyUrl.trim() : undefined,
+      });
+      if (res.success) {
         setTestResult({
           success: true,
-          message: t.tunnel.testSuccess,
+          message: res.message || t.tunnel.testSuccess,
         });
       } else {
+        let errMsg = res.message || t.tunnel.testFailed;
+        if (res.errorCode && (t.errors as any)[res.errorCode]) {
+          errMsg = (t.errors as any)[res.errorCode];
+        }
         setTestResult({
           success: false,
-          message: t.tunnel.testFailed,
+          message: errMsg,
         });
       }
     } catch (err: any) {
@@ -625,6 +684,78 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
 
             {/* Tunnel Form Fields */}
             <div className="space-y-4">
+              {/* Outbound Network & Proxy */}
+              <div className="p-3.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-theme-primary flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-sky-500" />
+                    <span>{t.tunnel.networkModeLabel}</span>
+                  </div>
+                  {(tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url) && (
+                    <span className="text-[11px] font-mono text-theme-muted truncate max-w-[200px]" title={tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || ""}>
+                      {tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url}
+                    </span>
+                  )}
+                </div>
+
+                {/* 3 Network Modes */}
+                <div className="grid grid-cols-3 gap-2">
+                  {(["direct", "system", "custom"] as const).map((mode) => {
+                    const active = networkMode === mode;
+                    const label =
+                      mode === "direct"
+                        ? t.tunnel.modeDirect
+                        : mode === "system"
+                          ? t.tunnel.modeSystem
+                          : t.tunnel.modeCustom;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setNetworkMode(mode)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border text-center transition ${
+                          active
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                            : "bg-theme-input border-theme-input text-theme-secondary hover:border-indigo-500"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Mode-specific status / inputs */}
+                {networkMode === "system" && (
+                  <div className="text-[11px] text-theme-muted bg-theme-input/50 px-2.5 py-1.5 rounded border border-theme-subtle flex items-center justify-between">
+                    <span>{t.tunnel.detectedProxyLabel}:</span>
+                    <span className="font-mono text-theme-primary font-medium">
+                      {tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || "127.0.0.1:10808 (Auto)"}
+                    </span>
+                  </div>
+                )}
+
+                {networkMode === "custom" && (
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-medium text-theme-secondary">
+                      {t.tunnel.customProxyUrlLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={customProxyUrl}
+                      onChange={(e) => setCustomProxyUrl(e.target.value)}
+                      placeholder={t.tunnel.customProxyUrlPlaceholder}
+                      className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-1.5 text-xs font-mono text-theme-primary focus:outline-none focus:border-indigo-500"
+                    />
+                    {customProxyUrl.includes("@") && (
+                      <p className="text-[11px] text-red-500 font-medium">
+                        {t.errors.PROXY_CREDENTIALS_UNSUPPORTED}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Tunnel ID */}
               <div>
                 <label className="block text-xs font-medium text-theme-secondary mb-1.5">
@@ -835,6 +966,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
                     <div>
+                      <span className="text-theme-muted">{t.tunnel.networkModeLabel}:</span>{" "}
+                      <span className="text-theme-primary font-semibold uppercase">
+                        {tunnelStatus?.network_mode || "system"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-theme-muted">{t.tunnel.detectedProxyLabel}:</span>{" "}
+                      <span className="text-theme-primary truncate block" title={tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || "Direct / None"}>
+                        {tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || "Direct / None"}
+                      </span>
+                    </div>
+                    <div>
                       <span className="text-theme-muted">{t.tunnel.diagProcess}:</span>{" "}
                       <span className="text-theme-primary">
                         {tunnelStatus?.status === "Connected"
@@ -862,26 +1005,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                     </div>
                     <div>
                       <span className="text-theme-muted">{t.tunnel.diagControlPlane}:</span>{" "}
-                      <span className="text-theme-primary">
-                        {tunnelStatus?.status === "Connected"
-                          ? "Connected"
-                          : tunnelStatus?.status === "Reconnecting"
-                            ? "Reconnecting..."
-                            : tunnelStatus?.status === "Connecting"
-                              ? "Connecting..."
-                              : tunnelStatus?.status === "AuthenticationError"
-                                ? "Auth Failed (401/403)"
-                                : "Disconnected"}
+                      <span className={(tunnelStatus?.control_plane_status === "Connected" || tunnelStatus?.control_plane_connected) ? "text-emerald-500 font-semibold" : "text-theme-primary"}>
+                        {(tunnelStatus?.control_plane_status === "Connected" || tunnelStatus?.control_plane_connected)
+                          ? `${t.tunnel.controlPlaneConnected}`
+                          : (tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Starting" || tunnelStatus?.control_plane_status === "Polling")
+                            ? t.tunnel.controlPlanePolling
+                            : tunnelStatus?.status === "AuthenticationError"
+                              ? "Auth Failed (401/403)"
+                              : t.tunnel.controlPlaneFailed}
                       </span>
                     </div>
                     <div>
                       <span className="text-theme-muted">{t.tunnel.diagMcpSession}:</span>{" "}
-                      <span className="text-theme-primary">
-                        {tunnelStatus?.status === "Connected"
-                          ? "Active / Ready"
-                          : tunnelStatus?.status === "LocalMcpUnavailable"
-                            ? "Offline (503)"
-                            : "Inactive"}
+                      <span className={(tunnelStatus?.local_mcp_status !== "Failed" && tunnelStatus?.local_mcp_connected !== false) ? "text-emerald-500 font-semibold" : "text-red-500 font-semibold"}>
+                        {(tunnelStatus?.local_mcp_status !== "Failed" && tunnelStatus?.local_mcp_connected !== false)
+                          ? t.tunnel.localMcpConnected
+                          : t.tunnel.localMcpFailed}
                       </span>
                     </div>
                     <div>

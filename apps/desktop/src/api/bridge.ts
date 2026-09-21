@@ -643,6 +643,9 @@ class ApiBridge {
       auto_reconnect: true,
       health_port: 8080,
       reconnect_attempts: 0,
+      network_mode: "system",
+      control_plane_connected: false,
+      local_mcp_connected: true,
     };
   }
 
@@ -667,6 +670,8 @@ class ApiBridge {
         mcpToken: params.mcpToken ?? null,
         autoReconnect: params.autoReconnect ?? null,
         healthPort: params.healthPort ?? null,
+        networkMode: params.networkMode ?? null,
+        customProxyUrl: params.customProxyUrl ?? null,
         connectNow: params.connectNow ?? null,
       });
     }
@@ -703,16 +708,20 @@ class ApiBridge {
     throw new Error("Tunnel control requires desktop app");
   }
 
-  async testTunnelConnection(): Promise<{ mcpServerOnline: boolean; mcpServerUrl: string; hasMcpToken: boolean }> {
+  async testTunnelConnection(params?: TunnelTestConnectionParams): Promise<TunnelTestConnectionResult> {
     if (isTauri()) {
-      return invoke<{ mcpServerOnline: boolean; mcpServerUrl: string; hasMcpToken: boolean }>(
-        "desktop_tunnel_test_connection"
-      );
+      return invoke<TunnelTestConnectionResult>("desktop_tunnel_test_connection", {
+        networkMode: params?.networkMode ?? null,
+        customProxyUrl: params?.customProxyUrl ?? null,
+      });
     }
     return {
+      success: false,
+      stage: "local_mcp",
       mcpServerOnline: false,
       mcpServerUrl: "http://127.0.0.1:18080/mcp",
       hasMcpToken: false,
+      message: "Tunnel control requires desktop app",
     };
   }
 
@@ -922,13 +931,39 @@ class ApiBridge {
   }
 }
 
+export type TunnelNetworkMode = "direct" | "system" | "custom";
+
 export interface TunnelSaveConfigInput {
   tunnelId: string;
   runtimeApiKey?: string;
   mcpToken?: string;
   autoReconnect?: boolean;
   healthPort?: number;
+  networkMode?: TunnelNetworkMode;
+  customProxyUrl?: string;
   connectNow?: boolean;
+}
+
+export interface TunnelTestConnectionParams {
+  networkMode?: TunnelNetworkMode;
+  customProxyUrl?: string;
+}
+
+export interface TunnelTestConnectionResult {
+  success: boolean;
+  stage: "local_mcp" | "proxy_connect" | "control_plane_tls" | "tunnel_metrics";
+  mcpServerOnline: boolean;
+  mcpServerUrl: string;
+  hasMcpToken: boolean;
+  proxyReachable?: boolean;
+  controlPlaneTlsOk?: boolean;
+  controlPlaneConnected?: boolean;
+  lastSuccessfulPollAt?: number;
+  pollErrors?: number;
+  activeProxyUrl?: string;
+  resolvedProxyUrl?: string | null;
+  message: string;
+  errorCode?: string;
 }
 
 export interface DesktopTunnelApi {
@@ -938,7 +973,7 @@ export interface DesktopTunnelApi {
   start(): Promise<TunnelStatusDto>;
   stop(): Promise<TunnelStatusDto>;
   clearConfig(): Promise<TunnelStatusDto>;
-  testConnection(): Promise<{ mcpServerOnline: boolean; mcpServerUrl: string; hasMcpToken: boolean }>;
+  testConnection(params?: TunnelTestConnectionParams): Promise<TunnelTestConnectionResult>;
 }
 
 export interface TunnelStatusDto {
@@ -962,6 +997,18 @@ export interface TunnelStatusDto {
   has_mcp_token: boolean;
   auto_reconnect: boolean;
   health_port: number;
+  network_mode: TunnelNetworkMode;
+  custom_proxy_url?: string | null;
+  active_proxy_url?: string | null;
+  resolved_proxy_url?: string | null;
+  proxy_status?: "Reachable" | "Unreachable" | "Unsupported" | "NotConfigured" | null;
+  control_plane_status?: "Connected" | "ConnectionFailed" | "Polling" | "Idle" | null;
+  control_plane_connected?: boolean;
+  local_mcp_status?: "Connected" | "Failed" | null;
+  local_mcp_connected?: boolean;
+  last_successful_poll_at?: number | null;
+  poll_last_successful_timestamp?: number | null;
+  poll_errors?: number;
   error_message?: string | null;
   reconnect_attempts: number;
 }

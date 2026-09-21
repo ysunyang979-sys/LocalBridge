@@ -1048,6 +1048,51 @@ fn spawn_tunnel_internal(
         return Err(msg);
     }
 
+    // Determine outbound proxy according to network_mode
+    let (proxy_env, active_proxy_url) = match cfg.network_mode {
+        tunnel::TunnelNetworkMode::Direct => (None, None),
+        tunnel::TunnelNetworkMode::System => {
+            match tunnel::resolve_windows_system_proxy() {
+                Ok(Some(p)) => {
+                    let p_clone = p.clone();
+                    (Some(p), Some(p_clone))
+                }
+                Ok(None) => {
+                    if let Ok(mut s) = state.lock() {
+                        s.tunnel_supervisor.status = tunnel::TunnelStatus::Error;
+                        s.tunnel_supervisor.error_message = Some("System Proxy mode is selected but no active Windows system proxy was found.".into());
+                        s.tunnel_supervisor.proxy_status = Some("NotConfigured".into());
+                    }
+                    return Err("System Proxy mode is selected but no active Windows system proxy was found.".into());
+                }
+                Err(e) => {
+                    if let Ok(mut s) = state.lock() {
+                        s.tunnel_supervisor.status = tunnel::TunnelStatus::Error;
+                        s.tunnel_supervisor.error_message = Some(format!("System proxy error: {}", e));
+                        s.tunnel_supervisor.proxy_status = Some("Unsupported".into());
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        tunnel::TunnelNetworkMode::Custom => {
+            let custom_p = cfg.custom_proxy_url.as_deref().unwrap_or("").trim();
+            if custom_p.is_empty() {
+                if let Ok(mut s) = state.lock() {
+                    s.tunnel_supervisor.status = tunnel::TunnelStatus::Error;
+                    s.tunnel_supervisor.error_message = Some("Custom proxy URL is empty.".into());
+                    s.tunnel_supervisor.proxy_status = Some("NotConfigured".into());
+                }
+                return Err("Custom proxy URL is empty.".into());
+            }
+            if custom_p.contains('@') {
+                return Err("Proxy authentication credentials are not supported. Please use an unauthenticated proxy.".into());
+            }
+            let normalized = tunnel::normalize_proxy_server(custom_p);
+            (Some(normalized.clone()), Some(normalized))
+        }
+    };
+
     {
         let mut s = state.lock().map_err(|e| e.to_string())?;
         s.tunnel_supervisor.stop();
@@ -1068,6 +1113,22 @@ fn spawn_tunnel_internal(
     cmd.env("LOCALBRIDGE_MCP_AUTH", format!("Bearer {}", cfg.mcp_token));
     cmd.env("MCP_EXTRA_HEADERS", "Authorization: env:LOCALBRIDGE_MCP_AUTH");
     cmd.env("HEALTH_LISTEN_ADDR", format!("127.0.0.1:{}", cfg.health_port));
+
+    // Clear inherited proxy variables
+    cmd.env_remove("TUNNEL_CLIENT_HTTP_PROXY");
+    cmd.env_remove("HTTP_PROXY");
+    cmd.env_remove("HTTPS_PROXY");
+    cmd.env_remove("ALL_PROXY");
+
+    // Local loopback is strictly never proxied
+    cmd.env("NO_PROXY", "127.0.0.1,localhost,::1");
+
+    // Inject CONTROL_PLANE_HTTP_PROXY only if proxy is configured
+    if let Some(ref p) = proxy_env {
+        cmd.env("CONTROL_PLANE_HTTP_PROXY", p);
+    } else {
+        cmd.env_remove("CONTROL_PLANE_HTTP_PROXY");
+    }
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -1098,6 +1159,10 @@ fn spawn_tunnel_internal(
         s.tunnel_supervisor.status = tunnel::TunnelStatus::Connecting;
         s.tunnel_supervisor.error_message = None;
         s.tunnel_supervisor.should_run = true;
+        s.tunnel_supervisor.active_proxy_url = active_proxy_url;
+        s.tunnel_supervisor.proxy_status = if proxy_env.is_some() { Some("Reachable".into()) } else { None };
+        s.tunnel_supervisor.control_plane_status = Some("Polling".into());
+        s.tunnel_supervisor.local_mcp_status = Some("Connected".into());
     }
 
     Ok(())
@@ -1120,6 +1185,8 @@ fn desktop_tunnel_save_config(
     mcp_token: Option<String>,
     auto_reconnect: Option<bool>,
     health_port: Option<u16>,
+    network_mode: Option<String>,
+    custom_proxy_url: Option<String>,
     connect_now: Option<bool>,
 ) -> Result<tunnel::TunnelStatusDto, String> {
     let data_dir = {
@@ -1142,20 +1209,41 @@ fn desktop_tunnel_save_config(
         _ => existing_cfg.as_ref().map(|c| c.mcp_token.clone()).unwrap_or_default(),
     };
 
+    let parsed_network_mode = match network_mode.as_deref().unwrap_or("system").to_lowercase().as_str() {
+        "direct" => tunnel::TunnelNetworkMode::Direct,
+        "custom" => tunnel::TunnelNetworkMode::Custom,
+        _ => tunnel::TunnelNetworkMode::System,
+    };
+
+    let sanitized_custom_proxy = custom_proxy_url.and_then(|u| {
+        let trimmed = u.trim().to_string();
+        if trimmed.is_empty() { None } else { Some(trimmed) }
+    });
+
+    if let Some(ref p) = sanitized_custom_proxy {
+        if p.contains('@') {
+            return Err("Proxy authentication credentials are not supported. Please use an unauthenticated proxy.".into());
+        }
+    }
+
     let cfg = tunnel::TunnelConfig {
         tunnel_id: tunnel_id.trim().to_string(),
         runtime_api_key: final_api_key,
         mcp_token: final_mcp_token,
         auto_reconnect: auto_reconnect.unwrap_or(true),
         health_port: health_port.unwrap_or(8080),
+        network_mode: parsed_network_mode,
+        custom_proxy_url: sanitized_custom_proxy,
     };
 
-    {
+    let was_running = {
         let mut s = state.lock().map_err(|e| e.to_string())?;
+        let active = s.tunnel_supervisor.is_active();
         s.tunnel_supervisor.set_config(cfg, &data_dir)?;
-    }
+        active
+    };
 
-    if connect_now.unwrap_or(false) {
+    if connect_now.unwrap_or(false) || was_running {
         let _ = spawn_tunnel_internal(&app_handle, state.inner().clone());
     }
 
@@ -1196,6 +1284,8 @@ fn desktop_tunnel_auto_create_token(
             mcp_token: lb_token.to_string(),
             auto_reconnect: true,
             health_port: 8080,
+            network_mode: tunnel::TunnelNetworkMode::System,
+            custom_proxy_url: None,
         });
         cfg.mcp_token = lb_token.to_string();
         s.tunnel_supervisor.set_config(cfg, &data_dir)?;
@@ -1239,14 +1329,26 @@ fn desktop_tunnel_clear_config(
 #[tauri::command]
 fn desktop_tunnel_test_connection(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    network_mode: Option<String>,
+    custom_proxy_url: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let (server_port, has_token) = {
-        let s = state.lock().map_err(|e| e.to_string())?;
+    let (server_port, health_port, has_token, mode, custom_p, is_running) = {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
         let port = if s.server_port > 0 { s.server_port } else { 18080 };
+        let hport = s.tunnel_supervisor.config.as_ref().map(|c| c.health_port).unwrap_or(8080);
         let has_tok = s.tunnel_supervisor.config.as_ref().map(|c| !c.mcp_token.is_empty()).unwrap_or(false);
-        (port, has_tok)
+        let active_mode = match network_mode.as_deref() {
+            Some("direct") => tunnel::TunnelNetworkMode::Direct,
+            Some("custom") => tunnel::TunnelNetworkMode::Custom,
+            Some("system") => tunnel::TunnelNetworkMode::System,
+            _ => s.tunnel_supervisor.config.as_ref().map(|c| c.network_mode).unwrap_or(tunnel::TunnelNetworkMode::System),
+        };
+        let p_url = custom_proxy_url.or_else(|| s.tunnel_supervisor.config.as_ref().and_then(|c| c.custom_proxy_url.clone()));
+        let running = s.tunnel_supervisor.is_active();
+        (port, hport, has_tok, active_mode, p_url, running)
     };
 
+    // Stage 1: Local MCP test
     let mcp_url = format!("http://127.0.0.1:{}/mcp", server_port);
     let mut mcp_online = false;
     if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", server_port)) {
@@ -1258,10 +1360,211 @@ fn desktop_tunnel_test_connection(
         mcp_online = resp.contains("HTTP/1.1 200") || resp.contains("HTTP/1.1 405") || resp.contains("HTTP/1.1 400");
     }
 
+    if !mcp_online {
+        return Ok(serde_json::json!({
+            "success": false,
+            "stage": "local_mcp",
+            "mcpServerOnline": false,
+            "mcpServerUrl": mcp_url,
+            "hasMcpToken": has_token,
+            "message": "Local MCP server is offline or unreachable at 127.0.0.1:18080/mcp"
+        }));
+    }
+
+    // Stage 2 & 3: Outbound proxy & OpenAI connection test
+    let mut proxy_reachable = false;
+    let mut control_plane_tls_ok = false;
+    let mut resolved_proxy: Option<String> = None;
+
+    match mode {
+        tunnel::TunnelNetworkMode::Direct => {
+            use std::net::ToSocketAddrs;
+            match "api.openai.com:443".to_socket_addrs() {
+                Ok(mut addrs) => {
+                    if let Some(addr) = addrs.next() {
+                        match TcpStream::connect_timeout(&addr, Duration::from_secs(4)) {
+                            Ok(_) => {
+                                control_plane_tls_ok = true;
+                            }
+                            Err(e) => {
+                                return Ok(serde_json::json!({
+                                    "success": false,
+                                    "stage": "control_plane_tls",
+                                    "mcpServerOnline": true,
+                                    "mcpServerUrl": mcp_url,
+                                    "hasMcpToken": has_token,
+                                    "proxyReachable": false,
+                                    "controlPlaneTlsOk": false,
+                                    "message": format!("Direct connection to api.openai.com:443 failed: {}", e)
+                                }));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "stage": "control_plane_tls",
+                        "mcpServerOnline": true,
+                        "mcpServerUrl": mcp_url,
+                        "hasMcpToken": has_token,
+                        "proxyReachable": false,
+                        "controlPlaneTlsOk": false,
+                        "message": format!("DNS resolution for api.openai.com failed: {}", e)
+                    }));
+                }
+            }
+        }
+        tunnel::TunnelNetworkMode::System => {
+            match tunnel::resolve_windows_system_proxy() {
+                Ok(Some(p)) => {
+                    resolved_proxy = Some(p.clone());
+                    if let Err(e) = tunnel::test_proxy_connectivity(&p) {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "stage": "proxy_connect",
+                            "mcpServerOnline": true,
+                            "mcpServerUrl": mcp_url,
+                            "hasMcpToken": has_token,
+                            "proxyReachable": false,
+                            "controlPlaneTlsOk": false,
+                            "message": format!("System proxy unreachable: {}", e)
+                        }));
+                    }
+                    proxy_reachable = true;
+                    if let Err(e) = tunnel::test_proxy_openai_connect(&p) {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "stage": "control_plane_tls",
+                            "mcpServerOnline": true,
+                            "mcpServerUrl": mcp_url,
+                            "hasMcpToken": has_token,
+                            "proxyReachable": true,
+                            "controlPlaneTlsOk": false,
+                            "message": format!("Proxy CONNECT to api.openai.com:443 failed: {}", e)
+                        }));
+                    }
+                    control_plane_tls_ok = true;
+                }
+                Ok(None) => {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "stage": "proxy_connect",
+                        "mcpServerOnline": true,
+                        "mcpServerUrl": mcp_url,
+                        "hasMcpToken": has_token,
+                        "proxyReachable": false,
+                        "controlPlaneTlsOk": false,
+                        "message": "No Windows system proxy is currently active."
+                    }));
+                }
+                Err(e) => {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "stage": "proxy_connect",
+                        "mcpServerOnline": true,
+                        "mcpServerUrl": mcp_url,
+                        "hasMcpToken": has_token,
+                        "proxyReachable": false,
+                        "controlPlaneTlsOk": false,
+                        "message": format!("System proxy error: {}", e)
+                    }));
+                }
+            }
+        }
+        tunnel::TunnelNetworkMode::Custom => {
+            let p_raw = custom_p.as_deref().unwrap_or("").trim();
+            if p_raw.is_empty() {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "stage": "proxy_connect",
+                    "mcpServerOnline": true,
+                    "mcpServerUrl": mcp_url,
+                    "hasMcpToken": has_token,
+                    "proxyReachable": false,
+                    "controlPlaneTlsOk": false,
+                    "message": "Custom proxy URL is not configured."
+                }));
+            }
+            if p_raw.contains('@') {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "stage": "proxy_connect",
+                    "mcpServerOnline": true,
+                    "mcpServerUrl": mcp_url,
+                    "hasMcpToken": has_token,
+                    "proxyReachable": false,
+                    "controlPlaneTlsOk": false,
+                    "message": "Proxy authentication credentials are not supported. Please use an unauthenticated HTTP proxy."
+                }));
+            }
+            let p = tunnel::normalize_proxy_server(p_raw);
+            resolved_proxy = Some(p.clone());
+            if let Err(e) = tunnel::test_proxy_connectivity(&p) {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "stage": "proxy_connect",
+                    "mcpServerOnline": true,
+                    "mcpServerUrl": mcp_url,
+                    "hasMcpToken": has_token,
+                    "proxyReachable": false,
+                    "controlPlaneTlsOk": false,
+                    "message": format!("Custom proxy unreachable: {}", e)
+                }));
+            }
+            proxy_reachable = true;
+            if let Err(e) = tunnel::test_proxy_openai_connect(&p) {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "stage": "control_plane_tls",
+                    "mcpServerOnline": true,
+                    "mcpServerUrl": mcp_url,
+                    "hasMcpToken": has_token,
+                    "proxyReachable": true,
+                    "controlPlaneTlsOk": false,
+                    "message": format!("Custom proxy CONNECT to api.openai.com:443 failed: {}", e)
+                }));
+            }
+            control_plane_tls_ok = true;
+        }
+    }
+
+    // Stage 4: If tunnel is currently running, check health and metrics
+    let mut control_plane_connected = false;
+    let mut last_successful_poll_at = None;
+    let mut poll_errors = 0;
+
+    if is_running {
+        let metrics_url = format!("http://127.0.0.1:{}/metrics", health_port);
+        if let Ok(resp) = tunnel::ureq_get(&metrics_url) {
+            let (poll_ts, errs) = tunnel::parse_metrics_poll_info(&resp);
+            last_successful_poll_at = poll_ts;
+            poll_errors = errs;
+            if poll_ts.is_some() && poll_ts.unwrap() > 0 {
+                control_plane_connected = true;
+            }
+        }
+    }
+
+    let success_message = match mode {
+        tunnel::TunnelNetworkMode::Direct => "Direct connection to OpenAI Control Plane verified successfully.",
+        tunnel::TunnelNetworkMode::System => "Connection to OpenAI Control Plane via Windows System Proxy verified successfully.",
+        tunnel::TunnelNetworkMode::Custom => "Connection to OpenAI Control Plane via Custom Proxy verified successfully.",
+    };
+
     Ok(serde_json::json!({
-        "mcpServerOnline": mcp_online,
+        "success": true,
+        "stage": if is_running { "tunnel_metrics" } else { "control_plane_tls" },
+        "mcpServerOnline": true,
         "mcpServerUrl": mcp_url,
         "hasMcpToken": has_token,
+        "proxyReachable": if mode != tunnel::TunnelNetworkMode::Direct { proxy_reachable } else { true },
+        "controlPlaneTlsOk": control_plane_tls_ok,
+        "controlPlaneConnected": control_plane_connected,
+        "lastSuccessfulPollAt": last_successful_poll_at,
+        "pollErrors": poll_errors,
+        "activeProxyUrl": resolved_proxy,
+        "message": success_message
     }))
 }
 
@@ -1487,7 +1790,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     let sup_monitor = supervisor.clone();
     let app_monitor = app.clone();
     std::thread::spawn(move || {
-        let backoffs = [1, 2, 5, 10, 30, 60];
+        let backoffs = [5, 10, 20, 30, 60];
         loop {
             std::thread::sleep(Duration::from_millis(1500));
 
@@ -1507,11 +1810,28 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
 
             if is_running {
                 let is_ready = tunnel::TunnelSupervisor::check_readyz(health_port);
-                if is_ready {
-                    if let Ok(mut s) = sup_monitor.lock() {
+                let metrics_url = format!("http://127.0.0.1:{}/metrics", health_port);
+                let (last_poll, poll_errs) = if let Ok(resp) = tunnel::ureq_get(&metrics_url) {
+                    tunnel::parse_metrics_poll_info(&resp)
+                } else {
+                    (None, 0)
+                };
+
+                if let Ok(mut s) = sup_monitor.lock() {
+                    s.tunnel_supervisor.last_successful_poll_at = last_poll;
+                    s.tunnel_supervisor.poll_errors = poll_errs;
+
+                    if is_ready && last_poll.is_some() && last_poll.unwrap() > 0 {
                         s.tunnel_supervisor.status = tunnel::TunnelStatus::Connected;
+                        s.tunnel_supervisor.control_plane_status = Some("Connected".into());
                         s.tunnel_supervisor.reconnect_attempts = 0;
                         s.tunnel_supervisor.error_message = None;
+                    } else if is_ready {
+                        s.tunnel_supervisor.status = tunnel::TunnelStatus::Connecting;
+                        s.tunnel_supervisor.control_plane_status = Some("Polling".into());
+                    } else {
+                        s.tunnel_supervisor.status = tunnel::TunnelStatus::Starting;
+                        s.tunnel_supervisor.control_plane_status = Some("Connecting".into());
                     }
                 }
             } else {
@@ -1519,6 +1839,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
                 let backoff_secs = backoffs[attempt.min(backoffs.len() as u32 - 1) as usize];
 
                 if let Ok(mut s) = sup_monitor.lock() {
+                    s.tunnel_supervisor.control_plane_status = Some("ConnectionFailed".into());
                     if auto_reconnect && s.tunnel_supervisor.status != tunnel::TunnelStatus::AuthenticationError {
                         s.tunnel_supervisor.status = tunnel::TunnelStatus::Reconnecting;
                         s.tunnel_supervisor.reconnect_attempts += 1;

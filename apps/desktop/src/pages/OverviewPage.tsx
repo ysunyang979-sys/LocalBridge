@@ -186,8 +186,27 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
               </span>
             </div>
             <div className="text-xs text-theme-muted mt-1 truncate">
-              {tunnelStatus?.tunnel_id ? `ID: ${tunnelStatus.tunnel_id}` : t.overview.chatGptCard} &bull;{" "}
-              {tunnelStatus?.status === "Connected" ? t.common.active : t.common.paused}
+              <span>
+                {tunnelStatus?.network_mode === "direct"
+                  ? t.tunnel.modeDirect
+                  : tunnelStatus?.network_mode === "custom"
+                    ? t.tunnel.modeCustom
+                    : t.tunnel.modeSystem}
+              </span>
+              {" · "}
+              <span className={(tunnelStatus?.control_plane_status === "Connected" || tunnelStatus?.control_plane_connected) ? "text-emerald-500" : ""}>
+                CP: {(tunnelStatus?.control_plane_status === "Connected" || tunnelStatus?.control_plane_connected)
+                  ? t.tunnel.controlPlaneConnected
+                  : (tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Starting" || tunnelStatus?.control_plane_status === "Polling")
+                    ? t.tunnel.controlPlanePolling
+                    : t.tunnel.controlPlaneFailed}
+              </span>
+              {" · "}
+              <span className={(tunnelStatus?.local_mcp_status !== "Failed" && tunnelStatus?.local_mcp_connected !== false) ? "text-emerald-500" : "text-red-500"}>
+                MCP: {(tunnelStatus?.local_mcp_status !== "Failed" && tunnelStatus?.local_mcp_connected !== false)
+                  ? t.tunnel.localMcpConnected
+                  : t.tunnel.localMcpFailed}
+              </span>
             </div>
           </div>
         </div>

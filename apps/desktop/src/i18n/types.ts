@@ -445,6 +445,21 @@ export interface I18nDictionary {
     diagReconnectAttempts: string;
     diagLastError: string;
     diagChildExitCode: string;
+    networkModeLabel: string;
+    modeDirect: string;
+    modeSystem: string;
+    modeCustom: string;
+    detectedProxyLabel: string;
+    proxyReachable: string;
+    proxyUnreachable: string;
+    proxyUnsupported: string;
+    customProxyUrlLabel: string;
+    customProxyUrlPlaceholder: string;
+    controlPlaneConnected: string;
+    controlPlaneFailed: string;
+    controlPlanePolling: string;
+    localMcpConnected: string;
+    localMcpFailed: string;
   };
   modals: {
     authorize: {
@@ -636,5 +651,14 @@ export interface I18nDictionary {
     RUNTIME_WORKSPACE_UNAVAILABLE: string;
     RUNTIME_PROCESS_EXITED: string;
     RUNTIME_LOG_LIMIT: string;
+    TUNNEL_PROXY_INVALID: string;
+    TUNNEL_PROXY_UNREACHABLE: string;
+    TUNNEL_PROXY_AUTH_UNSUPPORTED: string;
+    TUNNEL_CONTROL_PLANE_UNREACHABLE: string;
+    TUNNEL_CONTROL_PLANE_TIMEOUT: string;
+    TUNNEL_NETWORK_MODE_INVALID: string;
+    TUNNEL_RESTART_FAILED: string;
+    PAC_PROXY_UNSUPPORTED: string;
+    PROXY_CREDENTIALS_UNSUPPORTED: string;
   };
 }
