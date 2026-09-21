@@ -56,49 +56,51 @@
   color-scheme: light;
 
   /* Semantic Core Tokens */
-  --bg: #f6f8fc;
-  --surface: #ffffff;
-  --surface-muted: #f1f4f9;
-  --surface-elevated: #ffffff;
-  --surface-inverse: #0f172a;
+  --bg: #F4F7FB;
+  --surface: #FFFFFF;
+  --surface-muted: #F8FAFC;
+  --surface-hover: #F1F5F9;
+  --surface-elevated: #FFFFFF;
+  --surface-inverse: #0F172A;
 
-  --border: #dce3ed;
-  --border-strong: #cbd5e1;
+  --border: #D7DFEA;
+  --border-strong: #C2CCD9;
 
-  --text-primary: #0f172a;
+  --text-primary: #111827;
   --text-secondary: #475569;
-  --text-muted: #64748b;
-  --text-inverse: #f8fafc;
+  --text-muted: #64748B;
+  --text-subtle: #7C8A9D;
+  --text-inverse: #F8FAFC;
 
-  --input-bg: #ffffff;
-  --input-text: #0f172a;
-  --input-placeholder: #94a3b8;
-  --input-border: #dce3ed;
+  --input-bg: #FFFFFF;
+  --input-text: #111827;
+  --input-placeholder: #94A3B8;
+  --input-border: #D7DFEA;
 
-  --accent: #0284c7;
-  --accent-hover: #0369a1;
+  --accent: #0284C7;
+  --accent-hover: #0369A1;
   --accent-soft: rgba(2, 132, 199, 0.12);
   --accent-border: rgba(2, 132, 199, 0.3);
 
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
+  --success: #16A34A;
+  --warning: #D97706;
+  --danger: #DC2626;
 
   /* Legacy & Helper Aliases */
   --bg-app: var(--bg);
-  --bg-sidebar: #edf1f7;
+  --bg-sidebar: #EAEFF6;
   --bg-card: var(--surface);
-  --bg-card-hover: #f8fafc;
+  --bg-card-hover: var(--surface-hover);
   --bg-card-muted: var(--surface-muted);
-  --bg-header: rgba(255, 255, 255, 0.9);
+  --bg-header: rgba(244, 247, 251, 0.9);
   --bg-modal-overlay: rgba(15, 23, 42, 0.45);
   --bg-tag: var(--surface-muted);
   --border-subtle: var(--border);
   --border-card: var(--border);
   --border-focus: var(--accent);
   --accent-primary: var(--accent);
-  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-  --scrollbar-hover: rgba(0, 0, 0, 0.25);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --scrollbar-hover: rgba(0, 0, 0, 0.3);
 }
 
 body {
@@ -155,7 +157,15 @@ input:disabled, textarea:disabled, select:disabled {
 .text-theme-primary { color: var(--text-primary); }
 .text-theme-secondary { color: var(--text-secondary); }
 .text-theme-muted { color: var(--text-muted); }
+.text-theme-subtle { color: var(--text-subtle, #7C8A9D); }
 .text-theme-inverse { color: var(--text-inverse); }
+
+/* Accessible Disabled Button Rules: Ensure opacity >= 0.5 and legible text */
+button:disabled,
+button[disabled] {
+  opacity: 0.52 !important;
+  cursor: not-allowed !important;
+}
 
 /* Scrollbars */
 ::-webkit-scrollbar {

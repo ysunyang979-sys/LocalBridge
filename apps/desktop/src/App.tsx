@@ -15,6 +15,7 @@ import { CreateTokenModal } from "./components/modals/CreateTokenModal.js";
 import { EmergencyStopModal } from "./components/modals/EmergencyStopModal.js";
 import { ResolveApprovalModal } from "./components/modals/ResolveApprovalModal.js";
 import { OnboardingModal } from "./components/modals/OnboardingModal.js";
+import { AppErrorBoundary } from "./components/common/AppErrorBoundary.js";
 import { bridge, type TunnelStatusDto } from "./api/bridge.js";
 import { useTranslation } from "./i18n/useTranslation.js";
 import type {
@@ -335,84 +336,90 @@ export const App: React.FC = () => {
         )}
 
         <main className="flex-1 overflow-y-auto">
-          {currentPage === "overview" && (
-            <ControlPage
-              serverStatus={serverStatus}
-              mcpStatus={mcpStatus}
-              tunnelStatus={tunnelStatus}
-              projects={projects}
-              approvals={approvals}
-              jobs={jobs}
-              activeSessionsCount={activeSessionsCount}
-              onNavigate={handleNavigate}
-              onSelectProject={(id) => {
-                setSelectedProjectId(id);
-                setCurrentPage("projects");
-              }}
-              onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
-              onOpenCreateTokenModal={() => setIsCreateTokenModalOpen(true)}
-              onOpenEmergencyStopModal={() => setIsEmergencyStopModalOpen(true)}
-              onQuickResolveApproval={async (id, action) => {
-                await bridge.resolveApproval(id, action);
-                await loadData();
-              }}
-              uxMode={uxMode}
-            />
-          )}
+          <AppErrorBoundary
+            isZh={t.common ? true : false}
+            componentName="MainRoute"
+            onReset={loadData}
+          >
+            {currentPage === "overview" && (
+              <ControlPage
+                serverStatus={serverStatus}
+                mcpStatus={mcpStatus}
+                tunnelStatus={tunnelStatus}
+                projects={projects}
+                approvals={approvals}
+                jobs={jobs}
+                activeSessionsCount={activeSessionsCount}
+                onNavigate={handleNavigate}
+                onSelectProject={(id) => {
+                  setSelectedProjectId(id);
+                  setCurrentPage("projects");
+                }}
+                onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
+                onOpenCreateTokenModal={() => setIsCreateTokenModalOpen(true)}
+                onOpenEmergencyStopModal={() => setIsEmergencyStopModalOpen(true)}
+                onQuickResolveApproval={async (id, action) => {
+                  await bridge.resolveApproval(id, action);
+                  await loadData();
+                }}
+                uxMode={uxMode}
+              />
+            )}
 
-          {currentPage === "projects" && (
-            <ProjectsPage
-              projects={projects}
-              onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
-              onRefresh={loadData}
-              selectedProjectId={selectedProjectId}
-              onSelectProject={setSelectedProjectId}
-              uxMode={uxMode}
-            />
-          )}
+            {currentPage === "projects" && (
+              <ProjectsPage
+                projects={projects}
+                onOpenAuthorizeModal={() => setIsAuthorizeModalOpen(true)}
+                onRefresh={loadData}
+                selectedProjectId={selectedProjectId}
+                onSelectProject={setSelectedProjectId}
+                uxMode={uxMode}
+              />
+            )}
 
-          {currentPage === "jobs" && (
-            <JobsPage jobs={jobs} onRefresh={loadData} />
-          )}
+            {currentPage === "jobs" && (
+              <JobsPage jobs={jobs} onRefresh={loadData} />
+            )}
 
-          {currentPage === "connections" && (
-            <ConnectionsPage
-              serverStatus={serverStatus}
-              runners={runners}
-              onRefresh={loadData}
-            />
-          )}
+            {currentPage === "connections" && (
+              <ConnectionsPage
+                serverStatus={serverStatus}
+                runners={runners}
+                onRefresh={loadData}
+              />
+            )}
 
-          {currentPage === "tokens" && (
-            <TokensPage
-              tokens={tokens}
-              onOpenCreateTokenModal={() => setIsCreateTokenModalOpen(true)}
-              onRefresh={loadData}
-            />
-          )}
+            {currentPage === "tokens" && (
+              <TokensPage
+                tokens={tokens}
+                onOpenCreateTokenModal={() => setIsCreateTokenModalOpen(true)}
+                onRefresh={loadData}
+              />
+            )}
 
-          {(currentPage === "activity" || (currentPage as string) === "approvals") && (
-            <ActivityPage
-              events={auditEvents}
-              approvals={approvals}
-              onRefresh={loadData}
-              initialFilter={(currentPage as string) === "approvals" ? "approvals" : "all"}
-              onResolveApproval={async (id, action) => {
-                await bridge.resolveApproval(id, action);
-                await loadData();
-              }}
-              uxMode={uxMode}
-            />
-          )}
+            {(currentPage === "activity" || (currentPage as string) === "approvals") && (
+              <ActivityPage
+                events={auditEvents}
+                approvals={approvals}
+                onRefresh={loadData}
+                initialFilter={(currentPage as string) === "approvals" ? "approvals" : "all"}
+                onResolveApproval={async (id, action) => {
+                  await bridge.resolveApproval(id, action);
+                  await loadData();
+                }}
+                uxMode={uxMode}
+              />
+            )}
 
-          {currentPage === "settings" && (
-            <SettingsPage
-              tunnelStatus={tunnelStatus}
-              onRefresh={loadData}
-              uxMode={uxMode}
-              onChangeUxMode={handleUxModeChange}
-            />
-          )}
+            {currentPage === "settings" && (
+              <SettingsPage
+                tunnelStatus={tunnelStatus}
+                onRefresh={loadData}
+                uxMode={uxMode}
+                onChangeUxMode={handleUxModeChange}
+              />
+            )}
+          </AppErrorBoundary>
         </main>
       </div>
 

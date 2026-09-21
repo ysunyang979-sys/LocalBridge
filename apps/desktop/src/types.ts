@@ -577,7 +577,13 @@ export class RemoteMcpEndpointResolver {
 
     const isConnected =
       tunnelStatus.status === "Connected" || tunnelStatus.status === "connected";
-    const rawId = tunnelStatus.tunnel_id ? tunnelStatus.tunnel_id.trim() : "";
+    const rawId = (
+      tunnelStatus.tunnel_id ||
+      (tunnelStatus as any).tunnelId ||
+      (tunnelStatus as any).publicHost ||
+      (tunnelStatus as any).publicHttpsUrl ||
+      ""
+    ).trim();
 
     if (!isConnected || !rawId) {
       const isNotConfigured =

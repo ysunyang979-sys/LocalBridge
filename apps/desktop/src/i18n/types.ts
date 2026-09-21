@@ -324,6 +324,8 @@ export interface I18nDictionary {
     categoryDescToolAdapter: string;
     statusConnected: string;
     statusConfigured: string;
+    statusDetected: string;
+    statusAuthRequired: string;
     statusNotConfigured: string;
     statusConnecting: string;
     statusOffline: string;

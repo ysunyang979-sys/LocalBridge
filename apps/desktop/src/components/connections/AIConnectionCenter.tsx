@@ -28,6 +28,7 @@ import { ConfigPreviewModal } from "./ConfigPreviewModal.js";
 import { AddCustomConnectionModal } from "./AddCustomConnectionModal.js";
 import { KimiWebPluginModal } from "./KimiWebPluginModal.js";
 import { BUILTIN_CLIENT_CATALOG, mergeCatalogWithSavedConnections } from "./catalog.js";
+import { ConnectionCenterErrorBoundary } from "../common/AppErrorBoundary.js";
 
 interface AIConnectionCenterProps {
   tunnelStatus: TunnelStatusDto | null;
@@ -81,11 +82,10 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
 
   const handleOpenKimiPlugin = (
     conn: AIConnectionDto,
-    initialTab: "guide" | "token" | "manifest" = "guide"
+    _initialTab: "guide" | "token" | "manifest" = "guide"
   ) => {
-    setKimiModalConn(conn);
-    setKimiModalInitialTab(initialTab);
-    setIsKimiModalOpen(true);
+    setSelectedConnection(conn);
+    setIsDrawerOpen(true);
   };
 
   // Primary AI Change Modal
@@ -298,7 +298,8 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
   }, [allConnections, viewMode]);
 
   return (
-    <div className="max-w-6xl space-y-6 animate-fade-in pb-12">
+    <ConnectionCenterErrorBoundary isZh={isZh} onReset={fetchConnections}>
+      <div className="max-w-6xl space-y-6 animate-fade-in pb-12">
       {/* Toast Notifications */}
       {toastError && (
         <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between shadow-sm">
@@ -493,8 +494,8 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <h2 className="text-sm font-bold text-theme-primary uppercase tracking-wider">
-              {t.aiConnections?.connectedSection || "已连接的 AI 客户端"} ({connectedConnections.length})
+            <h2 className="text-sm font-bold text-theme-primary tracking-wide">
+              {t.aiConnections?.connectedSection || (isZh ? "已连接的 AI 客户端" : "Connected AI Clients")} ({connectedConnections.length})
             </h2>
           </div>
         </div>
@@ -510,7 +511,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {connectedConnections.map((conn) => (
               <AIConnectionCard
                 key={conn.id}
@@ -538,21 +539,21 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
       {/* SECTION 2: Available Native Clients (Native MCP) */}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <div className="p-1 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400">
-            <Server className="w-3.5 h-3.5" />
+          <div className="p-1.5 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400">
+            <Server className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-theme-primary uppercase tracking-wider">
-              {t.aiConnections?.availableClientsSection || "可用原生客户端 (Native MCP)"}
+            <h2 className="text-sm font-bold text-theme-primary tracking-wide">
+              {t.aiConnections?.availableClientsSection || (isZh ? "原生 MCP 客户端" : "Native MCP Clients")}
             </h2>
             <p className="text-[11px] text-theme-muted">
               {t.aiConnections?.categoryDescNativeMcp ||
-                "支持 Model Context Protocol 规范，通过本地 HTTP/Streamable 或安全隧道直连"}
+                (isZh ? "支持通过 MCP 与 Nexus 直接通信。" : "Direct communication via Model Context Protocol.")}
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {nativeMcpConnections.map((conn) => (
             <AIConnectionCard
               key={conn.id}
@@ -579,21 +580,21 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
       {/* SECTION 3: API Models & Tool Adapters (DeepSeek & OpenAI-compatible) */}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <div className="p-1 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400">
-            <Cpu className="w-3.5 h-3.5" />
+          <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+            <Cpu className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-theme-primary uppercase tracking-wider">
-              {t.aiConnections?.apiModelsSection || "API 模型与工具适配器 (Tool/API Adapters)"}
+            <h2 className="text-sm font-bold text-theme-primary tracking-wide">
+              {t.aiConnections?.apiModelsSection || (isZh ? "API 模型" : "API Models")}
             </h2>
             <p className="text-[11px] text-theme-muted">
               {t.aiConnections?.categoryDescToolAdapter ||
-                "标准 Function Calling 接口，Nexus 负责工具映射并统一执行本地安全控制"}
+                (isZh ? "通过 Tool Calling 与 Nexus 工具桥接。" : "Bridged with Nexus tools via Tool Calling.")}
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {toolAdapterConnections.map((conn) => (
             <AIConnectionCard
               key={conn.id}
@@ -691,6 +692,11 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
         onSaveConfig={handleSaveConfig}
         onDeleteConnection={handleDeleteConnection}
         onPreviewConfig={handleTriggerPreview}
+        onOpenKimiGuide={() => {
+          setKimiModalConn(selectedConnection);
+          setKimiModalInitialTab("guide");
+          setIsKimiModalOpen(true);
+        }}
       />
 
       {/* Config Preview & Apply Modal */}
@@ -729,6 +735,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
         onRefreshConnections={fetchConnections}
         onTestConnection={handleTestConnection}
       />
-    </div>
+      </div>
+    </ConnectionCenterErrorBoundary>
   );
 };

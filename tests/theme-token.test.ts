@@ -50,8 +50,8 @@ describe("Light Theme & Semantic Token Quality Suite", () => {
     // Light mode background must be light-tinted (#f6f8fc or similar)
     expect(cssContent).toMatch(/\[data-theme="light"\][\s\S]*--bg:\s*#f[0-9a-f]{5}/i);
 
-    // Light mode text-primary must be dark (#0f172a or similar dark slate)
-    expect(cssContent).toMatch(/\[data-theme="light"\][\s\S]*--text-primary:\s*#0[0-9a-f]{5}/i);
+    // Light mode text-primary must be dark (#0f172a or #111827 dark slate)
+    expect(cssContent).toMatch(/\[data-theme="light"\][\s\S]*--text-primary:\s*#(?:0[0-9a-f]{5}|111827)/i);
 
     // Light mode input background must be bright (#ffffff or #f8fafc)
     expect(cssContent).toMatch(/\[data-theme="light"\][\s\S]*--input-bg:\s*#(?:ffffff|f8fafc)/i);
