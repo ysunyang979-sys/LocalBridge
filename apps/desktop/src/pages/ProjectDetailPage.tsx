@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   Copy,
   Loader2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import type {
   Project,
@@ -19,6 +21,7 @@ import type {
   WorkflowSession,
   LspServerStatus,
   RuntimeLogChunk,
+  UserExperienceMode,
 } from "../types.js";
 import { bridge } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -28,12 +31,14 @@ interface ProjectDetailPageProps {
   projectId: string;
   onBack: () => void;
   onRefreshProjects: () => void;
+  uxMode?: UserExperienceMode;
 }
 
 export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   projectId,
   onBack,
   onRefreshProjects,
+  uxMode = "standard",
 }) => {
   const { t, translateError } = useTranslation();
 
@@ -57,6 +62,8 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [worktreeSafetyWarning, setWorktreeSafetyWarning] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
+  const isAdvanced = uxMode === "advanced" || showAdvancedDetails;
 
   // Load project details and dependencies
   const loadProjectData = useCallback(async () => {
@@ -442,8 +449,43 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
         </div>
       )}
 
-      {/* 2. Top Status Cards Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* High-Level Overview Card (Standard Mode) */}
+      {!isAdvanced && (
+        <div className="p-6 rounded-xl bg-theme-card border border-theme-subtle space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-3.5 rounded-lg bg-theme-card-muted border border-theme-subtle space-y-1">
+              <div className="text-[11px] font-mono text-theme-muted uppercase tracking-wider">
+                {t.projects?.accessMode || "Access Mode"}
+              </div>
+              <div className="text-sm font-semibold text-theme-primary">
+                {project.accessMode === "read-write" ? t.projectDetail.modeReadWrite : t.projectDetail.modeReadOnly}
+              </div>
+            </div>
+            <div className="p-3.5 rounded-lg bg-theme-card-muted border border-theme-subtle space-y-1">
+              <div className="text-[11px] font-mono text-theme-muted uppercase tracking-wider">
+                {t.projects?.executionMode || "Execution Mode"}
+              </div>
+              <div className="text-sm font-semibold text-theme-primary">
+                {project.executionMode}
+              </div>
+            </div>
+            <div className="p-3.5 rounded-lg bg-theme-card-muted border border-theme-subtle space-y-1">
+              <div className="text-[11px] font-mono text-theme-muted uppercase tracking-wider">
+                {t.projectDetail.status || "Status"}
+              </div>
+              <div className="text-sm font-semibold text-emerald-500">
+                {project.enabled ? t.projectDetail.authorized : t.control.statusDisabled}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Advanced Technical Details */}
+      {isAdvanced && (
+        <>
+          {/* 2. Top Status Cards Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Card A: Persistent Runtime Summary */}
         <div className="p-4 rounded-xl bg-theme-card border border-theme-subtle space-y-2">
           <div className="flex items-center justify-between text-xs">
@@ -876,6 +918,30 @@ export const ProjectDetailPage: React.FC<ProjectDetailPageProps> = ({
           </div>
         </div>
       </section>
+        </>
+      )}
+
+      {/* In-place Expandable Toggle for Standard Mode */}
+      {uxMode === "standard" && (
+        <div className="pt-2 flex justify-center">
+          <button
+            onClick={() => setShowAdvancedDetails(!showAdvancedDetails)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-theme-card hover:bg-theme-card-hover text-theme-secondary hover:text-theme-primary border border-theme-subtle transition shadow-sm"
+          >
+            {showAdvancedDetails ? (
+              <>
+                <ChevronUp className="w-4 h-4 text-theme-muted" />
+                <span>{t.projectDetail.hideAdvancedDetails || "Hide Advanced Details"}</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4 text-theme-muted" />
+                <span>{t.projectDetail.showAdvancedDetails || "Show Advanced Details"}</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Session Detail Modal */}
       {selectedSessionForModal && (

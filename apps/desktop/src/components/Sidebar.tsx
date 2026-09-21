@@ -11,7 +11,7 @@ import {
   ChevronRight,
   ShieldCheck,
 } from "lucide-react";
-import type { ServerStatus, McpStatus, TunnelStatusDto } from "../types.js";
+import type { ServerStatus, McpStatus, TunnelStatusDto, UserExperienceMode } from "../types.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import nexusLogo from "../assets/nexus.png";
 
@@ -34,6 +34,7 @@ interface SidebarProps {
   mcpStatus: McpStatus | null;
   runnersCount?: number;
   tunnelStatus?: TunnelStatusDto | null;
+  uxMode?: UserExperienceMode;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -44,6 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mcpStatus,
   runnersCount,
   tunnelStatus,
+  uxMode = "standard",
 }) => {
   const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
@@ -214,127 +216,151 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* System Status Indicators */}
         {!collapsed ? (
-          <div className="p-2.5 rounded-lg bg-theme-card-muted border border-theme-subtle text-[11px] space-y-1.5 font-mono">
-            <div className="flex items-center justify-between text-theme-muted">
-              <span className="flex items-center gap-1.5">
-                <Server className="w-3 h-3 text-theme-muted" />
-                <span>{t.control?.controlPlane || "Control Plane"}</span>
-              </span>
-              <span className="flex items-center gap-1">
+          uxMode === "standard" ? (
+            <div className="p-2.5 rounded-lg bg-theme-card-muted border border-theme-subtle text-[11px] font-mono">
+              <div className="flex items-center justify-between text-theme-muted">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      serverStatus && effectiveRunnersCount > 0 ? "bg-emerald-500" : "bg-amber-500"
+                    }`}
+                  />
+                  <span>
+                    {serverStatus && effectiveRunnersCount > 0
+                      ? (t.overview?.localServicesHealthy || "System Ready")
+                      : (t.overview?.localServicesDegraded || "Degraded")}
+                  </span>
+                </span>
+                <span className="font-mono text-[10px] text-theme-muted">v1.2.0</span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-2.5 rounded-lg bg-theme-card-muted border border-theme-subtle text-[11px] space-y-1.5 font-mono">
+              <div className="flex items-center justify-between text-theme-muted">
+                <span className="flex items-center gap-1.5">
+                  <Server className="w-3 h-3 text-theme-muted" />
+                  <span>{t.control?.controlPlane || "Control Plane"}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      serverStatus ? "bg-emerald-500" : "bg-red-500"
+                    }`}
+                  />
+                  <span className={serverStatus ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-red-600 dark:text-red-400 font-medium"}>
+                    {serverStatus ? (t.control?.serverOnline || "ONLINE") : (t.control?.serverOffline || "OFFLINE")}
+                  </span>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-theme-muted">
+                <span className="flex items-center gap-1.5">
+                  <Cpu className="w-3 h-3 text-theme-muted" />
+                  <span>{t.control?.localRunner || "Runner"}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      effectiveRunnersCount > 0 ? "bg-emerald-500" : "bg-amber-500"
+                    }`}
+                  />
+                  <span
+                    className={
+                      effectiveRunnersCount > 0
+                        ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                        : "text-amber-600 dark:text-amber-400 font-medium"
+                    }
+                  >
+                    {effectiveRunnersCount > 0
+                      ? `${effectiveRunnersCount} ${t.control?.runnerConnected || "CONNECTED"}`
+                      : (t.control?.runnerZero || "0 NODES")}
+                  </span>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-theme-muted">
+                <span className="flex items-center gap-1.5">
+                  <Radio className="w-3 h-3 text-theme-muted" />
+                  <span>{t.control?.secureTunnel || "Tunnel"}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isTunnelConnected ? "bg-emerald-500" : "bg-slate-400 dark:bg-slate-500"
+                    }`}
+                  />
+                  <span
+                    className={
+                      isTunnelConnected ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-slate-500 dark:text-slate-400"
+                    }
+                  >
+                    {isTunnelConnected ? (t.control?.tunnelConnected || "LINKED") : (t.control?.tunnelStandby || "STANDBY")}
+                  </span>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-theme-muted">
+                <span className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-3 h-3 text-theme-muted" />
+                  <span>{t.control?.mcpProtocol || "MCP Tools"}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      mcpStatus?.paused
+                        ? "bg-amber-500"
+                        : mcpStatus?.mcpActive
+                          ? "bg-emerald-500"
+                          : "bg-red-500"
+                    }`}
+                  />
+                  <span
+                    className={
+                      mcpStatus?.paused
+                        ? "text-amber-600 dark:text-amber-400 font-medium"
+                        : mcpStatus?.mcpActive
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-red-600 dark:text-red-400 font-medium"
+                    }
+                  >
+                    {mcpStatus?.paused
+                      ? (t.control?.mcpPaused || "PAUSED")
+                      : `${mcpStatus?.toolsCount || 55} ${t.intelligence?.statusReady || "READY"}`}
+                  </span>
+                </span>
+              </div>
+            </div>
+          )
+        ) : (
+          <div className="flex flex-col items-center gap-2.5 py-2">
+            <span
+              title={`Status: ${serverStatus && effectiveRunnersCount > 0 ? "Ready" : "Degraded"}`}
+              className={`w-2 h-2 rounded-full ${
+                serverStatus && effectiveRunnersCount > 0 ? "bg-emerald-500" : "bg-amber-500"
+              }`}
+            />
+            {uxMode === "advanced" && (
+              <>
                 <span
-                  className={`w-1.5 h-1.5 rounded-full ${
+                  title={`Control Plane: ${serverStatus ? "ONLINE" : "OFFLINE"}`}
+                  className={`w-2 h-2 rounded-full ${
                     serverStatus ? "bg-emerald-500" : "bg-red-500"
                   }`}
                 />
-                <span className={serverStatus ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-red-600 dark:text-red-400 font-medium"}>
-                  {serverStatus ? (t.control?.serverOnline || "ONLINE") : (t.control?.serverOffline || "OFFLINE")}
-                </span>
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between text-theme-muted">
-              <span className="flex items-center gap-1.5">
-                <Cpu className="w-3 h-3 text-theme-muted" />
-                <span>{t.control?.localRunner || "Runner"}</span>
-              </span>
-              <span className="flex items-center gap-1">
                 <span
-                  className={`w-1.5 h-1.5 rounded-full ${
+                  title={`Runner: ${effectiveRunnersCount} connected`}
+                  className={`w-2 h-2 rounded-full ${
                     effectiveRunnersCount > 0 ? "bg-emerald-500" : "bg-amber-500"
                   }`}
                 />
                 <span
-                  className={
-                    effectiveRunnersCount > 0
-                      ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                      : "text-amber-600 dark:text-amber-400 font-medium"
-                  }
-                >
-                  {effectiveRunnersCount > 0
-                    ? `${effectiveRunnersCount} ${t.control?.runnerConnected || "CONNECTED"}`
-                    : (t.control?.runnerZero || "0 NODES")}
-                </span>
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between text-theme-muted">
-              <span className="flex items-center gap-1.5">
-                <Radio className="w-3 h-3 text-theme-muted" />
-                <span>{t.control?.secureTunnel || "Tunnel"}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
+                  title={`Tunnel: ${isTunnelConnected ? "LINKED" : "STANDBY"}`}
+                  className={`w-2 h-2 rounded-full ${
                     isTunnelConnected ? "bg-emerald-500" : "bg-slate-400 dark:bg-slate-500"
                   }`}
                 />
-                <span
-                  className={
-                    isTunnelConnected ? "text-emerald-600 dark:text-emerald-400 font-medium" : "text-slate-500 dark:text-slate-400"
-                  }
-                >
-                  {isTunnelConnected ? (t.control?.tunnelConnected || "LINKED") : (t.control?.tunnelStandby || "STANDBY")}
-                </span>
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between text-theme-muted">
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck className="w-3 h-3 text-theme-muted" />
-                <span>{t.control?.mcpProtocol || "MCP Tools"}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    mcpStatus?.paused
-                      ? "bg-amber-500"
-                      : mcpStatus?.mcpActive
-                        ? "bg-emerald-500"
-                        : "bg-red-500"
-                  }`}
-                />
-                <span
-                  className={
-                    mcpStatus?.paused
-                      ? "text-amber-600 dark:text-amber-400 font-medium"
-                      : mcpStatus?.mcpActive
-                        ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                        : "text-red-600 dark:text-red-400 font-medium"
-                  }
-                >
-                  {mcpStatus?.paused
-                    ? (t.control?.mcpPaused || "PAUSED")
-                    : `${mcpStatus?.toolsCount || 55} ${t.intelligence?.statusReady || "READY"}`}
-                </span>
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2.5 py-2">
-            <span
-              title={`Control Plane: ${serverStatus ? "ONLINE" : "OFFLINE"}`}
-              className={`w-2 h-2 rounded-full ${
-                serverStatus ? "bg-emerald-500" : "bg-red-500"
-              }`}
-            />
-            <span
-              title={`Runner: ${effectiveRunnersCount} connected`}
-              className={`w-2 h-2 rounded-full ${
-                effectiveRunnersCount > 0 ? "bg-emerald-500" : "bg-amber-500"
-              }`}
-            />
-            <span
-              title={`Tunnel: ${isTunnelConnected ? "LINKED" : "STANDBY"}`}
-              className={`w-2 h-2 rounded-full ${
-                isTunnelConnected ? "bg-emerald-500" : "bg-slate-400 dark:bg-slate-500"
-              }`}
-            />
-            <span
-              title={`MCP: ${mcpStatus?.paused ? "PAUSED" : "ACTIVE"}`}
-              className={`w-2 h-2 rounded-full ${
-                mcpStatus?.paused ? "bg-amber-500" : "bg-emerald-500"
-              }`}
-            />
+              </>
+            )}
           </div>
         )}
       </div>

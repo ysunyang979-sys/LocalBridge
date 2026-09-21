@@ -9,7 +9,7 @@ import {
   Search,
   ChevronRight,
 } from "lucide-react";
-import type { Project } from "../types.js";
+import type { Project, UserExperienceMode } from "../types.js";
 import { bridge } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import { ProjectDetailPage } from "./ProjectDetailPage.js";
@@ -20,6 +20,7 @@ interface ProjectsPageProps {
   onRefresh: () => void;
   selectedProjectId?: string | null;
   onSelectProject?: (projectId: string | null) => void;
+  uxMode?: UserExperienceMode;
 }
 
 export const ProjectsPage: React.FC<ProjectsPageProps> = ({
@@ -28,6 +29,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
   onRefresh,
   selectedProjectId: propSelectedProjectId,
   onSelectProject,
+  uxMode = "standard",
 }) => {
   const { t, translateError } = useTranslation();
   const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
         projectId={activeSelectedId}
         onBack={() => handleSelect(null)}
         onRefreshProjects={onRefresh}
+        uxMode={uxMode}
       />
     );
   }

@@ -43,6 +43,7 @@ export interface Approval {
   id: string;
   projectId: string;
   operation: string;
+  policy?: string;
   risk: "CAUTION" | "DANGEROUS";
   summary: string;
   payloadHash: string;
@@ -455,4 +456,31 @@ export interface IntelligenceStatusDto {
   pythonPath: string;
   lastError?: string | null;
 }
+
+export type UserExperienceMode = "standard" | "advanced";
+
+export type ModelDownloadStatus =
+  | "not-installed"
+  | "downloading"
+  | "verifying"
+  | "ready"
+  | "offline"
+  | "error";
+
+export interface ModelDownloadProgress {
+  totalBytes: number;
+  downloadedBytes: number;
+  percent: number;
+  speedBytesPerSec: number;
+  currentFile: string;
+}
+
+export interface ModelStatusDto {
+  installed: boolean;
+  status: ModelDownloadStatus;
+  modelPath: string;
+  progress: ModelDownloadProgress | null;
+  error: string | null;
+}
+
 

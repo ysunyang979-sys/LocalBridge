@@ -14,6 +14,7 @@ import { AuthorizeProjectModal } from "./components/modals/AuthorizeProjectModal
 import { CreateTokenModal } from "./components/modals/CreateTokenModal.js";
 import { EmergencyStopModal } from "./components/modals/EmergencyStopModal.js";
 import { ResolveApprovalModal } from "./components/modals/ResolveApprovalModal.js";
+import { OnboardingModal } from "./components/modals/OnboardingModal.js";
 import { bridge, type TunnelStatusDto } from "./api/bridge.js";
 import { useTranslation } from "./i18n/useTranslation.js";
 import type {
@@ -26,12 +27,32 @@ import type {
   Token,
   AuditEvent,
   ApprovalRoutingMode,
+  UserExperienceMode,
 } from "./types.js";
 import { applyServerPollResult } from "./polling-state.js";
 
 export const App: React.FC = () => {
   const { t } = useTranslation();
   const [currentPage, setCurrentPage] = useState<NavPage>("overview");
+
+  // User Experience Mode (defaults to standard for all first-time and regular users)
+  const [uxMode, setUxMode] = useState<UserExperienceMode>(() => {
+    const saved = localStorage.getItem("nexus_ux_mode");
+    if (saved === "standard" || saved === "advanced") {
+      return saved;
+    }
+    return "standard";
+  });
+
+  const handleUxModeChange = (nextMode: UserExperienceMode) => {
+    setUxMode(nextMode);
+    localStorage.setItem("nexus_ux_mode", nextMode);
+  };
+
+  // First-time onboarding wizard modal
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    return !localStorage.getItem("nexus_onboarding_completed");
+  });
 
   // State
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -245,6 +266,7 @@ export const App: React.FC = () => {
         mcpStatus={mcpStatus}
         runnersCount={runners.length}
         tunnelStatus={tunnelStatus}
+        uxMode={uxMode}
       />
 
       {/* Main Container */}
@@ -270,6 +292,7 @@ export const App: React.FC = () => {
           isRefreshing={isRefreshing}
           serverAvailable={serverStatus !== null}
           lastSuccessfulRefresh={lastSuccessfulRefresh}
+          uxMode={uxMode}
         />
 
         <NexusPulseLoading
@@ -333,6 +356,7 @@ export const App: React.FC = () => {
                 await bridge.resolveApproval(id, action);
                 await loadData();
               }}
+              uxMode={uxMode}
             />
           )}
 
@@ -343,6 +367,7 @@ export const App: React.FC = () => {
               onRefresh={loadData}
               selectedProjectId={selectedProjectId}
               onSelectProject={setSelectedProjectId}
+              uxMode={uxMode}
             />
           )}
 
@@ -376,6 +401,7 @@ export const App: React.FC = () => {
                 await bridge.resolveApproval(id, action);
                 await loadData();
               }}
+              uxMode={uxMode}
             />
           )}
 
@@ -383,12 +409,27 @@ export const App: React.FC = () => {
             <SettingsPage
               tunnelStatus={tunnelStatus}
               onRefresh={loadData}
+              uxMode={uxMode}
+              onChangeUxMode={handleUxModeChange}
             />
           )}
         </main>
       </div>
 
       {/* Modals */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onAuthorizeProject={() => setIsAuthorizeModalOpen(true)}
+        onDownloadLaya={async () => {
+          try {
+            await bridge.downloadAndEnableModel();
+          } catch (err) {
+            console.error("Failed to start Laya download from onboarding:", err);
+          }
+        }}
+      />
+
       <AuthorizeProjectModal
         isOpen={isAuthorizeModalOpen}
         onClose={() => setIsAuthorizeModalOpen(false)}

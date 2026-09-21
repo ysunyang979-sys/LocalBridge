@@ -9,7 +9,7 @@ import {
   AlertTriangle,
   SlidersHorizontal,
 } from "lucide-react";
-import type { McpStatus, ApprovalRoutingMode } from "../types.js";
+import type { McpStatus, ApprovalRoutingMode, UserExperienceMode } from "../types.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 
 interface HeaderProps {
@@ -25,6 +25,7 @@ interface HeaderProps {
   isRefreshing?: boolean;
   serverAvailable: boolean;
   lastSuccessfulRefresh: number | null;
+  uxMode?: UserExperienceMode;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,9 +41,11 @@ export const Header: React.FC<HeaderProps> = ({
   isRefreshing,
   serverAvailable,
   lastSuccessfulRefresh,
+  uxMode = "standard",
 }) => {
   const { t } = useTranslation();
   const isPaused = mcpStatus?.paused ?? false;
+  const isAdvanced = uxMode === "advanced";
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -154,90 +157,96 @@ export const Header: React.FC<HeaderProps> = ({
                 ? (t.control?.serverOffline || "OFFLINE")
                 : isPaused
                   ? (t.control?.mcpPaused || "AI PAUSED")
-                  : (t.control?.serverOnline || "SYSTEM READY")}
+                  : isAdvanced
+                    ? (t.control?.serverOnline || "SYSTEM READY")
+                    : (t.overview?.greetingReady || "Nexus is ready")}
             </span>
           </div>
 
-          {/* Mode Selector Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowModeDropdown(!showModeDropdown)}
-              disabled={isSwitching}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${modeBadge.className} hover:bg-theme-card-hover`}
-              title={t.settings?.approvalRoutingGroup || "Change approval routing mode"}
-            >
-              {modeBadge.icon}
-              <span className="font-mono text-[11px]">{modeBadge.label}</span>
-              <SlidersHorizontal className="w-3 h-3 ml-0.5 text-theme-muted" />
-            </button>
+          {/* Mode Selector Dropdown (Advanced Mode Only) */}
+          {isAdvanced && (
+            <div className="relative">
+              <button
+                onClick={() => setShowModeDropdown(!showModeDropdown)}
+                disabled={isSwitching}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${modeBadge.className} hover:bg-theme-card-hover`}
+                title={t.settings?.approvalRoutingGroup || "Change approval routing mode"}
+              >
+                {modeBadge.icon}
+                <span className="font-mono text-[11px]">{modeBadge.label}</span>
+                <SlidersHorizontal className="w-3 h-3 ml-0.5 text-theme-muted" />
+              </button>
 
-            {showModeDropdown && (
-              <div className="absolute right-0 mt-1.5 w-56 bg-theme-card border border-theme-subtle rounded-lg shadow-xl py-1 z-50 text-xs">
-                <div className="px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider text-theme-muted border-b border-theme-subtle">
-                  {t.settings?.approvalRoutingGroup || "Approval Policy Mode"}
+              {showModeDropdown && (
+                <div className="absolute right-0 mt-1.5 w-56 bg-theme-card border border-theme-subtle rounded-lg shadow-xl py-1 z-50 text-xs">
+                  <div className="px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider text-theme-muted border-b border-theme-subtle">
+                    {t.settings?.approvalRoutingGroup || "Approval Policy Mode"}
+                  </div>
+                  <button
+                    onClick={() => handleSelectMode("chat")}
+                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                      approvalRoutingMode === "chat" ? "text-sky-500 dark:text-sky-400 font-medium" : "text-theme-secondary"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
+                      <span>{t.settings?.modeChat || "Safe (Chat Approval)"}</span>
+                    </div>
+                    {approvalRoutingMode === "chat" && <span className="text-[10px]">✓</span>}
+                  </button>
+                  <button
+                    onClick={() => handleSelectMode("auto-trusted")}
+                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                      approvalRoutingMode === "auto-trusted" ? "text-amber-500 dark:text-amber-400 font-medium" : "text-theme-secondary"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                      <span>{t.settings?.modeAutoTrusted || "Auto-Execute"}</span>
+                    </div>
+                    {approvalRoutingMode === "auto-trusted" && <span className="text-[10px]">✓</span>}
+                  </button>
+                  <button
+                    onClick={() => handleSelectMode("desktop")}
+                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                      approvalRoutingMode === "desktop" ? "text-slate-600 dark:text-slate-300 font-medium" : "text-theme-secondary"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{t.settings?.modeDesktop || "Desktop App Only"}</span>
+                    </div>
+                    {approvalRoutingMode === "desktop" && <span className="text-[10px]">✓</span>}
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleSelectMode("chat")}
-                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
-                    approvalRoutingMode === "chat" ? "text-sky-500 dark:text-sky-400 font-medium" : "text-theme-secondary"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
-                    <span>{t.settings?.modeChat || "Safe (Chat Approval)"}</span>
-                  </div>
-                  {approvalRoutingMode === "chat" && <span className="text-[10px]">✓</span>}
-                </button>
-                <button
-                  onClick={() => handleSelectMode("auto-trusted")}
-                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
-                    approvalRoutingMode === "auto-trusted" ? "text-amber-500 dark:text-amber-400 font-medium" : "text-theme-secondary"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Zap className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                    <span>{t.settings?.modeAutoTrusted || "Auto-Execute"}</span>
-                  </div>
-                  {approvalRoutingMode === "auto-trusted" && <span className="text-[10px]">✓</span>}
-                </button>
-                <button
-                  onClick={() => handleSelectMode("desktop")}
-                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
-                    approvalRoutingMode === "desktop" ? "text-slate-600 dark:text-slate-300 font-medium" : "text-theme-secondary"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{t.settings?.modeDesktop || "Desktop App Only"}</span>
-                  </div>
-                  {approvalRoutingMode === "desktop" && <span className="text-[10px]">✓</span>}
-                </button>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
-          {/* Quick Pause / Resume AI Button */}
-          <button
-            onClick={onTogglePause}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
-              isPaused
-                ? "bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25"
-                : "bg-white/[0.04] border-white/[0.06] text-theme-secondary hover:text-theme-primary hover:bg-white/[0.08]"
-            }`}
-            title={isPaused ? t.overview.resumeAiBtn : t.overview.pauseAiBtn}
-          >
-            {isPaused ? (
-              <>
-                <PlayCircle className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden md:inline">{t.overview.resumeAiBtn || "Resume AI"}</span>
-              </>
-            ) : (
-              <>
-                <PauseCircle className="w-3.5 h-3.5 text-theme-muted" />
-                <span className="hidden md:inline">{t.overview.pauseAiBtn || "Pause AI"}</span>
-              </>
-            )}
-          </button>
+          {/* Quick Pause / Resume AI Button (Advanced Mode Only) */}
+          {isAdvanced && (
+            <button
+              onClick={onTogglePause}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                isPaused
+                  ? "bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25"
+                  : "bg-white/[0.04] border-white/[0.06] text-theme-secondary hover:text-theme-primary hover:bg-white/[0.08]"
+              }`}
+              title={isPaused ? t.overview.resumeAiBtn : t.overview.pauseAiBtn}
+            >
+              {isPaused ? (
+                <>
+                  <PlayCircle className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden md:inline">{t.overview.resumeAiBtn || "Resume AI"}</span>
+                </>
+              ) : (
+                <>
+                  <PauseCircle className="w-3.5 h-3.5 text-theme-muted" />
+                  <span className="hidden md:inline">{t.overview.pauseAiBtn || "Pause AI"}</span>
+                </>
+              )}
+            </button>
+          )}
 
           {/* Emergency Stop Button */}
           <button
