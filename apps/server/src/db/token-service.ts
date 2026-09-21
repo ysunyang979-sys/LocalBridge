@@ -17,6 +17,7 @@ export interface CreateTokenParams {
   type: TokenType;
   scopes?: string[];
   expiresAt?: number | null;
+  prefix?: string;
 }
 
 export interface CreatedTokenResult {
@@ -98,7 +99,11 @@ export class TokenService {
   createToken(params: CreateTokenParams): CreatedTokenResult {
     const id = `tok_${crypto.randomUUID()}`;
     const token =
-      params.type === "runner" ? generateRunnerToken() : generateMcpToken();
+      params.type === "runner"
+        ? generateRunnerToken()
+        : params.prefix
+        ? `${params.prefix}${crypto.randomBytes(32).toString("hex")}`
+        : generateMcpToken();
     const tokenHash = hashToken(token);
     const createdAt = Date.now();
     const scopesJson = JSON.stringify(params.scopes ?? []);

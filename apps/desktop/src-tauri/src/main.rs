@@ -1045,6 +1045,14 @@ fn desktop_rotate_ai_connection_token(
 }
 
 #[tauri::command]
+fn desktop_revoke_ai_connection_token(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), format!("/api/management/connections/{}/token/revoke", id), None)
+}
+
+#[tauri::command]
 fn desktop_test_ai_connection(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     id: String,
@@ -2198,6 +2206,7 @@ fn main() {
             desktop_delete_ai_connection,
             desktop_set_primary_ai_connection,
             desktop_rotate_ai_connection_token,
+            desktop_revoke_ai_connection_token,
             desktop_test_ai_connection,
             desktop_preview_ai_connection_config,
             desktop_apply_ai_connection_config,

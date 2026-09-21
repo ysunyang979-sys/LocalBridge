@@ -36,7 +36,8 @@ interface ConnectionDetailDrawerProps {
   tunnelStatus?: TunnelStatusDto | null;
   onOpenTunnel?: () => void;
   onSetPrimary: (id: string) => Promise<void>;
-  onRotateToken: (id: string, scopes?: string[]) => Promise<void>;
+  onRotateToken: (id: string, scopes?: string[]) => Promise<{ tokenId: string; token: string } | void>;
+  onRevokeToken?: (id: string) => Promise<void>;
   onTestConnection: (id: string) => Promise<TestConnectionResult>;
   onSaveConfig: (config: AIConnectionConfig) => Promise<void>;
   onDeleteConnection: (id: string) => Promise<void>;
@@ -53,6 +54,7 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
   onOpenTunnel,
   onSetPrimary,
   onRotateToken,
+  onRevokeToken,
   onTestConnection,
   onSaveConfig,
   onDeleteConnection,
@@ -68,6 +70,10 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [tokenScopes, setTokenScopes] = useState<string[]>(["read", "write"]);
+  const [newlyGeneratedToken, setNewlyGeneratedToken] = useState<string | null>(null);
+  const [copiedNewToken, setCopiedNewToken] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isExportingPlugin, setIsExportingPlugin] = useState(false);
@@ -206,9 +212,26 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
   const handleRotateToken = async () => {
     setIsRotating(true);
     try {
-      await onRotateToken(vm.id, vm.scopes);
+      const res = await onRotateToken(vm.id, tokenScopes);
+      if (res && (res as any).token) {
+        setNewlyGeneratedToken((res as any).token);
+      }
     } finally {
       setIsRotating(false);
+    }
+  };
+
+  const handleRevokeToken = async () => {
+    if (!onRevokeToken) return;
+    if (!confirm(isZh ? "确定要撤销此客户端的专属访问令牌吗？撤销后该客户端将无法访问 Nexus。" : "Are you sure you want to revoke this client's access token?")) {
+      return;
+    }
+    setIsRevoking(true);
+    try {
+      await onRevokeToken(vm.id);
+      setNewlyGeneratedToken(null);
+    } finally {
+      setIsRevoking(false);
     }
   };
 
@@ -520,7 +543,134 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 高级信息 (Advanced Telemetry & Token) */}
+              {/* 专属权限与令牌管理 (Scopes & Dedicated Token) */}
+              <div className="space-y-3 pt-2 border-t border-theme-subtle">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-theme-primary text-xs">
+                    {isZh ? "专属授权权限 (Scopes)" : "Authorized Scopes"}
+                  </label>
+                  <span className="text-[10px] text-theme-muted font-mono">
+                    {isZh ? "最小权限原则" : "Least Privilege"}
+                  </span>
+                </div>
+
+                <div className="space-y-2 p-3 rounded-xl bg-theme-card-muted border border-theme-subtle text-xs">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tokenScopes.includes("read")}
+                        onChange={(e) => {
+                          if (e.target.checked) setTokenScopes([...tokenScopes, "read"]);
+                          else setTokenScopes(tokenScopes.filter((s) => s !== "read"));
+                        }}
+                        className="rounded border-theme-input text-sky-600 focus:ring-sky-500"
+                      />
+                      <span className="font-medium text-theme-primary">{isZh ? "读取 (Read)" : "Read"}</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tokenScopes.includes("write")}
+                        onChange={(e) => {
+                          if (e.target.checked) setTokenScopes([...tokenScopes, "write"]);
+                          else setTokenScopes(tokenScopes.filter((s) => s !== "write"));
+                        }}
+                        className="rounded border-theme-input text-sky-600 focus:ring-sky-500"
+                      />
+                      <span className="font-medium text-theme-primary">{isZh ? "写入 (Write)" : "Write"}</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={tokenScopes.includes("execute")}
+                        onChange={(e) => {
+                          if (e.target.checked) setTokenScopes([...tokenScopes, "execute"]);
+                          else setTokenScopes(tokenScopes.filter((s) => s !== "execute"));
+                        }}
+                        className="rounded border-theme-input text-sky-600 focus:ring-sky-500"
+                      />
+                      <span className="font-medium text-theme-primary">{isZh ? "命令执行 (Execute，高危)" : "Execute (High Risk)"}</span>
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-theme-muted">
+                    {isZh
+                      ? "命令执行默认关闭；即使授予 execute 权限，高危命令仍须经 Nexus 人工审批。"
+                      : "Execute is OFF by default; commands still require Nexus human approval."}
+                  </p>
+                </div>
+
+                {/* Plaintext Token Banner (Shown Only Once Upon Generation) */}
+                {newlyGeneratedToken && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs animate-fade-in">
+                    <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-200">
+                      <KeyRound className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>{isZh ? "专属访问令牌已生成（仅显示一次）" : "Dedicated Token Generated (Shown Once)"}</span>
+                    </div>
+                    <p className="text-[11px] text-theme-muted">
+                      {isZh
+                        ? "请立即保存。关闭后 Nexus 将不会再次显示完整令牌。"
+                        : "Please copy and save immediately. For security, Nexus will never display the full token again."}
+                    </p>
+                    <div className="p-2 rounded-lg bg-black/10 dark:bg-black/30 font-mono text-[11px] break-all flex items-center justify-between gap-2">
+                      <span className="text-amber-900 dark:text-amber-100">{newlyGeneratedToken}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(newlyGeneratedToken);
+                          setCopiedNewToken(true);
+                          setTimeout(() => setCopiedNewToken(false), 2000);
+                        }}
+                        className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-semibold shrink-0 transition"
+                      >
+                        {copiedNewToken ? (isZh ? "已复制" : "Copied") : (isZh ? "复制完整令牌" : "Copy")}
+                      </button>
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setNewlyGeneratedToken(null)}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition shadow-xs"
+                      >
+                        {isZh ? "我已保存并关闭" : "I have saved it, dismiss"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Generate / Rotate / Revoke Buttons */}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleRotateToken}
+                    disabled={isRotating}
+                    className="flex-1 py-2 px-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isRotating && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>
+                      {vm.tokenId
+                        ? (isRotating ? (t.aiConnections?.rotatingToken || "正在轮换...") : (isZh ? "重新生成 / 轮换令牌" : "Rotate Token"))
+                        : (isRotating ? "正在生成..." : (isZh ? "生成 Kimi Web 专属令牌" : "Generate Kimi Web Token"))}
+                    </span>
+                  </button>
+
+                  {vm.tokenId && onRevokeToken && (
+                    <button
+                      type="button"
+                      onClick={handleRevokeToken}
+                      disabled={isRevoking}
+                      className="py-2 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 text-xs font-semibold transition flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {isRevoking && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                      <span>{isZh ? "撤销授权" : "Revoke"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 高级信息与遥测 (Advanced Telemetry & Token) */}
               <div className="space-y-2.5 pt-2 border-t border-theme-subtle">
                 <label className="font-semibold text-theme-primary text-xs">
                   {isZh ? "高级信息与认证状态" : "Advanced & Auth Status"}
@@ -530,14 +680,14 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-theme-muted">Token ID:</span>
                     <span className="text-theme-primary font-semibold truncate max-w-[200px]">
-                      {vm.tokenId || (isZh ? "未持久化" : "Ephemeral")}
+                      {vm.tokenId || (isZh ? "未生成" : "Unset")}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <span className="text-theme-muted">Masked Token:</span>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-theme-secondary">{vm.tokenMasked || "lb_••••••••"}</span>
+                      <span className="text-theme-secondary">{vm.tokenMasked || "lb_kimi_••••••••"}</span>
                       {vm.tokenMasked && (
                         <button
                           type="button"
@@ -561,7 +711,7 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-theme-muted">Auth Status:</span>
                     <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {vm.tokenMasked ? (isZh ? "已配置专属凭证" : "Active") : (isZh ? "未授权" : "Unset")}
+                      {vm.tokenMasked ? (isZh ? "已配置专属凭证" : "Active") : (isZh ? "等待授权" : "Awaiting Authorization")}
                     </span>
                   </div>
 
@@ -571,18 +721,6 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
                       {vm.lastSeenAt ? new Date(vm.lastSeenAt).toLocaleString() : "--"}
                     </span>
                   </div>
-                </div>
-
-                <div className="flex items-center justify-end pt-1">
-                  <button
-                    type="button"
-                    onClick={handleRotateToken}
-                    disabled={isRotating}
-                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isRotating ? "animate-spin" : ""}`} />
-                    <span>{isRotating ? (t.aiConnections?.rotatingToken || "Rotating...") : (t.aiConnections?.rotateToken || "重新授权 / 轮换令牌")}</span>
-                  </button>
                 </div>
               </div>
             </div>

@@ -323,7 +323,33 @@ export class ConnectionService {
    * Creates or rotates a dedicated MCP token for an AI connection.
    */
   createOrRotateToken(connectionId: string, scopes = ["read", "write"]): { token: string; tokenId: string } {
-    const conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
+    let conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
+    if (!conn) {
+      // Auto-create builtin connection record if not yet saved in database
+      if (connectionId === "conn_kimi_web") {
+        this.createOrUpdateConnection({
+          id: "conn_kimi_web",
+          clientType: "kimi-web",
+          name: "Kimi Web",
+          category: "native-mcp",
+          transport: "tunnel",
+          endpoint: "Secure MCP Tunnel",
+        });
+        conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
+      } else if (connectionId === "conn_chatgpt") {
+        this.createOrUpdateConnection({
+          id: "conn_chatgpt",
+          clientType: "chatgpt",
+          name: "ChatGPT",
+          category: "native-mcp",
+          transport: "tunnel",
+          endpoint: "Secure MCP Tunnel",
+          isPrimary: true,
+        });
+        conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
+      }
+    }
+
     if (!conn) {
       throw new Error(`Connection not found: ${connectionId}`);
     }
@@ -335,10 +361,14 @@ export class ConnectionService {
       } catch {}
     }
 
+    const isKimi = conn.client_type === "kimi-web" || connectionId === "conn_kimi_web";
+    const prefix = isKimi ? "lb_kimi_" : "lb_";
+
     const created = this.tokenService.createToken({
       name: `AI Client: ${conn.name}`,
       type: "mcp",
       scopes,
+      prefix,
     });
 
     this.db
@@ -346,6 +376,26 @@ export class ConnectionService {
       .run(created.id, Date.now(), connectionId);
 
     return { token: created.token, tokenId: created.id };
+  }
+
+  /**
+   * Revokes an AI connection's dedicated MCP token.
+   */
+  revokeConnectionToken(connectionId: string): boolean {
+    const conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
+    if (!conn) return false;
+
+    if (conn.token_id) {
+      try {
+        this.tokenService.revokeToken(conn.token_id);
+      } catch {}
+    }
+
+    this.db
+      .prepare(`UPDATE ai_connections SET token_id = NULL, status = 'not_configured', updated_at = ? WHERE id = ?`)
+      .run(Date.now(), connectionId);
+
+    return true;
   }
 
   /**
@@ -487,7 +537,8 @@ export class ConnectionService {
         try {
           scopes = JSON.parse(tokenRow.scopes || "[]");
         } catch {}
-        tokenMasked = `lb_••••••••${tokenRow.id.slice(-4)}`;
+        const prefix = tokenRow.name?.toLowerCase().includes("kimi") ? "lb_kimi_" : "lb_";
+        tokenMasked = `${prefix}••••${tokenRow.id.slice(-4).toUpperCase()}`;
       }
     }
 

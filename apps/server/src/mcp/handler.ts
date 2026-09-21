@@ -39,9 +39,23 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
     if (!hostHeader) return false;
     // Strip port if present
     const hostname = hostHeader.replace(/:\d+$/, "").toLowerCase();
-    return allowedHosts.some(
-      (h) => h.toLowerCase() === hostname || hostname === `[${h.toLowerCase()}]`
-    );
+    if (
+      allowedHosts.some(
+        (h) => h.toLowerCase() === hostname || hostname === `[${h.toLowerCase()}]`
+      )
+    ) {
+      return true;
+    }
+    // Allow legitimate Nexus tunnel subdomains and public hosts
+    if (
+      hostname === "localbridge.dev" ||
+      hostname.endsWith(".localbridge.dev") ||
+      hostname === "trycloudflare.com" ||
+      hostname.endsWith(".trycloudflare.com")
+    ) {
+      return true;
+    }
+    return false;
   }
 
   // 1. Loopback-only MCP Status Endpoint
@@ -216,9 +230,28 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
         });
       }
 
+      function getRequestOrigin(): string {
+        const host = request.headers.host || "localhost:18080";
+        const proto =
+          (request.headers["x-forwarded-proto"] as string) ||
+          (host.includes("localbridge.dev") || host.includes("trycloudflare.com")
+            ? "https"
+            : "http");
+        return `${proto}://${host}`;
+      }
+
       // 3.6 Bearer Token Authentication & Cross-Token Isolation
       const authHeader = request.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        const origin = getRequestOrigin();
+        reply.header(
+          "WWW-Authenticate",
+          `Bearer realm="Nexus", error="invalid_token", error_description="Bearer token required"`
+        );
+        reply.header(
+          "Link",
+          `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
+        );
         return reply.status(401).send({
           error: "Unauthorized: Missing Bearer token in Authorization header",
           code: "MISSING_TOKEN",
@@ -236,6 +269,15 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
         } else if (validation.reason === "TOKEN_EXPIRED") {
           code = "TOKEN_EXPIRED";
         }
+        const origin = getRequestOrigin();
+        reply.header(
+          "WWW-Authenticate",
+          `Bearer realm="Nexus", error="invalid_token", error_description="${validation.reason || "Invalid token"}"`
+        );
+        reply.header(
+          "Link",
+          `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
+        );
         return reply.status(401).send({
           error: `Unauthorized: ${validation.reason ?? "Invalid token"}`,
           code,
@@ -278,7 +320,13 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
           });
         }
 
-        const clientDisplayName = tokenRecord.name?.startsWith("AI Client: ")
+        const isKimi =
+          tokenRecord.name?.toLowerCase().includes("kimi") ||
+          tokenRecord.id.includes("kimi");
+        const clientType = isKimi ? "kimi-web" : "chatgpt";
+        const clientDisplayName = isKimi
+          ? "Kimi Web"
+          : tokenRecord.name?.startsWith("AI Client: ")
           ? tokenRecord.name.slice(11)
           : tokenRecord.name || "AI Client";
 
@@ -286,6 +334,7 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
           principal,
           toolName,
           clientId: tokenRecord.id,
+          clientType,
           clientName: clientDisplayName,
           actorDisplayName: clientDisplayName,
         });

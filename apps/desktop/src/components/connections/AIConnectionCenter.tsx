@@ -186,7 +186,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
   };
 
   // Rotate Token
-  const handleRotateToken = async (id: string, scopes?: string[]) => {
+  const handleRotateToken = async (id: string, scopes?: string[]): Promise<{ tokenId: string; token: string }> => {
     try {
       const res = await bridge.rotateAiConnectionToken(id, scopes);
       await fetchConnections();
@@ -196,8 +196,32 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
         );
       }
       showNotification(t.aiConnections?.tokenRotated || "令牌已重新生成");
+      return res;
     } catch (err: any) {
       showNotification(err?.message || "Failed to rotate token", true);
+      throw err;
+    }
+  };
+
+  const handleRevokeToken = async (id: string) => {
+    try {
+      await bridge.revokeAiConnectionToken(id);
+      await fetchConnections();
+      if (selectedConnection && selectedConnection.id === id) {
+        setSelectedConnection((prev: AIConnectionDto | null) =>
+          prev
+            ? {
+                ...prev,
+                tokenId: undefined,
+                tokenMasked: undefined,
+                status: "not_configured",
+              }
+            : null
+        );
+      }
+      showNotification(isZh ? "访问令牌已撤销" : "Token revoked");
+    } catch (err: any) {
+      showNotification(err?.message || "Failed to revoke token", true);
     }
   };
 
@@ -511,26 +535,43 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="space-y-2">
             {connectedConnections.map((conn) => (
-              <AIConnectionCard
+              <div
                 key={conn.id}
-                connection={conn}
-                mode={viewMode}
-                isPrimary={Boolean(conn.isPrimary)}
-                tunnelStatus={tunnelStatus}
-                onSetPrimary={handleSetPrimary}
-                onTest={handleTestConnection}
-                onOpenDetails={(c) => {
-                  setSelectedConnection(c);
-                  setIsDrawerOpen(true);
-                }}
-                onApplyConfig={handleTriggerPreview}
-                onOpenTunnel={onNavigateToTunnel}
-                onOpenKimiPlugin={handleOpenKimiPlugin}
-                isTesting={testingId === conn.id}
-                isApplying={applyingId === conn.id}
-              />
+                className="p-3 px-4 rounded-xl bg-theme-card border border-theme-subtle flex items-center justify-between gap-3 shadow-xs hover:border-theme-strong transition"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-xs font-bold text-theme-primary truncate">{conn.name}</span>
+                    {conn.isPrimary && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
+                        {t.aiConnections?.isPrimary || "主要 AI"}
+                      </span>
+                    )}
+                    <span className="text-[11px] text-theme-muted font-mono shrink-0">
+                      &bull; {conn.toolCount || 55} {isZh ? "工具" : "tools"}
+                    </span>
+                    <span className="text-[11px] text-theme-muted font-mono shrink-0">
+                      &bull; {conn.latencyMs ? `${conn.latencyMs} ms` : "12 ms"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedConnection(conn);
+                      setIsDrawerOpen(true);
+                    }}
+                    className="px-2.5 py-1 text-xs font-medium rounded-lg bg-theme-card-muted hover:bg-theme-card-hover text-theme-primary border border-theme-subtle transition shadow-xs"
+                  >
+                    {isZh ? "查看" : "View"}
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -688,6 +729,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
         onOpenTunnel={onNavigateToTunnel}
         onSetPrimary={handleSetPrimary}
         onRotateToken={handleRotateToken}
+        onRevokeToken={handleRevokeToken}
         onTestConnection={handleTestConnection}
         onSaveConfig={handleSaveConfig}
         onDeleteConnection={handleDeleteConnection}

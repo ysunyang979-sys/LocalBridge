@@ -28,6 +28,8 @@ import {
   Download,
   DownloadCloud,
   FolderOpen,
+  Sparkles,
+  Terminal,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -64,6 +66,17 @@ interface SettingsPageProps {
   onChangeUxMode?: (mode: UserExperienceMode) => void;
 }
 
+export type SettingsRoute =
+  | { page: "general" }
+  | { page: "appearance" }
+  | { page: "intelligence" }
+  | { page: "connections" }
+  | { page: "connection-detail"; id: string }
+  | { page: "secure-mcp" }
+  | { page: "security" }
+  | { page: "advanced" }
+  | { page: "about" };
+
 export type SettingsTab =
   | "general"
   | "appearance"
@@ -81,8 +94,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   onChangeUxMode,
 }) => {
   const { t, language, setLanguage } = useTranslation();
+  const isZh = language === "zh-CN";
   const { themeMode, setThemeMode } = useTheme();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  const [route, setRoute] = useState<SettingsRoute>({ page: "general" });
+  const activeTab: SettingsTab =
+    route.page === "secure-mcp"
+      ? "tunnel"
+      : route.page === "connection-detail"
+      ? "connections"
+      : (route.page as SettingsTab);
 
   // Server URL State
   const [serverUrl, setServerUrl] = useState(bridge.getBaseUrl());
@@ -934,9 +954,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       <div className="flex items-center gap-1 bg-theme-card-muted border border-theme-subtle p-1 rounded-xl overflow-x-auto">
         <button
           type="button"
-          onClick={() => setActiveTab("general")}
+          onClick={() => setRoute({ page: "general" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "general"
+            route.page === "general"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -947,9 +967,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveTab("appearance")}
+          onClick={() => setRoute({ page: "appearance" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "appearance"
+            route.page === "appearance"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -960,9 +980,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveTab("intelligence")}
+          onClick={() => setRoute({ page: "intelligence" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "intelligence"
+            route.page === "intelligence"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -973,9 +993,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveTab("connections")}
+          onClick={() => setRoute({ page: "connections" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "connections" || activeTab === "tunnel"
+            route.page === "connections" || route.page === "secure-mcp"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -986,9 +1006,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveTab("security")}
+          onClick={() => setRoute({ page: "security" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "security"
+            route.page === "security"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -999,9 +1019,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveTab("advanced")}
+          onClick={() => setRoute({ page: "advanced" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "advanced"
+            route.page === "advanced"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -1012,9 +1032,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveTab("about")}
+          onClick={() => setRoute({ page: "about" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "about"
+            route.page === "about"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -1025,18 +1045,45 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <div className="space-y-6">
-        {/* Tab: AI Connection Center */}
-        {activeTab === "connections" && (
+        {/* Tab: AI Connection Center - kept mounted to preserve scroll & state */}
+        <div className={route.page === "connections" ? "block" : "hidden"}>
           <AIConnectionCenter
             tunnelStatus={tunnelStatus}
             onRefreshAll={onRefresh}
-            onNavigateToTunnel={() => setActiveTab("tunnel")}
+            onNavigateToTunnel={() => setRoute({ page: "secure-mcp" })}
           />
-        )}
+        </div>
 
-        {/* Tab 1: Secure Tunnel (P0) */}
-        {activeTab === "tunnel" && (
-          <div className="max-w-4xl space-y-6">
+        {/* Tab 1: Secure Tunnel (P0) / Secure MCP */}
+        {route.page === "secure-mcp" && (
+          <div className="max-w-4xl space-y-6 animate-fade-in">
+            {/* Top Navigation Breadcrumbs and Back Button */}
+            <div className="flex items-center justify-between gap-4 p-3.5 px-4 bg-theme-card border border-theme-subtle rounded-xl shadow-xs">
+              <div className="flex items-center gap-2 text-xs text-theme-muted">
+                <span>{isZh ? "应用设置" : "Settings"}</span>
+                <span>/</span>
+                <button
+                  type="button"
+                  onClick={() => setRoute({ page: "connections" })}
+                  className="text-sky-600 dark:text-sky-400 hover:underline font-semibold"
+                >
+                  {isZh ? "AI 连接中心" : "AI Connections"}
+                </button>
+                <span>/</span>
+                <span className="text-theme-primary font-semibold">
+                  {isZh ? "Secure MCP 隧道" : "Secure MCP Tunnel"}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setRoute({ page: "connections" })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-theme-card-muted hover:bg-theme-card-hover text-theme-primary border border-theme-subtle transition shadow-xs"
+              >
+                <span>&larr;</span>
+                <span>{isZh ? "返回 AI 连接中心" : "Back to AI Connections"}</span>
+              </button>
+            </div>
           <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
@@ -1471,6 +1518,114 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Per-Client MCP Authorizations Card */}
+          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+                <KeyRound className="w-4 h-4 text-indigo-500" />
+                <span>{isZh ? "MCP 客户端授权" : "MCP Client Authorizations"}</span>
+              </div>
+              <span className="text-[11px] text-theme-muted font-mono">
+                {isZh ? "多客户端凭据隔离" : "Per-Client Token Isolation"}
+              </span>
+            </div>
+            <p className="text-xs text-theme-muted">
+              {isZh
+                ? "为不同 AI 客户端独立签发和管理访问令牌与权限。轮换或撤销某一客户端令牌不会影响其他已连接客户端。"
+                : "Issue and manage independent tokens and scopes per AI client. Rotating or revoking one client does not affect others."}
+            </p>
+
+            <div className="space-y-3 pt-2">
+              {/* ChatGPT */}
+              <div className="p-3.5 rounded-xl bg-theme-card-muted border border-theme-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Radio className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-theme-primary">ChatGPT</span>
+                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                        {isZh ? "已连接" : "Connected"}
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                        {isZh ? "主要 AI" : "Primary"}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-theme-muted font-mono mt-0.5">
+                      <span>Scopes: read, write, execute &bull; 55 {isZh ? "工具" : "tools"} &bull; 12 ms</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRoute({ page: "connections" })}
+                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-theme-card hover:bg-theme-card-hover text-theme-primary border border-theme-subtle transition"
+                  >
+                    {isZh ? "在连接中心查看" : "View"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Kimi Web */}
+              <div className="p-3.5 rounded-xl bg-theme-card-muted border border-theme-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Sparkles className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-theme-primary">Kimi Web</span>
+                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                        {tunnelStatus?.has_mcp_token ? (isZh ? "已配置" : "Configured") : (isZh ? "等待授权" : "Awaiting Auth")}
+                      </span>
+                      <span className="text-[11px] text-theme-muted font-mono">conn_kimi_web</span>
+                    </div>
+                    <div className="text-[11px] text-theme-muted font-mono mt-0.5">
+                      <span>Scopes: read, write &bull; Remote MCP Tunnel &bull; {tunnelStatus?.has_mcp_token ? (isZh ? "专属凭证激活" : "Token Active") : (isZh ? "等待授权" : "Awaiting Authorization")}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRoute({ page: "connections" })}
+                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xs"
+                  >
+                    {isZh ? "在连接中心管理" : "Manage"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Claude & Gemini summary row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="p-3 rounded-xl bg-theme-card-muted/50 border border-theme-subtle flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="font-semibold text-theme-secondary">Claude Desktop</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRoute({ page: "connections" })}
+                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline font-medium"
+                  >
+                    {isZh ? "前往配置" : "Configure"}
+                  </button>
+                </div>
+                <div className="p-3 rounded-xl bg-theme-card-muted/50 border border-theme-subtle flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="w-3.5 h-3.5 text-sky-500" />
+                    <span className="font-semibold text-theme-secondary">Gemini CLI</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRoute({ page: "connections" })}
+                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline font-medium"
+                  >
+                    {isZh ? "前往配置" : "Configure"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

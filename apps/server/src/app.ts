@@ -25,6 +25,8 @@ import { runnersRoutes } from "./routes/runners.js";
 import { projectsRoutes } from "./routes/projects.js";
 import { managementRoutes } from "./routes/management.js";
 import { mcpRoutes, McpContext, McpRateLimiter } from "./mcp/index.js";
+import { OAuthService } from "./auth/oauth-service.js";
+import { oauthRoutes } from "./routes/oauth.js";
 
 export interface BuildAppOptions {
   config: AppConfig;
@@ -47,12 +49,14 @@ export interface BuiltAppResult {
   app: AppInstance;
   db: DatabaseConnection;
   tokenService: TokenService;
+  connectionService: ConnectionService;
   runnerRegistry: RunnerRegistry;
   rpcService: RunnerRpcService;
   projectService: ServerProjectService;
   mcpContext: McpContext;
   rateLimiter: McpRateLimiter;
   managementSecret: string;
+  oauthService?: OAuthService;
 }
 
 export async function buildApp(
@@ -269,6 +273,13 @@ export async function buildApp(
     ],
   });
 
+  // Register RFC 9207 / RFC 8414 MCP OAuth 2.0 PKCE Routes
+  const oauthService = new OAuthService(tokenService);
+  await app.register(oauthRoutes, {
+    oauthService,
+    projectService,
+  });
+
   // On close hook
   app.addHook("onClose", async () => {
     runnerRegistry.closeAll();
@@ -279,11 +290,13 @@ export async function buildApp(
     app,
     db,
     tokenService,
+    connectionService,
     runnerRegistry,
     rpcService,
     projectService,
     mcpContext,
     rateLimiter,
     managementSecret,
+    oauthService,
   };
 }

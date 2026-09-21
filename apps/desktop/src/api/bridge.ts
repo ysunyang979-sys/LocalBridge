@@ -1156,6 +1156,15 @@ class ApiBridge {
     });
   }
 
+  async revokeAiConnectionToken(id: string): Promise<{ success: boolean; id: string }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; id: string }>("desktop_revoke_ai_connection_token", { id });
+    }
+    return this.fetchJson<{ success: boolean; id: string }>(`/api/management/connections/${id}/token/revoke`, {
+      method: "POST",
+    });
+  }
+
   async testAiConnection(id: string): Promise<TestConnectionResult> {
     if (isTauri()) {
       return invoke<TestConnectionResult>("desktop_test_ai_connection", { id });

@@ -1816,6 +1816,21 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     }
   );
 
+  fastify.post<{ Params: { id: string } }>(
+    "/management/connections/:id/token/revoke",
+    async (request, reply) => {
+      if (!connService) {
+        return reply.status(503).send({ error: "Connection service not initialized" });
+      }
+      try {
+        const success = connService.revokeConnectionToken(request.params.id);
+        return reply.status(200).send({ success, id: request.params.id });
+      } catch (err: any) {
+        return reply.status(400).send({ error: err?.message || String(err) });
+      }
+    }
+  );
+
   fastify.post<{ Params: { id: string } }>("/management/connections/:id/test", async (request, reply) => {
     if (!adpRegistry) {
       return reply.status(503).send({ error: "Adapter registry not initialized" });

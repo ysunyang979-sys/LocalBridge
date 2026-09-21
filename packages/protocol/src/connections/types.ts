@@ -107,9 +107,9 @@ export interface ProviderPreset {
 
 export interface TestConnectionResult {
   success: boolean;
-  stage: "auth" | "tools" | "ping" | "model";
+  stage: "auth" | "tools" | "ping" | "model" | "endpoint";
   latencyMs: number;
-  toolCount: number;
+  toolCount?: number;
   message: string;
   error?: string;
   endpointReachable?: boolean;
