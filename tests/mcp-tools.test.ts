@@ -75,6 +75,10 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
     "localbridge_runtime_logs",
     "localbridge_runtime_restart",
     "localbridge_runtime_stop",
+    "localbridge_fs_delete",
+    "localbridge_fs_move",
+    "localbridge_fs_copy",
+    "localbridge_fs_mkdir",
   ];
 
   const PROHIBITED_TOOLS = [
@@ -159,8 +163,8 @@ describe("Phase 10 - MCP Tool Registry & Annotation Audit", () => {
     } catch {}
   });
 
-  it("registers exactly 55 official tools on tools/list", () => {
-    expect(tools.length).toBe(55);
+  it("registers exactly 59 official tools on tools/list", () => {
+    expect(tools.length).toBe(59);
 
     const registeredNames = tools.map((t: any) => t.name).sort();
     expect(registeredNames).toEqual([...EXPECTED_23_TOOLS].sort());

@@ -18,3 +18,4 @@ export * from "./runtime/index.js";
 export * from "./tunnel/index.js";
 export * from "./intelligence.js";
 export * from "./connections/index.js";
+export * from "./full-control/index.js";

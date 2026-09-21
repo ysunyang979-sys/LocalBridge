@@ -292,6 +292,35 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
         scopes = [];
       }
 
+      // Check Full Control active session for this client
+      let fullControlSession = mcpContext.fullControlService.getActiveSession(tokenRecord.id);
+      if (!fullControlSession && mcpContext.db) {
+        try {
+          const conn = mcpContext.db
+            .prepare("SELECT id, client_type FROM ai_connections WHERE token_id = ?")
+            .get(tokenRecord.id) as { id: string; client_type: string } | undefined;
+          if (conn) {
+            fullControlSession =
+              mcpContext.fullControlService.getActiveSession(conn.id) ||
+              mcpContext.fullControlService.getActiveSession(conn.client_type);
+          }
+        } catch {}
+      }
+      if (!fullControlSession) {
+        const isKimi =
+          tokenRecord.name?.toLowerCase().includes("kimi") ||
+          tokenRecord.id.includes("kimi");
+        const fallbackClientType = isKimi ? "kimi-web" : "chatgpt";
+        fullControlSession = mcpContext.fullControlService.getActiveSession(fallbackClientType);
+      }
+
+      if (fullControlSession) {
+        // Dynamically elevate scopes for this active session without mutating stored DB record
+        scopes = Array.from(
+          new Set([...scopes, "read", "write", "execute", "delete", "filesystem-full"])
+        );
+      }
+
       const principal: McpPrincipal = {
         id: tokenRecord.id,
         authType: "localbridge-token",
@@ -329,6 +358,15 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
           : tokenRecord.name?.startsWith("AI Client: ")
           ? tokenRecord.name.slice(11)
           : tokenRecord.name || "AI Client";
+
+        if (fullControlSession && body.params) {
+          if (!body.params.arguments || typeof body.params.arguments !== "object") {
+            body.params.arguments = {};
+          }
+          body.params.arguments.sessionId = fullControlSession.id;
+          body.params.arguments.isFullControl = true;
+          body.params.arguments.isDeviceScope = fullControlSession.scope === "device";
+        }
 
         mcpContext.logAudit("mcp_tool_started", {
           principal,

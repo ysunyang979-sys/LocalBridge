@@ -100,6 +100,12 @@ import { createRuntimeStatusHandler } from "./rpc/handlers/runtime-status.js";
 import { createRuntimeLogsHandler } from "./rpc/handlers/runtime-logs.js";
 import { createRuntimeRestartHandler } from "./rpc/handlers/runtime-restart.js";
 import { createRuntimeStopHandler } from "./rpc/handlers/runtime-stop.js";
+import {
+  createFsDeleteHandler,
+  createFsMoveHandler,
+  createFsCopyHandler,
+  createFsMkdirHandler,
+} from "./rpc/handlers/fs-universal.js";
 
 export const RUNNER_VERSION = "1.1.0";
 
@@ -637,6 +643,46 @@ export class LocalBridgeRunner {
     this.rpcRouter.register(
       RunnerRpcMethods.RuntimeStop,
       createRuntimeStopHandler(this.runtimeManager)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FsDelete,
+      createFsDeleteHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry,
+        this.runnerStateDir
+      )
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FsMove,
+      createFsMoveHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry,
+        this.runnerStateDir
+      )
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FsCopy,
+      createFsCopyHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry,
+        this.runnerStateDir
+      )
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.FsMkdir,
+      createFsMkdirHandler(
+        this.filesystemService,
+        this.approvalManager,
+        this.projectRegistry,
+        this.runnerStateDir
+      )
     );
   }
 

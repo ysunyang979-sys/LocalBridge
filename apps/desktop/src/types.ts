@@ -681,3 +681,41 @@ ${res.endpoint}
 完成结构校验并登记到个人插件。`;
   }
 }
+
+// Full Control Mode types
+export type FullControlScope = "current-project" | "device";
+
+export interface FullControlSession {
+  id: string;
+  clientId: string;
+  clientName?: string;
+  scope: FullControlScope;
+  projectId?: string;
+  projectName?: string;
+  startedAt: number;
+  expiresAt: number;
+  reason?: string;
+  operatorConfirmedAt: number;
+  active: boolean;
+}
+
+export interface StartFullControlParams {
+  clientId: string;
+  scope: FullControlScope;
+  projectId?: string;
+  durationMinutes?: number;
+  reason?: string;
+  confirmedDeviceFullControl?: boolean;
+}
+
+export interface StopFullControlParams {
+  sessionId?: string;
+  clientId?: string;
+}
+
+export interface FullControlStatusDto {
+  enabled: boolean;
+  activeSession: FullControlSession | null;
+  allSessions: FullControlSession[];
+}
+

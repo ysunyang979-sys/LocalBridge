@@ -9,6 +9,8 @@ import {
   ChevronRight,
   Brain,
   Sparkles,
+  ShieldAlert,
+  Zap,
 } from "lucide-react";
 import type {
   ServerStatus,
@@ -22,6 +24,7 @@ import type {
   LspServerStatus,
   IntelligenceStatusDto,
   UserExperienceMode,
+  FullControlStatusDto,
 } from "../types.js";
 import { bridge } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -42,6 +45,9 @@ interface ControlPageProps {
   onOpenEmergencyStopModal: () => void;
   onQuickResolveApproval: (id: string, action: "approve" | "deny") => Promise<void>;
   uxMode?: UserExperienceMode;
+  fullControlStatus?: FullControlStatusDto | null;
+  onRefresh?: () => Promise<void> | void;
+  onOpenFullControlModal?: () => void;
 }
 
 // Project summary card for the Recent Work section
@@ -292,6 +298,9 @@ export const ControlPage: React.FC<ControlPageProps> = ({
   onOpenEmergencyStopModal,
   onQuickResolveApproval,
   uxMode = "standard",
+  fullControlStatus,
+  onRefresh,
+  onOpenFullControlModal,
 }) => {
   const { t } = useTranslation();
   const isAdvanced = uxMode === "advanced";
@@ -331,6 +340,76 @@ export const ControlPage: React.FC<ControlPageProps> = ({
 
   return (
     <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto select-none">
+      {/* Full Control Active Banner */}
+      {fullControlStatus?.activeSession && (
+        <section className="p-4 rounded-xl bg-amber-500/10 border-2 border-amber-500/30 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 shadow-sm space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                <ShieldAlert className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-amber-700 dark:text-amber-300">
+                    完全控制模式进行中 (Full Control Active)
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 font-semibold border border-amber-500/30">
+                    {fullControlStatus.activeSession.scope === "device" ? "整台设备 (Device-Wide)" : "当前项目 (Project-Scoped)"}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
+                  AI 客户端已获临时完全控制权，允许执行二进制删除、递归目录清理与自动化本地文件系统操作。
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center">
+              <button
+                onClick={async () => {
+                  if (fullControlStatus.activeSession?.id) {
+                    await bridge.stopFullControl(fullControlStatus.activeSession.id);
+                    if (onRefresh) await onRefresh();
+                  }
+                }}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition shadow-sm"
+              >
+                立即恢复安全模式
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-amber-500/20 text-xs font-mono">
+            <div>
+              <span className="text-amber-600/70 dark:text-amber-400/70 text-[10px] block">授权客户端</span>
+              <span className="font-semibold text-amber-800 dark:text-amber-200 truncate block">
+                {fullControlStatus.activeSession.clientName || fullControlStatus.activeSession.clientId}
+              </span>
+            </div>
+            <div>
+              <span className="text-amber-600/70 dark:text-amber-400/70 text-[10px] block">目标范围</span>
+              <span className="truncate block font-semibold text-amber-800 dark:text-amber-200">
+                {fullControlStatus.activeSession.scope === "device"
+                  ? "整台设备本地存储"
+                  : fullControlStatus.activeSession.projectName || fullControlStatus.activeSession.projectId || "当前项目"}
+              </span>
+            </div>
+            <div>
+              <span className="text-amber-600/70 dark:text-amber-400/70 text-[10px] block">生效时间</span>
+              <span className="text-amber-800 dark:text-amber-200">
+                {new Date(fullControlStatus.activeSession.startedAt).toLocaleTimeString()}
+              </span>
+            </div>
+            <div>
+              <span className="text-amber-600/70 dark:text-amber-400/70 text-[10px] block">自动失效</span>
+              <span className="text-amber-800 dark:text-amber-200">
+                {fullControlStatus.activeSession.expiresAt
+                  ? `预计 ${new Date(fullControlStatus.activeSession.expiresAt).toLocaleTimeString()}`
+                  : "手动关闭为止"}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
       {/* ================= STANDARD MODE TOP HERO ================= */}
       {!isAdvanced ? (
         <section className="space-y-6">
@@ -730,6 +809,18 @@ export const ControlPage: React.FC<ControlPageProps> = ({
             >
               {t.control?.auditLog || "Audit Log"} ({jobs.length} {t.control?.jobsExecuted || "jobs executed"})
             </button>
+            {onOpenFullControlModal && (
+              <>
+                <span className="text-theme-muted/30">|</span>
+                <button
+                  onClick={onOpenFullControlModal}
+                  className="text-amber-600 dark:text-amber-400 hover:text-amber-500 font-mono text-[11px] transition flex items-center gap-1"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>完全控制模式</span>
+                </button>
+              </>
+            )}
           </div>
 
           <button

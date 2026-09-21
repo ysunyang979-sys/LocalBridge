@@ -13,3 +13,4 @@ export * from "./file-write.js";
 export * from "./file-patch.js";
 export * from "./file-delete.js";
 export * from "./file-restore.js";
+export * from "./fs-universal.js";

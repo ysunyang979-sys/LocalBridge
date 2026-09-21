@@ -8,8 +8,14 @@ import {
   Shield,
   AlertTriangle,
   SlidersHorizontal,
+  ShieldAlert,
 } from "lucide-react";
-import type { McpStatus, ApprovalRoutingMode, UserExperienceMode } from "../types.js";
+import type {
+  McpStatus,
+  ApprovalRoutingMode,
+  UserExperienceMode,
+  FullControlStatusDto,
+} from "../types.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 
 interface HeaderProps {
@@ -26,6 +32,9 @@ interface HeaderProps {
   serverAvailable: boolean;
   lastSuccessfulRefresh: number | null;
   uxMode?: UserExperienceMode;
+  fullControlStatus?: FullControlStatusDto | null;
+  onOpenFullControl?: () => void;
+  onStopFullControl?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -42,6 +51,9 @@ export const Header: React.FC<HeaderProps> = ({
   serverAvailable,
   lastSuccessfulRefresh,
   uxMode = "standard",
+  fullControlStatus,
+  onOpenFullControl,
+  onStopFullControl,
 }) => {
   const { t } = useTranslation();
   const isPaused = mcpStatus?.paused ?? false;
@@ -76,6 +88,13 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Human-readable mode label and styling
   const getModeBadge = () => {
+    if (fullControlStatus?.enabled && fullControlStatus.activeSession) {
+      return {
+        label: "完全控制 (Full Control)",
+        className: "bg-amber-500/20 text-amber-500 border-amber-500/50 shadow-sm",
+        icon: <ShieldAlert className="w-3 h-3 text-amber-500" />,
+      };
+    }
     switch (approvalRoutingMode) {
       case "auto-trusted":
         return {
@@ -163,65 +182,106 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-          {/* Mode Selector Dropdown (Advanced Mode Only) */}
-          {isAdvanced && (
-            <div className="relative">
-              <button
-                onClick={() => setShowModeDropdown(!showModeDropdown)}
-                disabled={isSwitching}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${modeBadge.className} hover:bg-theme-card-hover`}
-                title={t.settings?.approvalRoutingGroup || "Change approval routing mode"}
-              >
-                {modeBadge.icon}
-                <span className="font-mono text-[11px]">{modeBadge.label}</span>
-                <SlidersHorizontal className="w-3 h-3 ml-0.5 text-theme-muted" />
-              </button>
-
-              {showModeDropdown && (
-                <div className="absolute right-0 mt-1.5 w-56 bg-theme-card border border-theme-subtle rounded-lg shadow-xl py-1 z-50 text-xs">
-                  <div className="px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider text-theme-muted border-b border-theme-subtle">
-                    {t.settings?.approvalRoutingGroup || "Approval Policy Mode"}
-                  </div>
-                  <button
-                    onClick={() => handleSelectMode("chat")}
-                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
-                      approvalRoutingMode === "chat" ? "text-sky-500 dark:text-sky-400 font-medium" : "text-theme-secondary"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
-                      <span>{t.settings?.modeChat || "Safe (Chat Approval)"}</span>
-                    </div>
-                    {approvalRoutingMode === "chat" && <span className="text-[10px]">✓</span>}
-                  </button>
-                  <button
-                    onClick={() => handleSelectMode("auto-trusted")}
-                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
-                      approvalRoutingMode === "auto-trusted" ? "text-amber-500 dark:text-amber-400 font-medium" : "text-theme-secondary"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
-                      <span>{t.settings?.modeAutoTrusted || "Auto-Execute"}</span>
-                    </div>
-                    {approvalRoutingMode === "auto-trusted" && <span className="text-[10px]">✓</span>}
-                  </button>
-                  <button
-                    onClick={() => handleSelectMode("desktop")}
-                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
-                      approvalRoutingMode === "desktop" ? "text-slate-600 dark:text-slate-300 font-medium" : "text-theme-secondary"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{t.settings?.modeDesktop || "Desktop App Only"}</span>
-                    </div>
-                    {approvalRoutingMode === "desktop" && <span className="text-[10px]">✓</span>}
-                  </button>
-                </div>
+          {/* Full Control Active Banner */}
+          {fullControlStatus?.enabled && fullControlStatus.activeSession && (
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-mono bg-amber-500/15 border border-amber-500/40 text-amber-500 shadow-sm">
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="font-semibold truncate max-w-[140px]">
+                完全控制 · {fullControlStatus.activeSession.projectName || (fullControlStatus.activeSession.scope === "device" ? "此设备" : "当前项目")}
+              </span>
+              {fullControlStatus.activeSession.expiresAt !== Number.MAX_SAFE_INTEGER && (
+                <span className="text-[10px] text-amber-500/80 hidden sm:inline">
+                  ({Math.max(0, Math.round((fullControlStatus.activeSession.expiresAt - Date.now()) / 60000))}m)
+                </span>
+              )}
+              {onStopFullControl && (
+                <button
+                  onClick={onStopFullControl}
+                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 border border-amber-500/40 transition ml-0.5"
+                  title="立即结束完全控制"
+                >
+                  结束
+                </button>
               )}
             </div>
           )}
+
+          {/* AI Control Mode Selector Dropdown (Safe / Auto / Full Control) */}
+          <div className="relative">
+            <button
+              onClick={() => setShowModeDropdown(!showModeDropdown)}
+              disabled={isSwitching}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${modeBadge.className} hover:bg-theme-card-hover`}
+              title={t.settings?.approvalRoutingGroup || "Change approval routing mode"}
+            >
+              {modeBadge.icon}
+              <span className="font-mono text-[11px]">{modeBadge.label}</span>
+              <SlidersHorizontal className="w-3 h-3 ml-0.5 text-theme-muted" />
+            </button>
+
+            {showModeDropdown && (
+              <div className="absolute right-0 mt-1.5 w-60 bg-theme-card border border-theme-subtle rounded-lg shadow-xl py-1 z-50 text-xs">
+                <div className="px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider text-theme-muted border-b border-theme-subtle">
+                  AI 权限与控制模式
+                </div>
+                <button
+                  onClick={() => handleSelectMode("chat")}
+                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                    approvalRoutingMode === "chat" && !fullControlStatus?.enabled ? "text-sky-500 dark:text-sky-400 font-medium" : "text-theme-secondary"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
+                    <span>Safe (安全逐项审批)</span>
+                  </div>
+                  {approvalRoutingMode === "chat" && !fullControlStatus?.enabled && <span className="text-[10px]">✓</span>}
+                </button>
+                <button
+                  onClick={() => handleSelectMode("auto-trusted")}
+                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                    approvalRoutingMode === "auto-trusted" && !fullControlStatus?.enabled ? "text-amber-500 dark:text-amber-400 font-medium" : "text-theme-secondary"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                    <span>Auto (常规操作免审)</span>
+                  </div>
+                  {approvalRoutingMode === "auto-trusted" && !fullControlStatus?.enabled && <span className="text-[10px]">✓</span>}
+                </button>
+                <button
+                  onClick={() => handleSelectMode("desktop")}
+                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                    approvalRoutingMode === "desktop" && !fullControlStatus?.enabled ? "text-slate-600 dark:text-slate-300 font-medium" : "text-theme-secondary"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Desktop App Only (仅桌面)</span>
+                  </div>
+                  {approvalRoutingMode === "desktop" && !fullControlStatus?.enabled && <span className="text-[10px]">✓</span>}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowModeDropdown(false);
+                    onOpenFullControl?.();
+                  }}
+                  className="w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover text-amber-500 dark:text-amber-400 font-medium border-t border-theme-subtle"
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                    <span>完全控制 (Full Control)...</span>
+                  </div>
+                  {fullControlStatus?.enabled ? (
+                    <span className="text-[10px] font-mono px-1 py-0.5 bg-amber-500/20 text-amber-500 rounded font-bold">
+                      ACTIVE
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-theme-muted">配置</span>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Quick Pause / Resume AI Button (Advanced Mode Only) */}
           {isAdvanced && (

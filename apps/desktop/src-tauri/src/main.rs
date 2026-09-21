@@ -1209,6 +1209,34 @@ fn desktop_emergency_stop(
 }
 
 #[tauri::command]
+fn desktop_get_full_control_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/management/full-control/status".into(), None)
+}
+
+#[tauri::command]
+fn desktop_start_full_control(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), "/api/management/full-control/start".into(), Some(params))
+}
+
+#[tauri::command]
+fn desktop_stop_full_control(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    session_id: Option<String>,
+    client_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "sessionId": session_id,
+        "clientId": client_id,
+    });
+    desktop_management_call(state, "POST".into(), "/api/management/full-control/stop".into(), Some(payload))
+}
+
+#[tauri::command]
 fn desktop_list_audit(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     limit: Option<u32>,
@@ -2155,6 +2183,9 @@ fn main() {
             desktop_get_pause_state,
             desktop_set_pause_state,
             desktop_emergency_stop,
+            desktop_get_full_control_status,
+            desktop_start_full_control,
+            desktop_stop_full_control,
             desktop_list_audit,
             desktop_list_projects,
             desktop_get_status,

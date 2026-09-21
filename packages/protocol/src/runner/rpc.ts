@@ -96,6 +96,24 @@ import {
   type RuntimeStopParams,
   type RuntimeStopResult,
 } from "../runtime/index.js";
+import {
+  FsDeleteParamsSchema,
+  FsDeleteResultSchema,
+  FsMoveParamsSchema,
+  FsMoveResultSchema,
+  FsCopyParamsSchema,
+  FsCopyResultSchema,
+  FsMkdirParamsSchema,
+  FsMkdirResultSchema,
+  type FsDeleteParams,
+  type FsDeleteResult,
+  type FsMoveParams,
+  type FsMoveResult,
+  type FsCopyParams,
+  type FsCopyResult,
+  type FsMkdirParams,
+  type FsMkdirResult,
+} from "../full-control/index.js";
 
 export const OperationIdSchema = z
   .string()
@@ -1833,6 +1851,22 @@ export interface RunnerRpcMap {
     params: RuntimeStopParams;
     result: RuntimeStopResult;
   };
+  [RunnerRpcMethods.FsDelete]: {
+    params: FsDeleteParams;
+    result: FsDeleteResult;
+  };
+  [RunnerRpcMethods.FsMove]: {
+    params: FsMoveParams;
+    result: FsMoveResult;
+  };
+  [RunnerRpcMethods.FsCopy]: {
+    params: FsCopyParams;
+    result: FsCopyResult;
+  };
+  [RunnerRpcMethods.FsMkdir]: {
+    params: FsMkdirParams;
+    result: FsMkdirResult;
+  };
 }
 
 export type RunnerRpcMethodName = keyof RunnerRpcMap;
@@ -2114,5 +2148,21 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.RuntimeStop]: {
     params: RuntimeStopParamsSchema,
     result: RuntimeStopResultSchema,
+  },
+  [RunnerRpcMethods.FsDelete]: {
+    params: FsDeleteParamsSchema,
+    result: FsDeleteResultSchema,
+  },
+  [RunnerRpcMethods.FsMove]: {
+    params: FsMoveParamsSchema,
+    result: FsMoveResultSchema,
+  },
+  [RunnerRpcMethods.FsCopy]: {
+    params: FsCopyParamsSchema,
+    result: FsCopyResultSchema,
+  },
+  [RunnerRpcMethods.FsMkdir]: {
+    params: FsMkdirParamsSchema,
+    result: FsMkdirResultSchema,
   },
 } as const;

@@ -69,6 +69,10 @@ export const RunnerRpcMethods = {
   RuntimeLogs: "runtime.logs",
   RuntimeRestart: "runtime.restart",
   RuntimeStop: "runtime.stop",
+  FsDelete: "fs.delete",
+  FsMove: "fs.move",
+  FsCopy: "fs.copy",
+  FsMkdir: "fs.mkdir",
 } as const;
 
 export type RunnerRpcMethod =
@@ -113,6 +117,10 @@ export const RunnerMethod = {
   RUNTIME_LOGS: RunnerRpcMethods.RuntimeLogs,
   RUNTIME_RESTART: RunnerRpcMethods.RuntimeRestart,
   RUNTIME_STOP: RunnerRpcMethods.RuntimeStop,
+  FS_DELETE: RunnerRpcMethods.FsDelete,
+  FS_MOVE: RunnerRpcMethods.FsMove,
+  FS_COPY: RunnerRpcMethods.FsCopy,
+  FS_MKDIR: RunnerRpcMethods.FsMkdir,
 } as const;
 
 export type RunnerMethod = (typeof RunnerMethod)[keyof typeof RunnerMethod];

@@ -25,6 +25,7 @@ import type {
   ModelValidationResult,
 } from "@localbridge/protocol";
 import type { McpPrincipal } from "./types.js";
+import { FullControlService } from "../auth/full-control-service.js";
 
 export interface McpContextDeps {
   projectService: ServerProjectService;
@@ -71,6 +72,7 @@ export class McpContext {
   public readonly worktreeManager?: ManagedWorktreeManager;
   public readonly persistentRuntimeManager?: ServerPersistentRuntimeManager;
   public readonly decisionProvider: DecisionProvider;
+  public readonly fullControlService: FullControlService;
 
   // In-memory mapping from jobId to runnerId for background jobs
   private readonly jobToRunnerMap = new Map<string, string>();
@@ -88,6 +90,7 @@ export class McpContext {
     this.rpcService = deps.rpcService;
     this.db = deps.db;
     this.logger = deps.logger;
+    this.fullControlService = new FullControlService(() => this.isPaused(), this.logger);
     this.workflowSessionManager =
       deps.workflowSessionManager ??
       (deps.db
@@ -248,6 +251,9 @@ export class McpContext {
 
   setPaused(val: boolean): void {
     this.isPausedState = val;
+    if (val) {
+      this.fullControlService.stopAll();
+    }
   }
 
   getAuditEvents(limit = 100): AuditRecord[] {

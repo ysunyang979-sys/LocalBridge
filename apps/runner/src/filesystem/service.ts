@@ -19,6 +19,14 @@ import {
   type FileDeleteResult,
   type FileRestoreParams,
   type FileRestoreResult,
+  type FsDeleteParams,
+  type FsDeleteResult,
+  type FsMoveParams,
+  type FsMoveResult,
+  type FsCopyParams,
+  type FsCopyResult,
+  type FsMkdirParams,
+  type FsMkdirResult,
 } from "@localbridge/protocol";
 import type { Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
@@ -32,6 +40,12 @@ import { writeFile } from "./file-write.js";
 import { patchFile } from "./file-patch.js";
 import { deleteFile } from "./file-delete.js";
 import { restoreFile } from "./file-restore.js";
+import {
+  universalDelete,
+  universalMove,
+  universalCopy,
+  universalMkdir,
+} from "./fs-universal.js";
 
 /**
  * Runner Filesystem Service.
@@ -338,5 +352,197 @@ export class FilesystemService {
       operationId: params.operationId,
       backupService: this.backupService,
     });
+  }
+
+  /**
+   * Universal file and directory deletion.
+   * Supports force deletion of binaries, recursive directory removal, symlink safety, and device scope.
+   */
+  async fsDelete(
+    params: FsDeleteParams,
+    isFullControl = false,
+    isDeviceScope = false,
+    customStateDir?: string
+  ): Promise<FsDeleteResult> {
+    let canonicalRoot: string | undefined;
+    if (params.projectId) {
+      const project = this.getAuthorizedProject(params.projectId);
+      if (!isFullControl) {
+        this.assertReadWriteAccess(project);
+      }
+      canonicalRoot = this.getEffectiveRoot(params.projectId, params.sessionId);
+    } else if (!isDeviceScope) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_ROOT_NOT_FOUND,
+        "projectId is required for project-scoped deletion"
+      );
+    }
+
+    this.logger?.info(
+      {
+        event: "fs_universal_delete",
+        projectId: params.projectId,
+        path: params.path,
+        recursive: params.recursive,
+        force: params.force,
+        isFullControl,
+        isDeviceScope,
+      },
+      `Executing universal fs_delete on "${params.path}" (recursive=${params.recursive}, force=${params.force})`
+    );
+
+    const result = universalDelete(params, {
+      canonicalRoot,
+      isDeviceScope,
+      isFullControl,
+      customStateDir,
+    });
+
+    if (params.projectId) {
+      this.notifyFileChange(params.projectId, params.path);
+    }
+    return result;
+  }
+
+  /**
+   * Universal file and directory move / rename.
+   */
+  async fsMove(
+    params: FsMoveParams,
+    isFullControl = false,
+    isDeviceScope = false,
+    customStateDir?: string
+  ): Promise<FsMoveResult> {
+    let canonicalRoot: string | undefined;
+    if (params.projectId) {
+      const project = this.getAuthorizedProject(params.projectId);
+      if (!isFullControl) {
+        this.assertReadWriteAccess(project);
+      }
+      canonicalRoot = this.getEffectiveRoot(params.projectId, params.sessionId);
+    } else if (!isDeviceScope) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_ROOT_NOT_FOUND,
+        "projectId is required for project-scoped move"
+      );
+    }
+
+    this.logger?.info(
+      {
+        event: "fs_universal_move",
+        projectId: params.projectId,
+        sourcePath: params.sourcePath,
+        targetPath: params.targetPath,
+        overwrite: params.overwrite,
+      },
+      `Moving "${params.sourcePath}" to "${params.targetPath}"`
+    );
+
+    const result = universalMove(params, {
+      canonicalRoot,
+      isDeviceScope,
+      isFullControl,
+      customStateDir,
+    });
+
+    if (params.projectId) {
+      this.notifyFileChange(params.projectId, params.sourcePath);
+      this.notifyFileChange(params.projectId, params.targetPath);
+    }
+    return result;
+  }
+
+  /**
+   * Universal file and directory copy.
+   */
+  async fsCopy(
+    params: FsCopyParams,
+    isFullControl = false,
+    isDeviceScope = false,
+    customStateDir?: string
+  ): Promise<FsCopyResult> {
+    let canonicalRoot: string | undefined;
+    if (params.projectId) {
+      const project = this.getAuthorizedProject(params.projectId);
+      if (!isFullControl) {
+        this.assertReadWriteAccess(project);
+      }
+      canonicalRoot = this.getEffectiveRoot(params.projectId, params.sessionId);
+    } else if (!isDeviceScope) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_ROOT_NOT_FOUND,
+        "projectId is required for project-scoped copy"
+      );
+    }
+
+    this.logger?.info(
+      {
+        event: "fs_universal_copy",
+        projectId: params.projectId,
+        sourcePath: params.sourcePath,
+        targetPath: params.targetPath,
+        recursive: params.recursive,
+        overwrite: params.overwrite,
+      },
+      `Copying "${params.sourcePath}" to "${params.targetPath}"`
+    );
+
+    const result = universalCopy(params, {
+      canonicalRoot,
+      isDeviceScope,
+      isFullControl,
+      customStateDir,
+    });
+
+    if (params.projectId) {
+      this.notifyFileChange(params.projectId, params.targetPath);
+    }
+    return result;
+  }
+
+  /**
+   * Universal directory creation.
+   */
+  async fsMkdir(
+    params: FsMkdirParams,
+    isFullControl = false,
+    isDeviceScope = false,
+    customStateDir?: string
+  ): Promise<FsMkdirResult> {
+    let canonicalRoot: string | undefined;
+    if (params.projectId) {
+      const project = this.getAuthorizedProject(params.projectId);
+      if (!isFullControl) {
+        this.assertReadWriteAccess(project);
+      }
+      canonicalRoot = this.getEffectiveRoot(params.projectId, params.sessionId);
+    } else if (!isDeviceScope) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.PROJECT_ROOT_NOT_FOUND,
+        "projectId is required for project-scoped mkdir"
+      );
+    }
+
+    this.logger?.info(
+      {
+        event: "fs_universal_mkdir",
+        projectId: params.projectId,
+        path: params.path,
+        recursive: params.recursive,
+      },
+      `Creating directory "${params.path}"`
+    );
+
+    const result = universalMkdir(params, {
+      canonicalRoot,
+      isDeviceScope,
+      isFullControl,
+      customStateDir,
+    });
+
+    if (params.projectId) {
+      this.notifyFileChange(params.projectId, params.path);
+    }
+    return result;
   }
 }

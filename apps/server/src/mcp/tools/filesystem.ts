@@ -7,7 +7,13 @@ import {
   FileRestoreParamsSchema,
   FileStatParamsSchema,
   FileWriteParamsSchema,
+  FsDeleteParamsSchema,
+  FsMoveParamsSchema,
+  FsCopyParamsSchema,
+  FsMkdirParamsSchema,
   RunnerRpcMethods,
+  LocalBridgeError,
+  LocalBridgeErrorCode,
 } from "@localbridge/protocol";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { McpContext } from "../context.js";
@@ -428,6 +434,249 @@ export function registerFilesystemTools(server: McpServer, context: McpContext):
         context.logAudit("mcp_tool_failed", {
           toolName: "localbridge_file_restore",
           projectId,
+          durationMs: Date.now() - startTime,
+          resultStatus: "error",
+          errorCode: (error as any)?.code ?? "ERROR",
+        });
+        return McpErrorMapper.toMcpToolError(error);
+      }
+    }
+  );
+
+  function getTargetRunner(projectId?: string): string {
+    if (projectId) {
+      return context.resolveProjectRunner(projectId);
+    }
+    const runners = context.runnerRegistry.list();
+    if (runners.length > 0 && runners[0]) {
+      return runners[0].id;
+    }
+    throw new LocalBridgeError(
+      LocalBridgeErrorCode.RUNNER_OFFLINE,
+      "No connected runner available for filesystem operation"
+    );
+  }
+
+  // 11. localbridge_fs_delete
+  server.registerTool(
+    "localbridge_fs_delete",
+    {
+      description:
+        "Universal structured deletion for files (binary or text) and directories. Supports force deletion without expectedHash and recursive directory tree cleanup with symlink no-follow safety.",
+      inputSchema: toMcpSchema(FsDeleteParamsSchema),
+      annotations: TOOL_ANNOTATIONS.localbridge_fs_delete,
+    },
+    async (args: any) => {
+      const startTime = Date.now();
+      const { projectId, path: targetPath } = args;
+      try {
+        context.logAudit("mcp_tool_started", {
+          toolName: "localbridge_fs_delete",
+          projectId,
+          relativePath: targetPath,
+        });
+
+        const runnerId = getTargetRunner(projectId);
+        const result = await context.request(
+          runnerId,
+          RunnerRpcMethods.FsDelete,
+          args
+        );
+
+        // Aggregate audit logging: 1 single summary record for directory or file delete
+        context.logAudit("mcp_tool_completed", {
+          toolName: "localbridge_fs_delete",
+          projectId,
+          runnerId,
+          relativePath: targetPath,
+          durationMs: Date.now() - startTime,
+          resultStatus: "success",
+        });
+
+        context.logger?.info(
+          {
+            event: "fs_delete_aggregate",
+            projectId,
+            path: targetPath,
+            filesAffected: result.filesAffected,
+            directoriesAffected: result.directoriesAffected,
+            bytesAffected: result.bytesAffected,
+            durationMs: Date.now() - startTime,
+          },
+          `Deleted ${result.filesAffected} files and ${result.directoriesAffected} dirs (${result.bytesAffected} bytes)`
+        );
+
+        if (projectId) {
+          context.recordSessionEvent?.({
+            projectId,
+            eventType: "FILE_DELETED",
+            source: "mcp",
+            refType: "file",
+            refId: targetPath,
+            summary: {
+              path: targetPath,
+              filesAffected: result.filesAffected,
+              directoriesAffected: result.directoriesAffected,
+            },
+          });
+        }
+
+        return formatToolSuccess(result);
+      } catch (error) {
+        context.logAudit("mcp_tool_failed", {
+          toolName: "localbridge_fs_delete",
+          projectId,
+          relativePath: targetPath,
+          durationMs: Date.now() - startTime,
+          resultStatus: "error",
+          errorCode: (error as any)?.code ?? "ERROR",
+        });
+        return McpErrorMapper.toMcpToolError(error);
+      }
+    }
+  );
+
+  // 12. localbridge_fs_move
+  server.registerTool(
+    "localbridge_fs_move",
+    {
+      description:
+        "Move or rename a file or directory tree within authorized boundaries.",
+      inputSchema: toMcpSchema(FsMoveParamsSchema),
+      annotations: TOOL_ANNOTATIONS.localbridge_fs_move,
+    },
+    async (args: any) => {
+      const startTime = Date.now();
+      const { projectId, sourcePath, targetPath } = args;
+      try {
+        context.logAudit("mcp_tool_started", {
+          toolName: "localbridge_fs_move",
+          projectId,
+          relativePath: sourcePath,
+        });
+
+        const runnerId = getTargetRunner(projectId);
+        const result = await context.request(
+          runnerId,
+          RunnerRpcMethods.FsMove,
+          args
+        );
+
+        context.logAudit("mcp_tool_completed", {
+          toolName: "localbridge_fs_move",
+          projectId,
+          runnerId,
+          relativePath: targetPath,
+          durationMs: Date.now() - startTime,
+          resultStatus: "success",
+        });
+
+        return formatToolSuccess(result);
+      } catch (error) {
+        context.logAudit("mcp_tool_failed", {
+          toolName: "localbridge_fs_move",
+          projectId,
+          relativePath: sourcePath,
+          durationMs: Date.now() - startTime,
+          resultStatus: "error",
+          errorCode: (error as any)?.code ?? "ERROR",
+        });
+        return McpErrorMapper.toMcpToolError(error);
+      }
+    }
+  );
+
+  // 13. localbridge_fs_copy
+  server.registerTool(
+    "localbridge_fs_copy",
+    {
+      description:
+        "Copy a file or directory tree within authorized boundaries (supports binaries and recursive trees).",
+      inputSchema: toMcpSchema(FsCopyParamsSchema),
+      annotations: TOOL_ANNOTATIONS.localbridge_fs_copy,
+    },
+    async (args: any) => {
+      const startTime = Date.now();
+      const { projectId, sourcePath, targetPath } = args;
+      try {
+        context.logAudit("mcp_tool_started", {
+          toolName: "localbridge_fs_copy",
+          projectId,
+          relativePath: sourcePath,
+        });
+
+        const runnerId = getTargetRunner(projectId);
+        const result = await context.request(
+          runnerId,
+          RunnerRpcMethods.FsCopy,
+          args
+        );
+
+        context.logAudit("mcp_tool_completed", {
+          toolName: "localbridge_fs_copy",
+          projectId,
+          runnerId,
+          relativePath: targetPath,
+          durationMs: Date.now() - startTime,
+          resultStatus: "success",
+        });
+
+        return formatToolSuccess(result);
+      } catch (error) {
+        context.logAudit("mcp_tool_failed", {
+          toolName: "localbridge_fs_copy",
+          projectId,
+          relativePath: sourcePath,
+          durationMs: Date.now() - startTime,
+          resultStatus: "error",
+          errorCode: (error as any)?.code ?? "ERROR",
+        });
+        return McpErrorMapper.toMcpToolError(error);
+      }
+    }
+  );
+
+  // 14. localbridge_fs_mkdir
+  server.registerTool(
+    "localbridge_fs_mkdir",
+    {
+      description:
+        "Create a directory (and any necessary parent directories) within authorized boundaries.",
+      inputSchema: toMcpSchema(FsMkdirParamsSchema),
+      annotations: TOOL_ANNOTATIONS.localbridge_fs_mkdir,
+    },
+    async (args: any) => {
+      const startTime = Date.now();
+      const { projectId, path: targetPath } = args;
+      try {
+        context.logAudit("mcp_tool_started", {
+          toolName: "localbridge_fs_mkdir",
+          projectId,
+          relativePath: targetPath,
+        });
+
+        const runnerId = getTargetRunner(projectId);
+        const result = await context.request(
+          runnerId,
+          RunnerRpcMethods.FsMkdir,
+          args
+        );
+
+        context.logAudit("mcp_tool_completed", {
+          toolName: "localbridge_fs_mkdir",
+          projectId,
+          runnerId,
+          relativePath: targetPath,
+          durationMs: Date.now() - startTime,
+          resultStatus: "success",
+        });
+
+        return formatToolSuccess(result);
+      } catch (error) {
+        context.logAudit("mcp_tool_failed", {
+          toolName: "localbridge_fs_mkdir",
+          projectId,
+          relativePath: targetPath,
           durationMs: Date.now() - startTime,
           resultStatus: "error",
           errorCode: (error as any)?.code ?? "ERROR",

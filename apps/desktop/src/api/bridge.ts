@@ -35,6 +35,9 @@ import type {
   ApplyConfigResult,
   KimiPluginManifest,
   KimiPluginExportResult,
+  FullControlStatusDto,
+  StartFullControlParams,
+  FullControlSession,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -149,6 +152,51 @@ class ApiBridge {
       method: "POST",
       body: JSON.stringify({ reason: reason || "Emergency stop initiated from Desktop" }),
     });
+  }
+
+  // Full Control Mode
+  async getFullControlStatus(): Promise<FullControlStatusDto> {
+    if (isTauri()) {
+      return invoke<FullControlStatusDto>("desktop_get_full_control_status");
+    }
+    return this.fetchJson<FullControlStatusDto>("/api/management/full-control/status");
+  }
+
+  async startFullControl(
+    params: StartFullControlParams
+  ): Promise<{ success: boolean; session: FullControlSession; status: FullControlStatusDto }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; session: FullControlSession; status: FullControlStatusDto }>(
+        "desktop_start_full_control",
+        { params }
+      );
+    }
+    return this.fetchJson<{ success: boolean; session: FullControlSession; status: FullControlStatusDto }>(
+      "/api/management/full-control/start",
+      {
+        method: "POST",
+        body: JSON.stringify(params),
+      }
+    );
+  }
+
+  async stopFullControl(
+    sessionId?: string,
+    clientId?: string
+  ): Promise<{ success: boolean; status: FullControlStatusDto }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; status: FullControlStatusDto }>("desktop_stop_full_control", {
+        sessionId: sessionId || null,
+        clientId: clientId || null,
+      });
+    }
+    return this.fetchJson<{ success: boolean; status: FullControlStatusDto }>(
+      "/api/management/full-control/stop",
+      {
+        method: "POST",
+        body: JSON.stringify({ sessionId, clientId }),
+      }
+    );
   }
 
   // Runners

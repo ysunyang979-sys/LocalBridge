@@ -15,6 +15,7 @@ import { CreateTokenModal } from "./components/modals/CreateTokenModal.js";
 import { EmergencyStopModal } from "./components/modals/EmergencyStopModal.js";
 import { ResolveApprovalModal } from "./components/modals/ResolveApprovalModal.js";
 import { OnboardingModal } from "./components/modals/OnboardingModal.js";
+import { FullControlModal } from "./components/modals/FullControlModal.js";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary.js";
 import { bridge, type TunnelStatusDto } from "./api/bridge.js";
 import { useTranslation } from "./i18n/useTranslation.js";
@@ -29,6 +30,8 @@ import type {
   AuditEvent,
   ApprovalRoutingMode,
   UserExperienceMode,
+  FullControlStatusDto,
+  AIConnectionDto,
 } from "./types.js";
 import { applyServerPollResult } from "./polling-state.js";
 
@@ -79,6 +82,9 @@ export const App: React.FC = () => {
   const [isEmergencyStopModalOpen, setIsEmergencyStopModalOpen] = useState(false);
   const [selectedApproval, setSelectedApproval] = useState<Approval | null>(null);
   const [approvalRoutingMode, setApprovalRoutingMode] = useState<ApprovalRoutingMode>("chat");
+  const [fullControlStatus, setFullControlStatus] = useState<FullControlStatusDto | null>(null);
+  const [isFullControlModalOpen, setIsFullControlModalOpen] = useState(false);
+  const [connections, setConnections] = useState<AIConnectionDto[]>([]);
 
   // Fetch all state
   const loadData = useCallback(async () => {
@@ -97,6 +103,8 @@ export const App: React.FC = () => {
         tunnelRes,
         sessionsRes,
         routingRes,
+        fcRes,
+        connRes,
       ] = await Promise.allSettled([
         bridge.getStatus(),
         bridge.getMcpStatus(),
@@ -110,6 +118,8 @@ export const App: React.FC = () => {
         bridge.getTunnelStatus(),
         bridge.listSessions({ state: "active" }),
         bridge.getApprovalRoutingMode(),
+        bridge.getFullControlStatus(),
+        bridge.listAiConnections(),
       ]);
 
       if (generation !== refreshGeneration.current) return;
@@ -155,6 +165,11 @@ export const App: React.FC = () => {
       if (routingRes.status === "fulfilled" && routingRes.value?.mode) {
         setApprovalRoutingMode(routingRes.value.mode);
       }
+      if (fcRes.status === "fulfilled") setFullControlStatus(fcRes.value);
+      else setFullControlStatus(null);
+      if (connRes.status === "fulfilled" && connRes.value?.connections) {
+        setConnections(connRes.value.connections);
+      }
     } catch {
       if (generation === refreshGeneration.current) {
         setServerStatus(null);
@@ -167,6 +182,7 @@ export const App: React.FC = () => {
         setTokens([]);
         setAuditEvents([]);
         setActiveSessionsCount(0);
+        setFullControlStatus(null);
       }
     }
   }, []);
@@ -194,6 +210,16 @@ export const App: React.FC = () => {
       await loadData();
     } catch (err) {
       console.error("Failed to toggle pause:", err);
+    }
+  };
+
+  const handleStopFullControl = async () => {
+    try {
+      await bridge.stopFullControl();
+      const fc = await bridge.getFullControlStatus();
+      setFullControlStatus(fc);
+    } catch (err) {
+      console.error("Failed to stop full control:", err);
     }
   };
 
@@ -294,6 +320,9 @@ export const App: React.FC = () => {
           serverAvailable={serverStatus !== null}
           lastSuccessfulRefresh={lastSuccessfulRefresh}
           uxMode={uxMode}
+          fullControlStatus={fullControlStatus}
+          onOpenFullControl={() => setIsFullControlModalOpen(true)}
+          onStopFullControl={handleStopFullControl}
         />
 
         <NexusPulseLoading
@@ -363,6 +392,9 @@ export const App: React.FC = () => {
                   await loadData();
                 }}
                 uxMode={uxMode}
+                fullControlStatus={fullControlStatus}
+                onRefresh={loadData}
+                onOpenFullControlModal={() => setIsFullControlModalOpen(true)}
               />
             )}
 
@@ -460,6 +492,19 @@ export const App: React.FC = () => {
         isOpen={Boolean(selectedApproval)}
         onClose={() => setSelectedApproval(null)}
         onSuccess={loadData}
+      />
+
+      <FullControlModal
+        isOpen={isFullControlModalOpen}
+        onClose={() => setIsFullControlModalOpen(false)}
+        onStarted={async () => {
+          await loadData();
+        }}
+        currentProjectId={selectedProjectId || (projects.length > 0 ? projects[0].id : undefined)}
+        currentProjectName={
+          (projects.find((p) => p.id === selectedProjectId) || projects[0])?.name
+        }
+        connections={connections}
       />
     </div>
   );

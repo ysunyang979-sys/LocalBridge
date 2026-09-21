@@ -10,6 +10,9 @@ import {
   type DecisionContext,
   type ModelDownloadOptions,
   type ModelImportOptions,
+  StartFullControlParamsSchema,
+  type StartFullControlParams,
+  type StopFullControlParams,
 } from "@localbridge/protocol";
 import type { TokenService } from "../db/token-service.js";
 import type { RunnerRegistry } from "../runner/registry.js";
@@ -331,6 +334,60 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       });
     }
   );
+
+  // ==========================================
+  // Full Control Mode Routes
+  // ==========================================
+  const getFullControlStatusHandler = async (_request: FastifyRequest, reply: FastifyReply) => {
+    return reply.status(200).send(mcpContext.fullControlService.getStatus());
+  };
+
+  fastify.get("/full-control/status", getFullControlStatusHandler);
+  fastify.get("/management/full-control/status", getFullControlStatusHandler);
+
+  const startFullControlHandler = async (
+    request: FastifyRequest<{ Body: StartFullControlParams }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const parsed = StartFullControlParamsSchema.parse(request.body);
+      const session = mcpContext.fullControlService.startSession(parsed);
+      return reply.status(200).send({
+        success: true,
+        session,
+        status: mcpContext.fullControlService.getStatus(),
+      });
+    } catch (err: any) {
+      if (err instanceof LocalBridgeError) {
+        return reply.status(400).send({
+          code: err.code,
+          message: err.message,
+        });
+      }
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: err.message || "Failed to start full control",
+      });
+    }
+  };
+
+  fastify.post<{ Body: StartFullControlParams }>("/full-control/start", startFullControlHandler);
+  fastify.post<{ Body: StartFullControlParams }>("/management/full-control/start", startFullControlHandler);
+
+  const stopFullControlHandler = async (
+    request: FastifyRequest<{ Body?: StopFullControlParams }>,
+    reply: FastifyReply
+  ) => {
+    const params = request.body || {};
+    const stopped = mcpContext.fullControlService.stopSession(params);
+    return reply.status(200).send({
+      success: stopped,
+      status: mcpContext.fullControlService.getStatus(),
+    });
+  };
+
+  fastify.post<{ Body?: StopFullControlParams }>("/full-control/stop", stopFullControlHandler);
+  fastify.post<{ Body?: StopFullControlParams }>("/management/full-control/stop", stopFullControlHandler);
 
   fastify.post<{ Body?: { reason?: string } }>("/shutdown", async (request, reply) => {
     mcpContext.setPaused(true);
