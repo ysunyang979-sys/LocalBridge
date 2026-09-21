@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="h-16 px-6 bg-[#080c14]/85 backdrop-blur border-b border-white/[0.06] flex items-center justify-between select-none transition-colors duration-150 relative z-10">
+      <header className="h-16 px-6 bg-theme-header backdrop-blur border-b border-theme-subtle flex items-center justify-between select-none transition-colors duration-150 relative z-10">
         {/* Left: View Title & Breadcrumb */}
         <div className="flex items-center gap-3 min-w-0">
           <div>
@@ -111,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
               {breadcrumb && (
                 <>
                   <span className="text-theme-muted/40 text-xs">/</span>
-                  <span className="text-xs font-medium text-sky-400 font-mono">
+                  <span className="text-xs font-medium text-sky-500 dark:text-sky-400 font-mono">
                     {breadcrumb}
                   </span>
                 </>
@@ -122,7 +122,7 @@ export const Header: React.FC<HeaderProps> = ({
             </h1>
           </div>
           {subtitle && (
-            <span className="hidden lg:inline-block text-xs text-theme-muted truncate max-w-sm pl-2 border-l border-white/[0.08]">
+            <span className="hidden lg:inline-block text-xs text-theme-muted truncate max-w-sm pl-2 border-l border-theme-subtle">
               {subtitle}
             </span>
           )}
@@ -134,27 +134,27 @@ export const Header: React.FC<HeaderProps> = ({
           <div
             className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono border ${
               !serverAvailable
-                ? "bg-red-500/10 text-red-400 border-red-500/30"
+                ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30"
                 : isPaused
-                  ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                  : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
             }`}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
                 !serverAvailable
-                  ? "bg-red-400"
+                  ? "bg-red-500"
                   : isPaused
-                    ? "bg-amber-400 animate-pulse"
-                    : "bg-emerald-400"
+                    ? "bg-amber-500 animate-pulse"
+                    : "bg-emerald-500"
               }`}
             />
             <span>
               {!serverAvailable
-                ? "OFFLINE"
+                ? (t.control?.serverOffline || "OFFLINE")
                 : isPaused
-                  ? "AI PAUSED"
-                  : "SYSTEM READY"}
+                  ? (t.control?.mcpPaused || "AI PAUSED")
+                  : (t.control?.serverOnline || "SYSTEM READY")}
             </span>
           </div>
 
@@ -163,8 +163,8 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={() => setShowModeDropdown(!showModeDropdown)}
               disabled={isSwitching}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${modeBadge.className} hover:bg-white/[0.06]`}
-              title="Change approval routing mode"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${modeBadge.className} hover:bg-theme-card-hover`}
+              title={t.settings?.approvalRoutingGroup || "Change approval routing mode"}
             >
               {modeBadge.icon}
               <span className="font-mono text-[11px]">{modeBadge.label}</span>
@@ -172,43 +172,43 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {showModeDropdown && (
-              <div className="absolute right-0 mt-1.5 w-52 bg-[#0d1320] border border-white/[0.08] rounded-lg shadow-xl py-1 z-50 text-xs">
-                <div className="px-3 py-1 text-[10px] uppercase font-mono tracking-wider text-theme-muted border-b border-white/[0.06]">
-                  Approval Policy Mode
+              <div className="absolute right-0 mt-1.5 w-56 bg-theme-card border border-theme-subtle rounded-lg shadow-xl py-1 z-50 text-xs">
+                <div className="px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider text-theme-muted border-b border-theme-subtle">
+                  {t.settings?.approvalRoutingGroup || "Approval Policy Mode"}
                 </div>
                 <button
                   onClick={() => handleSelectMode("chat")}
-                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-white/[0.06] ${
-                    approvalRoutingMode === "chat" ? "text-sky-400 font-medium" : "text-theme-secondary"
+                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                    approvalRoutingMode === "chat" ? "text-sky-500 dark:text-sky-400 font-medium" : "text-theme-secondary"
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Shield className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Safe (Chat Approval)</span>
+                    <Shield className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
+                    <span>{t.settings?.modeChat || "Safe (Chat Approval)"}</span>
                   </div>
                   {approvalRoutingMode === "chat" && <span className="text-[10px]">✓</span>}
                 </button>
                 <button
                   onClick={() => handleSelectMode("auto-trusted")}
-                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-white/[0.06] ${
-                    approvalRoutingMode === "auto-trusted" ? "text-amber-400 font-medium" : "text-theme-secondary"
+                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                    approvalRoutingMode === "auto-trusted" ? "text-amber-500 dark:text-amber-400 font-medium" : "text-theme-secondary"
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Zap className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Auto-Execute</span>
+                    <Zap className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                    <span>{t.settings?.modeAutoTrusted || "Auto-Execute"}</span>
                   </div>
                   {approvalRoutingMode === "auto-trusted" && <span className="text-[10px]">✓</span>}
                 </button>
                 <button
                   onClick={() => handleSelectMode("desktop")}
-                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-white/[0.06] ${
-                    approvalRoutingMode === "desktop" ? "text-slate-300 font-medium" : "text-theme-secondary"
+                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-theme-card-hover ${
+                    approvalRoutingMode === "desktop" ? "text-slate-600 dark:text-slate-300 font-medium" : "text-theme-secondary"
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <Shield className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Desktop App Only</span>
+                    <span>{t.settings?.modeDesktop || "Desktop App Only"}</span>
                   </div>
                   {approvalRoutingMode === "desktop" && <span className="text-[10px]">✓</span>}
                 </button>
@@ -269,32 +269,33 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Auto-execute Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0d1320] border border-amber-500/30 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-theme-card border border-amber-500/30 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-start gap-3">
               <div className="p-2 bg-amber-500/15 rounded-lg shrink-0">
-                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
               </div>
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-theme-primary">
                   {t.settings.autoExecuteModalTitle || "Enable Auto-Execute Mode?"}
                 </h3>
                 <p className="text-xs text-theme-secondary leading-relaxed">
-                  In Auto-execute mode, caution-level operations requested by AI will be automatically authorized without requiring manual chat confirmation. High-risk operations still follow strict policies.
+                  {t.settings.autoExecuteModalText ||
+                    "In Auto-execute mode, caution-level operations requested by AI will be automatically authorized without requiring manual chat confirmation. High-risk operations still follow strict policies."}
                 </p>
               </div>
             </div>
 
-            <div className="p-3 bg-[#080c14] border border-white/[0.06] rounded-lg text-[11px] text-theme-muted font-mono space-y-1">
+            <div className="p-3 bg-theme-card-muted border border-theme-subtle rounded-lg text-[11px] text-theme-muted font-mono space-y-1">
               <div>&bull; Caution commands: Auto-approved</div>
               <div>&bull; Dangerous commands: Still require confirmation</div>
               <div>&bull; You can revert to Safe Mode anytime</div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-theme-subtle">
               <button
                 onClick={() => setShowConfirmModal(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-theme-secondary hover:text-theme-primary hover:bg-white/[0.06] transition"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-theme-secondary hover:text-theme-primary hover:bg-theme-card-hover transition"
               >
                 {t.common.cancel || "Cancel"}
               </button>

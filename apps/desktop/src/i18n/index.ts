@@ -57,3 +57,20 @@ export function getTranslatedError(
   }
   return fallbackMessage ? `${fallbackMessage} (${code})` : `${dict.errors.unknown} (${code})`;
 }
+
+export function formatBackendStatus(
+  status: string | undefined | null,
+  lang: SupportedLanguage
+): string {
+  if (!status) return "";
+  const dict = DICTIONARIES[lang]?.statusMap;
+  if (!dict) return status;
+  const normalized = status.toLowerCase().replace(/[-_]/g, "");
+  for (const [k, v] of Object.entries(dict)) {
+    if (k.toLowerCase() === normalized) {
+      return v;
+    }
+  }
+  return status;
+}
+

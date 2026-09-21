@@ -255,7 +255,7 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
       {/* Filter Tabs & Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         {/* Category Tabs */}
-        <div className="flex items-center gap-1 bg-[#0d1320] border border-white/[0.06] p-1 rounded-xl overflow-x-auto">
+        <div className="flex items-center gap-1 bg-theme-card-muted border border-theme-subtle p-1 rounded-xl overflow-x-auto">
           {filterTabs.map((tab) => {
             const Icon = tab.icon;
             const active = filter === tab.id;
@@ -267,7 +267,7 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
                 onClick={() => setFilter(tab.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shrink-0 ${
                   active
-                    ? "bg-white/[0.1] text-white shadow-sm"
+                    ? "bg-theme-card text-theme-primary shadow-sm border border-theme-subtle font-semibold"
                     : "text-theme-muted hover:text-theme-primary"
                 }`}
               >
@@ -290,8 +290,8 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t.common?.search || "Search activity..."}
-            className="w-full bg-[#0d1320] border border-white/[0.08] rounded-xl pl-9 pr-3 py-1.5 text-xs text-theme-primary focus:outline-none focus:border-sky-500 transition font-mono"
+            placeholder={t.activity?.searchPlaceholder || t.common?.search || "Search activity..."}
+            className="w-full bg-theme-input border border-theme-input rounded-xl pl-9 pr-3 py-1.5 text-xs text-theme-primary focus:outline-none focus:border-sky-500 transition font-mono"
           />
         </div>
       </div>
@@ -300,9 +300,9 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
       {pendingApprovals.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <h3 className="text-xs font-mono uppercase tracking-wider text-amber-300 font-semibold">
-              Pending Approvals ({pendingApprovals.length})
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <h3 className="text-xs font-mono uppercase tracking-wider text-amber-600 dark:text-amber-300 font-semibold">
+              {t.activity?.pendingApprovalsTitle || "Pending Operator Approvals"} ({pendingApprovals.length})
             </h3>
           </div>
           <div className="space-y-2">
@@ -321,7 +321,7 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
 
       {/* Empty State */}
       {totalCount === 0 ? (
-        <div className="p-12 text-center bg-[#0d1320] border border-white/[0.06] rounded-xl space-y-3 shadow-sm">
+        <div className="p-12 text-center bg-theme-card border border-theme-subtle rounded-xl space-y-3 shadow-sm">
           <FileText className="w-10 h-10 text-theme-muted mx-auto" />
           <div className="text-theme-primary font-semibold text-sm">
             {t.activity?.noActivity || "No Activity Recorded"}
@@ -338,14 +338,14 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
             <div className="space-y-3">
               <div className="text-xs font-mono font-semibold text-theme-muted uppercase tracking-wider flex items-center gap-2">
                 <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
-                <span>Approval History ({resolvedApprovals.length})</span>
+                <span>{t.activity?.historyTitle || "Approval History"} ({resolvedApprovals.length})</span>
               </div>
 
               <div className="space-y-2">
                 {resolvedApprovals.map((app) => (
                   <div
                     key={app.id}
-                    className="p-3 bg-[#0d1320] border border-white/[0.06] rounded-xl flex items-center justify-between gap-4 text-xs font-mono"
+                    className="p-3 bg-theme-card border border-theme-subtle rounded-xl flex items-center justify-between gap-4 text-xs font-mono shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 flex-wrap min-w-0">
                       {getStatusBadge(app.status)}
@@ -353,7 +353,7 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
                         {app.operation}
                       </span>
                       {app.projectId && (
-                        <span className="text-sky-400 text-[11px]">
+                        <span className="text-sky-600 dark:text-sky-400 text-[11px]">
                           [{app.projectId}]
                         </span>
                       )}
@@ -366,9 +366,9 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
                       <span>{new Date(app.createdAt).toLocaleTimeString()}</span>
                       <button
                         onClick={() => setSelectedApproval(app)}
-                        className="text-theme-muted hover:text-sky-400 transition"
+                        className="text-theme-muted hover:text-sky-500 dark:hover:text-sky-400 transition"
                       >
-                        Inspect
+                        {t.activity?.inspect || "Inspect"}
                       </button>
                     </div>
                   </div>
@@ -380,9 +380,9 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
           {/* Audit Events Section */}
           {showEventsSection && filteredEvents.length > 0 && (
             <div className="space-y-3">
-              <div className="text-xs font-mono font-semibold text-theme-muted uppercase tracking-wider flex items-center gap-2 pt-2 border-t border-white/[0.04]">
-                <FileText className="w-3.5 h-3.5 text-sky-400" />
-                <span>Audit & Execution Log ({filteredEvents.length})</span>
+              <div className="text-xs font-mono font-semibold text-theme-muted uppercase tracking-wider flex items-center gap-2 pt-2 border-t border-theme-subtle">
+                <FileText className="w-3.5 h-3.5 text-sky-500" />
+                <span>{t.activity?.auditLogTitle || "Audit & Execution Log"} ({filteredEvents.length})</span>
               </div>
 
               <div className="space-y-2">
@@ -395,15 +395,15 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
                   return (
                     <div
                       key={evt.id}
-                      className="p-3 bg-[#0d1320] border border-white/[0.06] rounded-xl flex items-center justify-between gap-4 text-xs font-mono shadow-sm"
+                      className="p-3 bg-theme-card border border-theme-subtle rounded-xl flex items-center justify-between gap-4 text-xs font-mono shadow-sm"
                     >
                       <div className="flex items-center gap-2.5 flex-wrap min-w-0">
                         {isError ? (
-                          <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                          <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
                         ) : isSuccess ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                         ) : (
-                          <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         )}
                         <span className="font-semibold text-theme-primary">
                           {evt.toolName}
@@ -412,17 +412,17 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
                           {evt.event}
                         </span>
                         {evt.projectId && (
-                          <span className="text-sky-400 text-[11px]">
+                          <span className="text-sky-600 dark:text-sky-400 text-[11px]">
                             [{evt.projectId}]
                           </span>
                         )}
                         {evt.decisionSource && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/[0.04] text-theme-muted border border-white/[0.06]">
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-theme-card-muted text-theme-muted border border-theme-subtle">
                             {evt.decisionSource}
                           </span>
                         )}
                         {evt.errorCode && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
                             {evt.errorCode}
                           </span>
                         )}
@@ -445,92 +445,92 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
 
       {/* Approval Details Modal */}
       {selectedApproval && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-[#0d1320] border border-white/[0.08] rounded-xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 bg-[#080c14] border-b border-white/[0.06] flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-theme-card border border-theme-subtle rounded-xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 bg-theme-card-muted border-b border-theme-subtle flex items-center justify-between">
               <div className="flex items-center gap-2 text-theme-primary font-bold text-sm font-mono">
-                <ShieldAlert className="w-4 h-4 text-sky-400" />
-                <span>Approval Specification</span>
+                <ShieldAlert className="w-4 h-4 text-sky-500" />
+                <span>{t.activity?.detailModalTitle || "Approval Specification"}</span>
               </div>
               <button
                 onClick={() => setSelectedApproval(null)}
-                className="text-theme-muted hover:text-theme-primary p-1 rounded-lg hover:bg-white/[0.06] transition"
+                className="text-theme-muted hover:text-theme-primary p-1 rounded-lg hover:bg-theme-card-hover transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="p-6 space-y-4 overflow-y-auto text-xs font-mono">
-              <div className="p-3 bg-[#080c14] border border-white/[0.06] rounded-lg flex items-center justify-between">
+              <div className="p-3 bg-theme-card-muted border border-theme-subtle rounded-lg flex items-center justify-between">
                 <div>
-                  <div className="text-[10px] text-theme-muted">Operation</div>
-                  <div className="font-bold text-sky-300">{selectedApproval.operation}</div>
+                  <div className="text-[10px] text-theme-muted">{t.activity?.operation || "Operation"}</div>
+                  <div className="font-bold text-sky-600 dark:text-sky-300">{selectedApproval.operation}</div>
                 </div>
                 {getStatusBadge(selectedApproval.status)}
               </div>
 
               <div>
                 <label className="block text-[10px] uppercase tracking-wider text-theme-muted mb-1">
-                  Summary
+                  {t.activity?.summary || "Summary"}
                 </label>
-                <div className="p-3 bg-[#080c14] border border-white/[0.06] rounded-lg text-theme-secondary">
+                <div className="p-3 bg-theme-card-muted border border-theme-subtle rounded-lg text-theme-secondary">
                   {selectedApproval.summary}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-[11px]">
-                <div className="p-2.5 bg-[#080c14] border border-white/[0.04] rounded-lg">
-                  <span className="text-theme-muted">Project:</span>{" "}
+                <div className="p-2.5 bg-theme-card-muted border border-theme-subtle rounded-lg">
+                  <span className="text-theme-muted">{t.activity?.project || "Project"}:</span>{" "}
                   <span className="text-theme-primary font-semibold">{selectedApproval.projectId}</span>
                 </div>
-                <div className="p-2.5 bg-[#080c14] border border-white/[0.04] rounded-lg">
-                  <span className="text-theme-muted">Decision Source:</span>{" "}
+                <div className="p-2.5 bg-theme-card-muted border border-theme-subtle rounded-lg">
+                  <span className="text-theme-muted">{t.activity?.decisionSource || "Decision Source"}:</span>{" "}
                   <span className="text-theme-primary">{selectedApproval.decisionSource || "desktop"}</span>
                 </div>
-                <div className="p-2.5 bg-[#080c14] border border-white/[0.04] rounded-lg">
-                  <span className="text-theme-muted">Created:</span>{" "}
+                <div className="p-2.5 bg-theme-card-muted border border-theme-subtle rounded-lg">
+                  <span className="text-theme-muted">{t.activity?.createdAt || "Created"}:</span>{" "}
                   <span className="text-theme-primary">{new Date(selectedApproval.createdAt).toLocaleTimeString()}</span>
                 </div>
-                <div className="p-2.5 bg-[#080c14] border border-white/[0.04] rounded-lg">
-                  <span className="text-theme-muted">Resolved By:</span>{" "}
+                <div className="p-2.5 bg-theme-card-muted border border-theme-subtle rounded-lg">
+                  <span className="text-theme-muted">{t.activity?.resolvedBy || "Resolved By"}:</span>{" "}
                   <span className="text-theme-primary">{selectedApproval.resolvedBy || "—"}</span>
                 </div>
               </div>
 
-              <div className="p-2.5 bg-[#080c14] border border-white/[0.04] rounded-lg space-y-1">
+              <div className="p-2.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-1">
                 <div className="flex items-center justify-between text-theme-muted text-[10px]">
-                  <span>Approval ID</span>
+                  <span>{t.activity?.approvalId || "Approval ID"}</span>
                   <button
                     onClick={() => copyToClipboard(selectedApproval.id, "appId")}
-                    className="text-sky-400 hover:underline"
+                    className="text-sky-500 hover:underline"
                   >
-                    {copiedField === "appId" ? "Copied" : "Copy"}
+                    {copiedField === "appId" ? (t.common?.copied || "Copied") : (t.common?.copy || "Copy")}
                   </button>
                 </div>
                 <div className="text-theme-secondary break-all">{selectedApproval.id}</div>
               </div>
 
-              <div className="p-2.5 bg-[#080c14] border border-white/[0.04] rounded-lg space-y-1">
+              <div className="p-2.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-1">
                 <div className="flex items-center justify-between text-theme-muted text-[10px]">
-                  <span>Payload Hash (SHA-256)</span>
+                  <span>{t.activity?.payloadHash || "Payload Hash (SHA-256)"}</span>
                   <button
                     onClick={() => copyToClipboard(selectedApproval.payloadHash, "payloadHash")}
-                    className="text-sky-400 hover:underline"
+                    className="text-sky-500 hover:underline"
                   >
-                    {copiedField === "payloadHash" ? "Copied" : "Copy"}
+                    {copiedField === "payloadHash" ? (t.common?.copied || "Copied") : (t.common?.copy || "Copy")}
                   </button>
                 </div>
                 <div className="text-theme-secondary break-all">{selectedApproval.payloadHash}</div>
               </div>
             </div>
 
-            <div className="px-6 py-4 bg-[#080c14] border-t border-white/[0.06] flex items-center justify-end">
+            <div className="px-6 py-4 bg-theme-card-muted border-t border-theme-subtle flex items-center justify-end">
               <button
                 type="button"
                 onClick={() => setSelectedApproval(null)}
-                className="px-4 py-2 bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-theme-secondary rounded-lg text-xs font-medium transition"
+                className="px-4 py-2 bg-theme-card hover:bg-theme-card-hover border border-theme-subtle text-theme-secondary rounded-lg text-xs font-medium transition shadow-sm"
               >
-                Close
+                {t.common?.close || "Close"}
               </button>
             </div>
           </div>
