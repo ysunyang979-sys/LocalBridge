@@ -93,39 +93,40 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
               >
                 {approval.risk}
               </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-theme-card-muted text-theme-muted border border-theme-subtle">
-                {t.approvalCard?.policyAsk || "POLICY: ASK"}
+              <span
+                className="text-[10px] font-mono font-bold px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 flex items-center gap-1"
+                title="Nexus Security Policy (Deterministic & Enforced)"
+              >
+                <span className="opacity-75">{t.approvalCard?.nexusPolicyLabel || "Nexus Policy"}:</span>
+                <span>{approval.policy || "ASK"}</span>
               </span>
 
               {/* Laya Multilingual Advisory Badge */}
               {effectiveAdvice && (
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded font-mono font-medium border flex items-center gap-1 ${
+                  className={`text-[10px] px-2 py-0.5 rounded font-mono font-medium border flex items-center gap-1.5 shadow-sm ${
                     isHighRisk
-                      ? "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30"
+                      ? "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30"
                       : isMediumRisk
-                        ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                        : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30"
+                        : "bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/30"
                   }`}
-                  title={t.approvalCard?.advisoryDisclaimer || "Advisory only"}
+                  title={t.approvalCard?.advisoryDisclaimer || "Advisory only · Nexus deterministic policy always takes precedence"}
                 >
-                  <Brain className="w-3 h-3 shrink-0" />
+                  <Brain className="w-3 h-3 shrink-0 text-purple-600 dark:text-purple-400" />
+                  <span className="font-semibold">
+                    {t.approvalCard?.aiAdviceLabel || "AI Advice"}:
+                  </span>
                   <span>
-                    {language === "zh-CN"
-                      ? `AI 风险建议 · ${
-                          isHighRisk
-                            ? "高风险"
-                            : isMediumRisk
-                              ? "中风险"
-                              : "安全"
-                        } ${confPercent}% · 仅供参考`
-                      : `AI Risk Advice: ${
-                          isHighRisk
-                            ? "High"
-                            : isMediumRisk
-                              ? "Medium"
-                              : "Safe"
-                        } ${confPercent}% (Advisory)`}
+                    {isHighRisk
+                      ? (t.approvalCard?.riskHigh || "HIGH")
+                      : isMediumRisk
+                        ? (t.approvalCard?.riskMedium || "MEDIUM")
+                        : (t.approvalCard?.riskSafe || "SAFE")}
+                    {" · "}{confPercent}%{" · "}
+                    <span className="opacity-80 italic">
+                      {language === "zh-CN" ? "仅供参考" : "Advisory Only"}
+                    </span>
                   </span>
                 </span>
               )}

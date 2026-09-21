@@ -14,7 +14,7 @@ import {
   GitBranch,
   Compass,
 } from "lucide-react";
-import type { AuditEvent, Approval } from "../types.js";
+import type { AuditEvent, Approval, UserExperienceMode } from "../types.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import { ApprovalCard } from "../components/ApprovalCard.js";
 
@@ -24,6 +24,7 @@ interface ActivityPageProps {
   onRefresh: () => void;
   onResolveApproval?: (approvalId: string, action: "approve" | "deny") => Promise<void>;
   initialFilter?: ActivityFilterType;
+  uxMode?: UserExperienceMode;
 }
 
 export type ActivityFilterType =
@@ -41,6 +42,7 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
   onRefresh,
   onResolveApproval,
   initialFilter = "all",
+  uxMode = "standard",
 }) => {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<ActivityFilterType>(initialFilter);
@@ -200,15 +202,19 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
     }
   };
 
-  const filterTabs: Array<{ id: ActivityFilterType; label: string; icon: any }> = [
+  const allFilterTabs: Array<{ id: ActivityFilterType; label: string; icon: any; advancedOnly?: boolean }> = [
     { id: "all", label: t.activity?.filterAll || "All Activity", icon: FileText },
     { id: "approvals", label: t.activity?.filterApprovals || "Approvals", icon: ShieldAlert },
-    { id: "jobs", label: t.activity?.filterJobs || "Runtimes & Jobs", icon: Terminal },
     { id: "files", label: t.activity?.filterFiles || "Filesystem", icon: FolderLock },
-    { id: "git", label: t.activity?.filterGit || "Git Ops", icon: GitBranch },
-    { id: "workflow", label: t.activity?.filterWorkflow || "Workflows", icon: Compass },
+    { id: "jobs", label: t.activity?.filterJobs || "Runtimes & Jobs", icon: Terminal, advancedOnly: true },
+    { id: "git", label: t.activity?.filterGit || "Git Ops", icon: GitBranch, advancedOnly: true },
+    { id: "workflow", label: t.activity?.filterWorkflow || "Workflows", icon: Compass, advancedOnly: true },
     { id: "security", label: t.activity?.filterSecurity || "Security & Audit", icon: ShieldCheck },
   ];
+
+  const filterTabs = uxMode === "standard"
+    ? allFilterTabs.filter((tab) => !tab.advancedOnly)
+    : allFilterTabs;
 
   const showApprovalsSection =
     filter === "all" || filter === "approvals" || filter === "git" || filter === "files";
@@ -237,7 +243,7 @@ export const ActivityPage: React.FC<ActivityPageProps> = ({
 
         <button
           onClick={onRefresh}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] text-theme-secondary border border-white/[0.08] rounded-lg text-xs font-medium transition"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-theme-card hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle rounded-lg text-xs font-medium transition shadow-sm"
         >
           <RotateCw className="w-3.5 h-3.5" />
           <span>{t.common?.refresh || "Refresh"}</span>

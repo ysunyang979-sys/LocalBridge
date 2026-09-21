@@ -100,6 +100,26 @@ export interface I18nDictionary {
     viewInActivity: string;
     quickApproveBtn: string;
     quickDenyBtn: string;
+    greetingReady: string;
+    greetingSubtitle: string;
+    currentProjectTitle: string;
+    noProjectSelected: string;
+    aiConnectionTitle: string;
+    aiConnected: string;
+    aiDisconnected: string;
+    localServicesTitle: string;
+    localServicesHealthy: string;
+    localServicesDegraded: string;
+    primaryCtaOpen: string;
+    primaryCtaAuthorize: string;
+    gettingStartedTitle: string;
+    step1GuideTitle: string;
+    step1GuideDesc: string;
+    step2GuideTitle: string;
+    step2GuideDesc: string;
+    step3GuideTitle: string;
+    step3GuideDesc: string;
+    recentWorkTitle: string;
   };
   projects: {
     title: string;
@@ -308,6 +328,8 @@ export interface I18nDictionary {
     errorCode: string;
     noActivity: string;
     noActivityDesc: string;
+    noRecentActivity: string;
+    noRecentActivityDesc: string;
     refreshAudit: string;
     decisionSourceLabel: string;
     operatorLabel: string;
@@ -351,8 +373,17 @@ export interface I18nDictionary {
     tabSecurity: string;
     tabIntelligence: string;
     tabGeneral: string;
+    tabAppearance: string;
+    tabConnections: string;
+    tabAdvanced: string;
     tabAbout: string;
     generalGroup: string;
+    experienceGroup: string;
+    experienceDesc: string;
+    standardMode: string;
+    standardModeDesc: string;
+    advancedMode: string;
+    advancedModeDesc: string;
     languageLabel: string;
     languageZh: string;
     languageEn: string;
@@ -748,6 +779,8 @@ export interface I18nDictionary {
     advisoryBadgeSafe: string;
     sanitizedNotice: string;
     summary: string;
+    nexusPolicyLabel: string;
+    aiAdviceLabel: string;
   };
   intelligence: {
     title: string;
@@ -781,6 +814,44 @@ export interface I18nDictionary {
     recommendedAction: string;
     rationale: string;
     controlPillTitle: string;
+    layaCardTitle: string;
+    layaCardSubtitle: string;
+    layaDecisionsToggle: string;
+    layaDecisionsToggleDesc: string;
+    layaAdvisoryDisclaimer: string;
+    downloadModelBtn: string;
+    downloadAndEnableBtn: string;
+    modelRequiredPrompt: string;
+    downloadingModel: string;
+    verifyingModel: string;
+    modelNotInstalled: string;
+    modelReady: string;
+    modelDownloading: string;
+    modelVerifying: string;
+    modelOffline: string;
+    modelError: string;
+    cancelDownload: string;
+    executionLocal: string;
+    modelStatusLabel: string;
+    modelNameLabel: string;
+    executionLabel: string;
+    layaDecisionsTitle: string;
+    advisoryOnly: string;
+  };
+  onboarding: {
+    welcomeTitle: string;
+    welcomeSubtitle: string;
+    step1Title: string;
+    step1Desc: string;
+    step2Title: string;
+    step2Desc: string;
+    step3Title: string;
+    step3Desc: string;
+    step4OptionalTitle: string;
+    step4OptionalDesc: string;
+    downloadLayaBtn: string;
+    getStartedBtn: string;
+    skipForNowBtn: string;
   };
   statusMap: {
     running: string;
@@ -863,5 +934,10 @@ export interface I18nDictionary {
     stopped: string;
     running: string;
     authorized: string;
+    showAdvancedDetails: string;
+    hideAdvancedDetails: string;
+    openProjectBtn: string;
+    stopProjectBtn: string;
+    viewActivityBtn: string;
   };
 }
