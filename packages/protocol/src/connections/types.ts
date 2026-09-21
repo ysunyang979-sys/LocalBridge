@@ -1,5 +1,6 @@
 export type AIClientType =
   | "chatgpt"
+  | "kimi-web"
   | "kimi"
   | "claude"
   | "gemini"
@@ -118,3 +119,42 @@ export interface ClientAuditSource {
   clientType?: string | null;
   clientName?: string | null;
 }
+
+export interface KimiPluginManifest {
+  schema_version: string;
+  name_for_human: string;
+  name_for_model: string;
+  description_for_human: string;
+  description_for_model: string;
+  auth: {
+    type: "none" | "service_http" | "user_http" | "oauth";
+    authorization_type?: string;
+    verification_tokens?: Record<string, string>;
+    instructions?: string;
+  };
+  api: {
+    type: "mcp" | "openapi";
+    url: string;
+  };
+  mcpServers?: Record<
+    string,
+    {
+      url: string;
+      headers?: Record<string, string>;
+    }
+  >;
+  logo_url?: string;
+  contact_email?: string;
+  legal_info_url?: string;
+}
+
+export interface KimiPluginExportResult {
+  success: boolean;
+  exportDir: string;
+  manifestPath: string;
+  readmePath: string;
+  manifest: KimiPluginManifest;
+  readme: string;
+  tunnelEndpoint: string;
+}
+

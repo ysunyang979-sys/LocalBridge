@@ -3,7 +3,24 @@ import type { AIConnectionDto } from "../../types.js";
 export interface BuiltinCatalogEntry extends AIConnectionDto {
   descriptionZh: string;
   descriptionEn: string;
-  quickActionType: "tunnel" | "apply-config" | "api-key" | "details";
+  quickActionType: "tunnel" | "kimi-plugin" | "apply-config" | "api-key" | "details";
+  isAdvancedOnly?: boolean;
+}
+
+export function resolveTunnelEndpoint(
+  tunnelStatus: { status?: string; tunnel_id?: string | null } | null
+): string {
+  if (tunnelStatus && tunnelStatus.status === "Connected" && tunnelStatus.tunnel_id) {
+    const tid = tunnelStatus.tunnel_id.trim();
+    if (tid.startsWith("https://") || tid.startsWith("http://")) {
+      return `${tid.replace(/\/+$/, "")}/mcp`;
+    }
+    if (tid.includes(".")) {
+      return `https://${tid.replace(/\/+$/, "")}/mcp`;
+    }
+    return `https://${tid}.nexus.localbridge.dev/mcp`;
+  }
+  return "https://<nexus-tunnel-host>/mcp";
 }
 
 export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
@@ -19,26 +36,27 @@ export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
     toolCount: 55,
     isPrimary: true,
     isDetected: false,
+    isAdvancedOnly: false,
     descriptionZh: "通过 Secure MCP Tunnel 安全直连 ChatGPT，全功能本地工具沙箱与审批保护。",
     descriptionEn: "Direct connection to ChatGPT via Secure MCP Tunnel with local sandbox & approval enforcement.",
     quickActionType: "tunnel",
   },
   {
-    id: "conn_kimi",
-    clientType: "kimi",
-    name: "Kimi Code",
+    id: "conn_kimi_web",
+    clientType: "kimi-web",
+    name: "Kimi Web",
     category: "native-mcp",
     status: "not_configured",
-    transport: "http",
-    endpoint: "http://127.0.0.1:18080/mcp",
-    detectedConfigPath: null,
-    scopes: ["read", "write", "execute"],
+    transport: "tunnel",
+    endpoint: "https://<nexus-tunnel-host>/mcp",
+    scopes: ["read", "write"],
     toolCount: 55,
     isPrimary: false,
     isDetected: false,
-    descriptionZh: "原生 MCP 客户端，通过 ~/.kimi-code/mcp.json 配置文件快速接入。",
-    descriptionEn: "Native MCP client connecting via ~/.kimi-code/mcp.json config.",
-    quickActionType: "apply-config",
+    isAdvancedOnly: false,
+    descriptionZh: "通过 Kimi 网页版插件安全连接 Nexus。",
+    descriptionEn: "Securely connect to Nexus via Kimi Web plugin.",
+    quickActionType: "kimi-plugin",
   },
   {
     id: "conn_claude",
@@ -53,6 +71,7 @@ export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
     toolCount: 55,
     isPrimary: false,
     isDetected: false,
+    isAdvancedOnly: false,
     descriptionZh: "支持 Claude Desktop 与 Claude Code CLI，写入本地 MCP 配置即可生效。",
     descriptionEn: "Supports Claude Desktop & Claude Code CLI via local MCP configuration.",
     quickActionType: "apply-config",
@@ -70,6 +89,7 @@ export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
     toolCount: 55,
     isPrimary: false,
     isDetected: false,
+    isAdvancedOnly: false,
     descriptionZh: "Google Gemini 命令行工具，通过 ~/.gemini/settings.json 建立 MCP 通信。",
     descriptionEn: "Google Gemini CLI via ~/.gemini/settings.json MCP configuration.",
     quickActionType: "apply-config",
@@ -86,6 +106,7 @@ export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
     toolCount: 55,
     isPrimary: false,
     isDetected: false,
+    isAdvancedOnly: false,
     metadata: {
       baseUrl: "https://api.deepseek.com",
       model: "deepseek-chat",
@@ -107,6 +128,7 @@ export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
     toolCount: 55,
     isPrimary: false,
     isDetected: false,
+    isAdvancedOnly: false,
     metadata: {
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-4o",
@@ -116,12 +138,30 @@ export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
     descriptionEn: "Generic OpenAI-compatible endpoint for third-party or local Ollama/vLLM services.",
     quickActionType: "api-key",
   },
+  {
+    id: "conn_kimi",
+    clientType: "kimi",
+    name: "Kimi Code",
+    category: "native-mcp",
+    status: "not_configured",
+    transport: "http",
+    endpoint: "http://127.0.0.1:18080/mcp",
+    detectedConfigPath: null,
+    scopes: ["read", "write", "execute"],
+    toolCount: 55,
+    isPrimary: false,
+    isDetected: false,
+    isAdvancedOnly: true,
+    descriptionZh: "Kimi Code 开发者命令行与本地客户端，通过 ~/.kimi-code/mcp.json 接入。",
+    descriptionEn: "Kimi Code developer CLI & local client connecting via ~/.kimi-code/mcp.json.",
+    quickActionType: "apply-config",
+  },
 ];
 
 export function mergeCatalogWithSavedConnections(
   catalog: BuiltinCatalogEntry[],
   savedConnections: AIConnectionDto[],
-  tunnelStatus: { status: string; latencyMs?: number } | null
+  tunnelStatus: { status?: string; latencyMs?: number; tunnel_id?: string | null } | null
 ): AIConnectionDto[] {
   const merged: AIConnectionDto[] = [];
   const handledSavedIds = new Set<string>();
@@ -131,7 +171,7 @@ export function mergeCatalogWithSavedConnections(
     const saved = savedConnections.find((s) => {
       if (s.id === item.id) return true;
       if (
-        ["chatgpt", "kimi", "claude", "gemini", "deepseek"].includes(item.clientType) &&
+        ["chatgpt", "kimi-web", "kimi", "claude", "gemini", "deepseek"].includes(item.clientType) &&
         s.clientType === item.clientType
       ) {
         return true;
@@ -145,6 +185,7 @@ export function mergeCatalogWithSavedConnections(
 
     let resolvedStatus = saved?.status || item.status;
     let latencyMs = saved?.latencyMs ?? item.latencyMs;
+    let endpoint = saved?.endpoint || item.endpoint;
 
     // Special ChatGPT rule: if Tunnel is connected, ChatGPT is connected!
     if (item.clientType === "chatgpt") {
@@ -153,6 +194,19 @@ export function mergeCatalogWithSavedConnections(
         latencyMs = tunnelStatus.latencyMs || 12;
       } else if (resolvedStatus === "connected" && tunnelStatus?.status !== "Connected") {
         resolvedStatus = "offline";
+      }
+    }
+
+    // Special Kimi Web rule: must use public HTTPS tunnel endpoint, never 127.0.0.1
+    if (item.clientType === "kimi-web") {
+      const publicEndpoint = resolveTunnelEndpoint(tunnelStatus);
+      endpoint = publicEndpoint;
+      if (tunnelStatus?.status === "Connected") {
+        if (saved?.status === "connected" || (saved?.tokenId && saved?.status === "configured")) {
+          resolvedStatus = saved.status;
+        } else if (saved?.tokenId) {
+          resolvedStatus = "configured";
+        }
       }
     }
 
@@ -170,14 +224,18 @@ export function mergeCatalogWithSavedConnections(
       latencyMs,
       isPrimary,
       transport: saved?.transport || item.transport,
-      endpoint: saved?.endpoint || item.endpoint,
+      endpoint,
       scopes: saved?.scopes || item.scopes,
       toolCount: saved?.toolCount || item.toolCount,
-      detectedConfigPath: saved?.detectedConfigPath !== undefined ? saved.detectedConfigPath : item.detectedConfigPath,
+      detectedConfigPath:
+        saved?.detectedConfigPath !== undefined
+          ? saved.detectedConfigPath
+          : item.detectedConfigPath,
       isDetected: saved?.isDetected !== undefined ? saved.isDetected : item.isDetected,
       metadata: {
         ...(item.metadata || {}),
         ...(saved?.metadata || {}),
+        isAdvancedOnly: item.isAdvancedOnly,
       },
     });
   }

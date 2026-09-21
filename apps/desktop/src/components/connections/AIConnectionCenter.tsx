@@ -26,6 +26,7 @@ import { AIConnectionCard } from "./AIConnectionCard.js";
 import { ConnectionDetailDrawer } from "./ConnectionDetailDrawer.js";
 import { ConfigPreviewModal } from "./ConfigPreviewModal.js";
 import { AddCustomConnectionModal } from "./AddCustomConnectionModal.js";
+import { KimiWebPluginModal } from "./KimiWebPluginModal.js";
 import { BUILTIN_CLIENT_CATALOG, mergeCatalogWithSavedConnections } from "./catalog.js";
 
 interface AIConnectionCenterProps {
@@ -72,6 +73,15 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
   // Add Custom Connection Modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
+
+  // Kimi Web Plugin Modal State
+  const [isKimiModalOpen, setIsKimiModalOpen] = useState(false);
+  const [kimiModalConn, setKimiModalConn] = useState<AIConnectionDto | null>(null);
+
+  const handleOpenKimiPlugin = (conn: AIConnectionDto) => {
+    setKimiModalConn(conn);
+    setIsKimiModalOpen(true);
+  };
 
   // Primary AI Change Modal
   const [isChangePrimaryOpen, setIsChangePrimaryOpen] = useState(false);
@@ -263,12 +273,24 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
   }, [allConnections]);
 
   const nativeMcpConnections = useMemo(() => {
-    return allConnections.filter((c) => c.category === "native-mcp");
-  }, [allConnections]);
+    return allConnections.filter((c) => {
+      if (c.category !== "native-mcp") return false;
+      if (viewMode === "standard" && c.metadata?.isAdvancedOnly) {
+        return false;
+      }
+      return true;
+    });
+  }, [allConnections, viewMode]);
 
   const toolAdapterConnections = useMemo(() => {
-    return allConnections.filter((c) => c.category === "tool-adapter");
-  }, [allConnections]);
+    return allConnections.filter((c) => {
+      if (c.category !== "tool-adapter") return false;
+      if (viewMode === "standard" && c.metadata?.isAdvancedOnly) {
+        return false;
+      }
+      return true;
+    });
+  }, [allConnections, viewMode]);
 
   return (
     <div className="max-w-6xl space-y-6 animate-fade-in pb-12">
@@ -498,6 +520,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
                 }}
                 onApplyConfig={handleTriggerPreview}
                 onOpenTunnel={onNavigateToTunnel}
+                onOpenKimiPlugin={handleOpenKimiPlugin}
                 isTesting={testingId === conn.id}
                 isApplying={applyingId === conn.id}
               />
@@ -538,6 +561,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
               }}
               onApplyConfig={handleTriggerPreview}
               onOpenTunnel={onNavigateToTunnel}
+              onOpenKimiPlugin={handleOpenKimiPlugin}
               isTesting={testingId === conn.id}
               isApplying={applyingId === conn.id}
             />
@@ -679,6 +703,20 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
         presets={presets}
         onSubmit={handleAddCustomConnection}
         isSubmitting={isSubmittingAdd}
+      />
+
+      {/* Kimi Web Plugin Setup Wizard Modal */}
+      <KimiWebPluginModal
+        isOpen={isKimiModalOpen}
+        onClose={() => {
+          setIsKimiModalOpen(false);
+          setKimiModalConn(null);
+        }}
+        tunnelStatus={tunnelStatus}
+        connection={kimiModalConn}
+        onNavigateToTunnel={onNavigateToTunnel}
+        onRefreshConnections={fetchConnections}
+        onTestConnection={handleTestConnection}
       />
     </div>
   );

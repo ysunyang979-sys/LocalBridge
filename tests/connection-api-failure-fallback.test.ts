@@ -9,14 +9,15 @@ describe("Connection API Failure Fallback Suite", () => {
   it("renders all 6 catalog items when savedConnections is empty (e.g. database error)", () => {
     const merged = mergeCatalogWithSavedConnections(BUILTIN_CLIENT_CATALOG, [], null);
 
-    expect(merged.length).toBe(6);
+    expect(merged.length).toBe(7);
     expect(merged.map((c) => c.clientType)).toEqual([
       "chatgpt",
-      "kimi",
+      "kimi-web",
       "claude",
       "gemini",
       "deepseek",
       "custom-openai",
+      "kimi",
     ]);
 
     for (const item of merged) {
@@ -32,7 +33,7 @@ describe("Connection API Failure Fallback Suite", () => {
       status: "Disconnected",
     });
 
-    expect(merged.length).toBe(6);
+    expect(merged.length).toBe(7);
     const kimi = merged.find((c) => c.clientType === "kimi");
     expect(kimi).toBeDefined();
     expect(kimi?.name).toBe("Kimi Code");
@@ -64,7 +65,7 @@ describe("Connection API Failure Fallback Suite", () => {
     };
 
     const merged = mergeCatalogWithSavedConnections(BUILTIN_CLIENT_CATALOG, [savedKimi], null);
-    expect(merged.length).toBe(6);
+    expect(merged.length).toBe(7);
 
     const mergedKimi = merged.find((c) => c.clientType === "kimi");
     expect(mergedKimi).toBeDefined();

@@ -59,11 +59,11 @@ describe("Builtin Connections Visibility & Custom Separation Suite", () => {
       null
     );
 
-    // 6 built-ins + 2 custom = 8 items
-    expect(all.length).toBe(8);
+    // 7 built-ins (including Kimi Web & Kimi Code) + 2 custom = 9 items
+    expect(all.length).toBe(9);
 
     const nativeMcp = all.filter((c) => c.category === "native-mcp");
-    expect(nativeMcp.length).toBe(5); // ChatGPT, Kimi, Claude, Gemini + Cursor
+    expect(nativeMcp.length).toBe(6); // ChatGPT, Kimi Web, Kimi Code, Claude, Gemini + Cursor
     expect(nativeMcp.map((c) => c.id)).toContain("conn_custom_cursor");
 
     const adapters = all.filter((c) => c.category === "tool-adapter");

@@ -26,6 +26,7 @@ interface AIConnectionCardProps {
   onOpenDetails: (conn: AIConnectionDto) => void;
   onApplyConfig?: (conn: AIConnectionDto) => void;
   onOpenTunnel?: () => void;
+  onOpenKimiPlugin?: (conn: AIConnectionDto) => void;
   isTesting?: boolean;
   isApplying?: boolean;
 }
@@ -39,6 +40,7 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
   onOpenDetails,
   onApplyConfig,
   onOpenTunnel,
+  onOpenKimiPlugin,
   isTesting,
   isApplying,
 }) => {
@@ -49,8 +51,10 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
     switch (clientType) {
       case "chatgpt":
         return <Radio className="w-5 h-5 text-emerald-500" />;
-      case "kimi":
+      case "kimi-web":
         return <Sparkles className="w-5 h-5 text-indigo-400" />;
+      case "kimi":
+        return <Terminal className="w-5 h-5 text-purple-400" />;
       case "claude":
         return <Zap className="w-5 h-5 text-amber-500" />;
       case "gemini":
@@ -111,6 +115,7 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
   const isNativeMcp = connection.category === "native-mcp";
   const isConnected = connection.status === "connected";
   const isChatGPT = connection.clientType === "chatgpt";
+  const isKimiWeb = connection.clientType === "kimi-web";
 
   // Built-in descriptions
   const getDefaultDescription = () => {
@@ -119,10 +124,14 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
         return isZh
           ? "通过 Secure MCP Tunnel 安全连接到 ChatGPT"
           : "Direct connection to ChatGPT via Secure MCP Tunnel";
+      case "kimi-web":
+        return isZh
+          ? "通过 Kimi 网页版插件安全连接 Nexus。"
+          : "Securely connect to Nexus via Kimi Web plugin.";
       case "kimi":
         return isZh
-          ? "原生 MCP 客户端，通过 ~/.kimi-code/mcp.json 快速接入"
-          : "Native MCP client connecting via ~/.kimi-code/mcp.json";
+          ? "Kimi Code 开发者命令行与本地客户端，通过 ~/.kimi-code/mcp.json 接入"
+          : "Kimi Code developer CLI connecting via ~/.kimi-code/mcp.json";
       case "claude":
         return isZh
           ? "支持 Claude Desktop 与 Claude Code CLI 原生协议直连"
@@ -292,8 +301,23 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
             </button>
           )}
 
-          {/* Quick Apply Config Button for Native MCP */}
-          {isNativeMcp && !isChatGPT && onApplyConfig && connection.status !== "connected" && (
+          {/* Quick Kimi Web Plugin Action */}
+          {isKimiWeb && onOpenKimiPlugin && (
+            <button
+              onClick={() => onOpenKimiPlugin(connection)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 transition flex items-center gap-1"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>
+                {connection.status === "connected" || connection.status === "configured"
+                  ? (t.aiConnections?.viewInstallGuide || "安装与配置")
+                  : (t.aiConnections?.connectKimi || "连接 Kimi")}
+              </span>
+            </button>
+          )}
+
+          {/* Quick Apply Config Button for Native MCP (excluding ChatGPT & Kimi Web) */}
+          {isNativeMcp && !isChatGPT && !isKimiWeb && onApplyConfig && connection.status !== "connected" && (
             <button
               onClick={() => onApplyConfig(connection)}
               disabled={isApplying}
@@ -306,8 +330,8 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
             </button>
           )}
 
-          {/* Test Button for active or configured connections */}
-          {(connection.status === "connected" || connection.status === "configured") && !isChatGPT && (
+          {/* Test Button for active or configured connections (excluding ChatGPT & Kimi Web) */}
+          {(connection.status === "connected" || connection.status === "configured") && !isChatGPT && !isKimiWeb && (
             <button
               onClick={() => onTest(connection.id)}
               disabled={isTesting}

@@ -1082,6 +1082,33 @@ fn desktop_rollback_ai_connection_config(
     desktop_management_call(state, "POST".into(), "/api/management/connections/config-rollback".into(), Some(payload))
 }
 
+#[tauri::command]
+fn desktop_get_kimi_plugin_manifest(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    tunnel_endpoint: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let path = if let Some(endpoint) = tunnel_endpoint {
+        format!("/api/management/connections/kimi-web/plugin-manifest?tunnelEndpoint={}", endpoint)
+    } else {
+        "/api/management/connections/kimi-web/plugin-manifest".to_string()
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_export_kimi_plugin(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    tunnel_endpoint: Option<String>,
+    target_dir: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "tunnelEndpoint": tunnel_endpoint,
+        "targetDir": target_dir,
+    });
+    desktop_management_call(state, "POST".into(), "/api/management/connections/kimi-web/export-plugin".into(), Some(payload))
+}
+
+
 
 
 #[tauri::command]
@@ -2174,7 +2201,9 @@ fn main() {
             desktop_test_ai_connection,
             desktop_preview_ai_connection_config,
             desktop_apply_ai_connection_config,
-            desktop_rollback_ai_connection_config
+            desktop_rollback_ai_connection_config,
+            desktop_get_kimi_plugin_manifest,
+            desktop_export_kimi_plugin
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;

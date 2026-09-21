@@ -5,15 +5,34 @@ import {
 } from "../apps/desktop/src/components/connections/catalog.js";
 
 describe("Built-in Connection Catalog Definition Suite", () => {
-  it("contains all 6 required built-in AI providers", () => {
+  it("contains all required built-in AI providers including Kimi Web and Kimi Code", () => {
     const clientTypes = BUILTIN_CLIENT_CATALOG.map((c) => c.clientType);
     expect(clientTypes).toContain("chatgpt");
+    expect(clientTypes).toContain("kimi-web");
     expect(clientTypes).toContain("kimi");
     expect(clientTypes).toContain("claude");
     expect(clientTypes).toContain("gemini");
     expect(clientTypes).toContain("deepseek");
     expect(clientTypes).toContain("custom-openai");
-    expect(BUILTIN_CLIENT_CATALOG.length).toBe(6);
+    expect(BUILTIN_CLIENT_CATALOG.length).toBe(7);
+  });
+
+  it("strictly distinguishes Kimi Web (standard tunnel plugin) from Kimi Code (advanced CLI mcp.json)", () => {
+    const kimiWeb = BUILTIN_CLIENT_CATALOG.find((c) => c.clientType === "kimi-web");
+    expect(kimiWeb).toBeDefined();
+    expect(kimiWeb!.category).toBe("native-mcp");
+    expect(kimiWeb!.transport).toBe("tunnel");
+    expect(kimiWeb!.quickActionType).toBe("kimi-plugin");
+    expect(kimiWeb!.isAdvancedOnly).toBe(false);
+    expect(kimiWeb!.endpoint).toContain("mcp");
+
+    const kimiCode = BUILTIN_CLIENT_CATALOG.find((c) => c.clientType === "kimi");
+    expect(kimiCode).toBeDefined();
+    expect(kimiCode!.category).toBe("native-mcp");
+    expect(kimiCode!.transport).toBe("http");
+    expect(kimiCode!.quickActionType).toBe("apply-config");
+    expect(kimiCode!.isAdvancedOnly).toBe(true);
+    expect(kimiCode!.endpoint).toBe("http://127.0.0.1:18080/mcp");
   });
 
   it("strictly categorizes DeepSeek as a tool-adapter and never native-mcp", () => {
@@ -32,8 +51,8 @@ describe("Built-in Connection Catalog Definition Suite", () => {
     expect(openai!.metadata?.apiFormat).toBe("openai-compatible");
   });
 
-  it("categorizes ChatGPT, Kimi, Claude, Gemini as native-mcp", () => {
-    const nativeClients = ["chatgpt", "kimi", "claude", "gemini"];
+  it("categorizes ChatGPT, Kimi Web, Kimi Code, Claude, Gemini as native-mcp", () => {
+    const nativeClients = ["chatgpt", "kimi-web", "kimi", "claude", "gemini"];
     for (const type of nativeClients) {
       const client = BUILTIN_CLIENT_CATALOG.find((c) => c.clientType === type);
       expect(client).toBeDefined();
@@ -41,9 +60,12 @@ describe("Built-in Connection Catalog Definition Suite", () => {
     }
   });
 
-  it("assigns ChatGPT to tunnel transport and others to standard transports", () => {
+  it("assigns ChatGPT and Kimi Web to tunnel transport and local CLI to standard transports", () => {
     const chatgpt = BUILTIN_CLIENT_CATALOG.find((c) => c.clientType === "chatgpt");
     expect(chatgpt!.transport).toBe("tunnel");
+
+    const kimiWeb = BUILTIN_CLIENT_CATALOG.find((c) => c.clientType === "kimi-web");
+    expect(kimiWeb!.transport).toBe("tunnel");
 
     const kimi = BUILTIN_CLIENT_CATALOG.find((c) => c.clientType === "kimi");
     expect(kimi!.transport).toBe("http");
@@ -59,7 +81,9 @@ describe("Built-in Connection Catalog Definition Suite", () => {
     for (const item of BUILTIN_CLIENT_CATALOG) {
       expect(item.descriptionZh.length).toBeGreaterThan(10);
       expect(item.descriptionEn.length).toBeGreaterThan(10);
-      expect(["tunnel", "apply-config", "api-key", "details"]).toContain(item.quickActionType);
+      expect(["tunnel", "kimi-plugin", "apply-config", "api-key", "details"]).toContain(
+        item.quickActionType
+      );
       expect(item.toolCount).toBe(55);
     }
   });

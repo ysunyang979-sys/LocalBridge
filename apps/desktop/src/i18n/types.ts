@@ -376,6 +376,9 @@ export interface I18nDictionary {
     changePrimary: string;
     changePrimaryModalTitle: string;
     selectAsPrimary: string;
+    createKimiPlugin: string;
+    viewInstallGuide: string;
+    connectKimi: string;
   };
   tokens: {
     title: string;

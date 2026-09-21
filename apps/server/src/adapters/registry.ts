@@ -1,6 +1,7 @@
 import type { AIClientAdapter } from "./base.js";
 import {
   ChatGPTConnectorAdapter,
+  KimiWebPluginAdapter,
   KimiCodeAdapter,
   ClaudeAdapter,
   GeminiCliAdapter,
@@ -31,6 +32,10 @@ export class AdapterRegistry {
       new ChatGPTConnectorAdapter(this.connectionService, this.mcpContext)
     );
     this.adapters.set(
+      "conn_kimi_web",
+      new KimiWebPluginAdapter(this.connectionService, this.mcpContext)
+    );
+    this.adapters.set(
       "conn_kimi",
       new KimiCodeAdapter(this.connectionService, this.mcpContext)
     );
@@ -55,6 +60,12 @@ export class AdapterRegistry {
 
     const conn = this.connectionService.getConnection(id);
     if (!conn) return null;
+
+    if (conn.clientType === "kimi-web") {
+      const adapter = new KimiWebPluginAdapter(this.connectionService, this.mcpContext);
+      this.adapters.set(id, adapter);
+      return adapter;
+    }
 
     if (conn.clientType === "custom-mcp") {
       const adapter = new CustomMcpAdapter(

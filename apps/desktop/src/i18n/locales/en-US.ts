@@ -376,6 +376,9 @@ export const enUS: I18nDictionary = {
     changePrimary: "Change Primary",
     changePrimaryModalTitle: "Select Primary AI Client",
     selectAsPrimary: "Set as Primary",
+    createKimiPlugin: "Create Kimi Plugin",
+    viewInstallGuide: "Setup & Guide",
+    connectKimi: "Connect Kimi",
   },
   tokens: {
     title: "Authentication Tokens",

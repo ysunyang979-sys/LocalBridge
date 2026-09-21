@@ -539,4 +539,6 @@ export type {
   ProviderPreset,
   TestConnectionResult,
   ClientAuditSource,
+  KimiPluginManifest,
+  KimiPluginExportResult,
 } from "@localbridge/protocol";

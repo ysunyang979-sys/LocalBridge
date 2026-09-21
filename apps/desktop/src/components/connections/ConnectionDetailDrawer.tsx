@@ -66,9 +66,13 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
   if (!isOpen || !connection) return null;
 
   const isNativeMcp = connection.category === "native-mcp";
-  const isCustomOrAdapter = !["conn_chatgpt", "conn_kimi", "conn_claude", "conn_gemini"].includes(
-    connection.id
-  );
+  const isCustomOrAdapter = ![
+    "conn_chatgpt",
+    "conn_kimi_web",
+    "conn_kimi",
+    "conn_claude",
+    "conn_gemini",
+  ].includes(connection.id);
 
   const handleCopyToken = () => {
     if (connection.tokenMasked) {
@@ -130,7 +134,10 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
     {
       mcpServers: {
         nexus: {
-          url: "http://127.0.0.1:18080/mcp",
+          url:
+            connection.clientType === "kimi-web" || connection.transport === "tunnel"
+              ? connection.endpoint || "https://<nexus-tunnel-host>/mcp"
+              : "http://127.0.0.1:18080/mcp",
           headers: {
             Authorization: `Bearer ${connection.tokenMasked || "YOUR_NEXUS_TOKEN"}`,
           },
@@ -402,15 +409,18 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
               </button>
             )}
 
-            {isNativeMcp && onPreviewConfig && (
-              <button
-                type="button"
-                onClick={() => onPreviewConfig(connection)}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-sky-600 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 transition"
-              >
-                {t.aiConnections?.previewConfig || "Preview & Apply"}
-              </button>
-            )}
+            {isNativeMcp &&
+              connection.clientType !== "chatgpt" &&
+              connection.clientType !== "kimi-web" &&
+              onPreviewConfig && (
+                <button
+                  type="button"
+                  onClick={() => onPreviewConfig(connection)}
+                  className="px-4 py-2 rounded-lg text-xs font-medium text-sky-600 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 transition"
+                >
+                  {t.aiConnections?.previewConfig || "Preview & Apply"}
+                </button>
+              )}
 
             <button
               type="button"

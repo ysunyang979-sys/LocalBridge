@@ -33,6 +33,8 @@ import type {
   TestConnectionResult,
   ConfigPreviewResult,
   ApplyConfigResult,
+  KimiPluginManifest,
+  KimiPluginExportResult,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -1190,6 +1192,29 @@ class ApiBridge {
     return this.fetchJson<{ success: boolean }>("/api/management/connections/config-rollback", {
       method: "POST",
       body: JSON.stringify({ targetPath, backupPath }),
+    });
+  }
+
+  async getKimiPluginManifest(tunnelEndpoint?: string): Promise<{ manifest: KimiPluginManifest }> {
+    if (isTauri()) {
+      return invoke<{ manifest: KimiPluginManifest }>("desktop_get_kimi_plugin_manifest", {
+        tunnelEndpoint: tunnelEndpoint || null,
+      });
+    }
+    const qs = tunnelEndpoint ? `?tunnelEndpoint=${encodeURIComponent(tunnelEndpoint)}` : "";
+    return this.fetchJson<{ manifest: KimiPluginManifest }>(`/api/management/connections/kimi-web/plugin-manifest${qs}`);
+  }
+
+  async exportKimiPlugin(tunnelEndpoint?: string, targetDir?: string): Promise<KimiPluginExportResult> {
+    if (isTauri()) {
+      return invoke<KimiPluginExportResult>("desktop_export_kimi_plugin", {
+        tunnelEndpoint: tunnelEndpoint || null,
+        targetDir: targetDir || null,
+      });
+    }
+    return this.fetchJson<KimiPluginExportResult>("/api/management/connections/kimi-web/export-plugin", {
+      method: "POST",
+      body: JSON.stringify({ tunnelEndpoint, targetDir }),
     });
   }
 }

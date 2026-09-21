@@ -3,6 +3,7 @@ import type {
   TestConnectionResult,
 } from "@localbridge/protocol";
 import { BaseAIAdapter } from "../base.js";
+export { KimiWebPluginAdapter } from "./kimi-web.js";
 
 export class ChatGPTConnectorAdapter extends BaseAIAdapter {
   constructor(connectionService: any, mcpContext: any) {

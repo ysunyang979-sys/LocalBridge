@@ -376,6 +376,9 @@ export const zhCN: I18nDictionary = {
     changePrimary: "更改主客户端",
     changePrimaryModalTitle: "选择默认主 AI 客户端",
     selectAsPrimary: "设为首选",
+    createKimiPlugin: "创建 Kimi 插件",
+    viewInstallGuide: "安装与配置",
+    connectKimi: "连接 Kimi",
   },
   tokens: {
     title: "访问令牌管理",

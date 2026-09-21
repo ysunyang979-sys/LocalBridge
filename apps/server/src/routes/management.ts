@@ -1864,5 +1864,44 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       return reply.status(200).send({ success: ok });
     }
   );
+
+  // Kimi Web Plugin Routes
+  fastify.get<{ Querystring: { tunnelEndpoint?: string } }>(
+    "/management/connections/kimi-web/plugin-manifest",
+    async (request, reply) => {
+      if (!adpRegistry) {
+        return reply.status(503).send({ error: "Adapter registry not initialized" });
+      }
+      const adapter = adpRegistry.getAdapter("conn_kimi_web") as any;
+      if (!adapter || typeof adapter.generatePluginManifest !== "function") {
+        return reply.status(404).send({ error: "Kimi Web adapter not available" });
+      }
+      const tunnelEndpoint = request.query?.tunnelEndpoint || "https://<nexus-tunnel-host>/mcp";
+      const manifest = adapter.generatePluginManifest(tunnelEndpoint);
+      return reply.status(200).send({ manifest });
+    }
+  );
+
+  fastify.post<{ Body?: { targetDir?: string; tunnelEndpoint?: string } }>(
+    "/management/connections/kimi-web/export-plugin",
+    async (request, reply) => {
+      if (!adpRegistry) {
+        return reply.status(503).send({ error: "Adapter registry not initialized" });
+      }
+      const adapter = adpRegistry.getAdapter("conn_kimi_web") as any;
+      if (!adapter || typeof adapter.exportPluginPackage !== "function") {
+        return reply.status(404).send({ error: "Kimi Web adapter not available" });
+      }
+      try {
+        const result = adapter.exportPluginPackage(
+          request.body?.targetDir,
+          request.body?.tunnelEndpoint
+        );
+        return reply.status(200).send(result);
+      } catch (err: any) {
+        return reply.status(500).send({ error: err?.message || String(err) });
+      }
+    }
+  );
 };
 
