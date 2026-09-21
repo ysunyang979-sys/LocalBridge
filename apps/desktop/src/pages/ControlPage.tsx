@@ -472,19 +472,19 @@ export const ControlPage: React.FC<ControlPageProps> = ({
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${projects.length > 0 ? "bg-emerald-500" : "bg-amber-500"}`} />
             </div>
 
-            {/* 2. AI Connection */}
+            {/* 2. ChatGPT Connection */}
             <div className="p-4 rounded-xl bg-theme-card border border-theme-subtle flex items-center justify-between">
               <div className="space-y-1 min-w-0">
                 <div className="text-[11px] font-mono uppercase tracking-wider text-theme-muted">
-                  {t.overview?.aiConnectionTitle || "AI Connection"}
+                  {t.overview?.chatGptConnectionTitle || "ChatGPT Connection"}
                 </div>
                 <div className="text-sm font-semibold text-theme-primary truncate">
-                  ChatGPT / MCP
+                  ChatGPT
                 </div>
                 <div className="text-xs text-theme-muted truncate">
                   {isTunnelConnected || (mcpStatus?.mcpActive && !mcpStatus?.paused)
                     ? (t.overview?.aiConnected || "Connected")
-                    : (t.overview?.aiDisconnected || "Disconnected")}
+                    : (t.overview?.aiDisconnected || "Standby")}
                 </div>
               </div>
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isTunnelConnected || (mcpStatus?.mcpActive && !mcpStatus?.paused) ? "bg-emerald-500" : "bg-slate-400 dark:bg-slate-600"}`} />

@@ -15,8 +15,6 @@ export interface AIClientAdapter {
 
   getHealth(): Promise<ConnectionHealthDto>;
   testConnection(): Promise<TestConnectionResult>;
-  generateConfigSnippet(token: string): Record<string, any>;
-  detectClient(): { isDetected: boolean; configPath: string | null };
 }
 
 export abstract class BaseAIAdapter implements AIClientAdapter {
@@ -31,13 +29,4 @@ export abstract class BaseAIAdapter implements AIClientAdapter {
 
   abstract getHealth(): Promise<ConnectionHealthDto>;
   abstract testConnection(): Promise<TestConnectionResult>;
-
-  generateConfigSnippet(token: string): Record<string, any> {
-    return this.connectionService.generateConfigSnippet(this.id, token);
-  }
-
-  detectClient(): { isDetected: boolean; configPath: string | null } {
-    const res = this.connectionService.detectClientConfigPath(this.clientType);
-    return { isDetected: res.exists, configPath: res.path };
-  }
 }

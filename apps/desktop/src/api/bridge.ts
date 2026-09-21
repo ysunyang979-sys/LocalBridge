@@ -28,13 +28,7 @@ import type {
   ModelValidationResult,
   ModelImportOptions,
   AIConnectionDto,
-  ProviderPreset,
-  AIConnectionConfig,
   TestConnectionResult,
-  ConfigPreviewResult,
-  ApplyConfigResult,
-  KimiPluginManifest,
-  KimiPluginExportResult,
   FullControlStatusDto,
   StartFullControlParams,
   FullControlSession,
@@ -1144,7 +1138,6 @@ class ApiBridge {
     });
   }
 
-  // AI Connection Center
   async listAiConnections(): Promise<{ connections: AIConnectionDto[] }> {
     if (isTauri()) {
       return invoke<{ connections: AIConnectionDto[] }>("desktop_list_ai_connections");
@@ -1152,46 +1145,11 @@ class ApiBridge {
     return this.fetchJson<{ connections: AIConnectionDto[] }>("/api/management/connections");
   }
 
-  async getAiPresets(): Promise<{ presets: ProviderPreset[] }> {
-    if (isTauri()) {
-      return invoke<{ presets: ProviderPreset[] }>("desktop_get_ai_presets");
-    }
-    return this.fetchJson<{ presets: ProviderPreset[] }>("/api/management/connections/presets");
-  }
-
   async getAiConnection(id: string): Promise<AIConnectionDto> {
     if (isTauri()) {
       return invoke<AIConnectionDto>("desktop_get_ai_connection", { id });
     }
     return this.fetchJson<AIConnectionDto>(`/api/management/connections/${id}`);
-  }
-
-  async saveAiConnection(config: AIConnectionConfig): Promise<AIConnectionDto> {
-    if (isTauri()) {
-      return invoke<AIConnectionDto>("desktop_save_ai_connection", { config });
-    }
-    return this.fetchJson<AIConnectionDto>("/api/management/connections", {
-      method: "POST",
-      body: JSON.stringify(config),
-    });
-  }
-
-  async deleteAiConnection(id: string): Promise<{ success: boolean; id: string }> {
-    if (isTauri()) {
-      return invoke<{ success: boolean; id: string }>("desktop_delete_ai_connection", { id });
-    }
-    return this.fetchJson<{ success: boolean; id: string }>(`/api/management/connections/${id}`, {
-      method: "DELETE",
-    });
-  }
-
-  async setPrimaryAiConnection(id: string): Promise<{ success: boolean; id: string }> {
-    if (isTauri()) {
-      return invoke<{ success: boolean; id: string }>("desktop_set_primary_ai_connection", { id });
-    }
-    return this.fetchJson<{ success: boolean; id: string }>(`/api/management/connections/${id}/primary`, {
-      method: "POST",
-    });
   }
 
   async rotateAiConnectionToken(id: string, scopes?: string[]): Promise<{ tokenId: string; token: string }> {
@@ -1219,59 +1177,6 @@ class ApiBridge {
     }
     return this.fetchJson<TestConnectionResult>(`/api/management/connections/${id}/test`, {
       method: "POST",
-    });
-  }
-
-  async previewAiConnectionConfig(id: string, token?: string): Promise<ConfigPreviewResult> {
-    if (isTauri()) {
-      return invoke<ConfigPreviewResult>("desktop_preview_ai_connection_config", { id, token });
-    }
-    return this.fetchJson<ConfigPreviewResult>(`/api/management/connections/${id}/config-preview`, {
-      method: "POST",
-      body: JSON.stringify({ token: token || "" }),
-    });
-  }
-
-  async applyAiConnectionConfig(id: string, token?: string): Promise<ApplyConfigResult> {
-    if (isTauri()) {
-      return invoke<ApplyConfigResult>("desktop_apply_ai_connection_config", { id, token });
-    }
-    return this.fetchJson<ApplyConfigResult>(`/api/management/connections/${id}/config-apply`, {
-      method: "POST",
-      body: JSON.stringify({ token: token || "" }),
-    });
-  }
-
-  async rollbackAiConnectionConfig(targetPath: string, backupPath: string): Promise<{ success: boolean }> {
-    if (isTauri()) {
-      return invoke<{ success: boolean }>("desktop_rollback_ai_connection_config", { targetPath, backupPath });
-    }
-    return this.fetchJson<{ success: boolean }>("/api/management/connections/config-rollback", {
-      method: "POST",
-      body: JSON.stringify({ targetPath, backupPath }),
-    });
-  }
-
-  async getKimiPluginManifest(tunnelEndpoint?: string): Promise<{ manifest: KimiPluginManifest }> {
-    if (isTauri()) {
-      return invoke<{ manifest: KimiPluginManifest }>("desktop_get_kimi_plugin_manifest", {
-        tunnelEndpoint: tunnelEndpoint || null,
-      });
-    }
-    const qs = tunnelEndpoint ? `?tunnelEndpoint=${encodeURIComponent(tunnelEndpoint)}` : "";
-    return this.fetchJson<{ manifest: KimiPluginManifest }>(`/api/management/connections/kimi-web/plugin-manifest${qs}`);
-  }
-
-  async exportKimiPlugin(tunnelEndpoint?: string, targetDir?: string): Promise<KimiPluginExportResult> {
-    if (isTauri()) {
-      return invoke<KimiPluginExportResult>("desktop_export_kimi_plugin", {
-        tunnelEndpoint: tunnelEndpoint || null,
-        targetDir: targetDir || null,
-      });
-    }
-    return this.fetchJson<KimiPluginExportResult>("/api/management/connections/kimi-web/export-plugin", {
-      method: "POST",
-      body: JSON.stringify({ tunnelEndpoint, targetDir }),
     });
   }
 }

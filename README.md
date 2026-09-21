@@ -1,34 +1,24 @@
 # Nexus
 
-> Secure Model Context Protocol (MCP) Control Plane powered by the LocalBridge runtime architecture.
+> Dedicated Local AI Control Plane for ChatGPT, powered by the LocalBridge runtime architecture.
 
-Nexus allows AI assistants (such as ChatGPT, Claude, and Codex) to securely inspect, search, edit, build, and test local projects on your computer via MCP, without exposing your entire disk or sending source code to untrusted intermediaries.
-
----
-
-## Architecture Overview
-
-LocalBridge enforces strict privilege separation between the Internet-facing Server and your local machine's Runner:
+Nexus is the dedicated Local AI Control Plane for ChatGPT. It securely connects ChatGPT to your local development environment via a high-performance Secure MCP Tunnel, allowing ChatGPT to inspect, search, edit, build, and test local projects without exposing your entire disk or sending source code to untrusted intermediaries.
 
 ```text
-AI Client (ChatGPT / Claude / Codex)
-        │
-        │ MCP 2026-07-28 Streamable HTTP (POST /mcp, Bearer lb_xxx)
-        ▼
-LocalBridge Server (Node.js + Fastify)
-        │
-        │ LocalBridge RPC (JSON-RPC 2.0 over WebSocket, Auth lbr_xxx)
-        ▼
-LocalBridge Runner (Node.js daemon on user's machine)
-        │
-        ├── Filesystem (Sandboxed, Canonical Path verification)
-        ├── Git CLI
-        ├── Shell (Risk classification, Execution timeouts)
-        ├── Build & Test Runners
-        └── Long-running Background Jobs
-        │
-        ▼
-User-Authorized Projects (e.g. D:\Projects\my-app)
+ChatGPT
+   │
+   │ Secure MCP Tunnel (Streamable HTTP / SSE, Bearer lb_xxx)
+   ▼
+Nexus (Local AI Control Plane)
+   │
+   ├── Local Projects (Sandboxed, Canonical Path verification)
+   ├── 59 Model Context Protocol (MCP) Tools
+   ├── Git CLI & Managed Worktrees
+   ├── Persistent Runtimes & Background Jobs
+   ├── Code Intelligence (LSP)
+   ├── Workflow Sessions & Checkpoints
+   ├── Policy Engine & Approval Gates
+   └── Full Control & Laya Native Integration
 ```
 
 ### Key Security Guarantees

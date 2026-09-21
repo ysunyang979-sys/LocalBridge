@@ -42,7 +42,7 @@ import {
   formatLatency,
 } from "../i18n/intelligence-map.js";
 import nexusLogo from "../assets/nexus.png";
-import { AIConnectionCenter } from "../components/connections/AIConnectionCenter.js";
+import { ChatGPTConnection } from "../components/connections/ChatGPTConnection.js";
 import type {
   Project,
   ProjectTrustPolicy,
@@ -1001,7 +1001,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           }`}
         >
           <Radio className="w-3.5 h-3.5 text-sky-400" />
-          <span>{t.settings.tabConnections || t.settings.tabTunnel}</span>
+          <span>{isZh ? "ChatGPT 连接" : t.settings.tabConnections}</span>
         </button>
 
         <button
@@ -1045,9 +1045,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <div className="space-y-6">
-        {/* Tab: AI Connection Center - kept mounted to preserve scroll & state */}
+        {/* Tab: ChatGPT Connection - kept mounted to preserve scroll & state */}
         <div className={route.page === "connections" ? "block" : "hidden"}>
-          <AIConnectionCenter
+          <ChatGPTConnection
             tunnelStatus={tunnelStatus}
             onRefreshAll={onRefresh}
             onNavigateToTunnel={() => setRoute({ page: "secure-mcp" })}
@@ -1067,7 +1067,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   onClick={() => setRoute({ page: "connections" })}
                   className="text-sky-600 dark:text-sky-400 hover:underline font-semibold"
                 >
-                  {isZh ? "AI 连接中心" : "AI Connections"}
+                  {isZh ? "ChatGPT 连接" : "ChatGPT Connection"}
                 </button>
                 <span>/</span>
                 <span className="text-theme-primary font-semibold">
@@ -3388,10 +3388,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   {t.settings.appName || "Nexus"}
                 </div>
                 <div className="text-theme-secondary font-mono text-[11px]">
-                  Local AI Control Plane &bull; v1.2.0 (UI: Quiet Command Center)
+                  {isZh
+                    ? "ChatGPT 本地 AI 控制平面 · 让 ChatGPT 安全访问并操作你明确授权的本地开发环境。"
+                    : "Local AI Control Plane for ChatGPT · Securely connect ChatGPT to your authorized local environment."}
                 </div>
                 <div className="text-[10px] font-mono text-theme-muted">
-                  Build {typeof __BUILD_COMMIT__ !== "undefined" ? __BUILD_COMMIT__ : "1.2.0"} &bull; Node Bundled Runtime &bull; Laya Decision Intelligence
+                  59 MCP Tools &bull; Secure MCP Tunnel &bull; Full Control &bull; Laya Decision Intelligence &bull; Code Intelligence &bull; Persistent Runtime
                 </div>
               </div>
             </div>

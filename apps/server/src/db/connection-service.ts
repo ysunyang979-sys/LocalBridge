@@ -5,13 +5,9 @@ import crypto from "node:crypto";
 import type Database from "better-sqlite3";
 import type {
   AIClientType,
-  AIConnectionCategory,
   AIConnectionStatus,
-  AIConnectionTransport,
   AIConnectionDto,
   AIConnectionConfig,
-  ConfigPreviewResult,
-  ApplyConfigResult,
 } from "@localbridge/protocol";
 import type { AiConnectionRow, TokenRow } from "./schema.js";
 import type { TokenService } from "./token-service.js";
@@ -91,9 +87,6 @@ export class ConnectionService {
   private readonly stmtList: Database.Statement;
   private readonly stmtGet: Database.Statement;
   private readonly stmtUpsert: Database.Statement;
-  private readonly stmtDelete: Database.Statement;
-  private readonly stmtSetPrimary: Database.Statement;
-  private readonly stmtResetPrimary: Database.Statement;
   private readonly stmtUpdateStatus: Database.Statement;
   private readonly stmtGetToken: Database.Statement;
 
@@ -104,7 +97,7 @@ export class ConnectionService {
     this.secretStorage = new SecureSecretStorage();
 
     this.stmtList = this.db.prepare(
-      `SELECT * FROM ai_connections ORDER BY is_primary DESC, name ASC`
+      `SELECT * FROM ai_connections WHERE client_type = 'chatgpt' ORDER BY is_primary DESC, name ASC`
     );
     this.stmtGet = this.db.prepare(`SELECT * FROM ai_connections WHERE id = ?`);
     this.stmtUpsert = this.db.prepare(
@@ -129,11 +122,6 @@ export class ConnectionService {
         tool_allowlist_json = excluded.tool_allowlist_json,
         updated_at = excluded.updated_at`
     );
-    this.stmtDelete = this.db.prepare(`DELETE FROM ai_connections WHERE id = ?`);
-    this.stmtSetPrimary = this.db.prepare(
-      `UPDATE ai_connections SET is_primary = 1 WHERE id = ?`
-    );
-    this.stmtResetPrimary = this.db.prepare(`UPDATE ai_connections SET is_primary = 0`);
     this.stmtUpdateStatus = this.db.prepare(
       `UPDATE ai_connections
        SET status = ?, last_seen_at = ?, last_connected_at = COALESCE(?, last_connected_at), last_error = ?, updated_at = ?
@@ -147,42 +135,7 @@ export class ConnectionService {
   }
 
   /**
-   * Discovers known standard config file paths for clients on this system.
-   */
-  detectClientConfigPath(clientType: AIClientType): { path: string | null; exists: boolean } {
-    const home = os.homedir();
-    const isWin = process.platform === "win32";
-
-    switch (clientType) {
-      case "kimi": {
-        const candidate = path.join(home, ".kimi-code", "mcp.json");
-        return { path: candidate, exists: fs.existsSync(candidate) };
-      }
-      case "claude": {
-        const candidateDesktop = isWin
-          ? (process.env.APPDATA ? path.join(process.env.APPDATA, "Claude", "claude_desktop_config.json") : null)
-          : path.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
-
-        if (candidateDesktop && fs.existsSync(candidateDesktop)) {
-          return { path: candidateDesktop, exists: true };
-        }
-        const candidateCode = path.join(home, ".claude.json");
-        if (fs.existsSync(candidateCode)) {
-          return { path: candidateCode, exists: true };
-        }
-        return { path: candidateDesktop || candidateCode, exists: false };
-      }
-      case "gemini": {
-        const candidate = path.join(home, ".gemini", "settings.json");
-        return { path: candidate, exists: fs.existsSync(candidate) };
-      }
-      default:
-        return { path: null, exists: false };
-    }
-  }
-
-  /**
-   * Lists all configured connections.
+   * Lists all configured connections (ChatGPT only).
    */
   listConnections(): AIConnectionDto[] {
     const rows = this.stmtList.all() as AiConnectionRow[];
@@ -198,7 +151,7 @@ export class ConnectionService {
   }
 
   /**
-   * Retrieves full decrypted config for server-internal usage (e.g. tool execution).
+   * Retrieves full decrypted config for server-internal usage.
    */
   getDecryptedConfig(id: string): Record<string, any> | null {
     const row = this.stmtGet.get(id) as AiConnectionRow | undefined;
@@ -216,54 +169,24 @@ export class ConnectionService {
   }
 
   /**
-   * Creates or updates an AI connection.
+   * Creates or updates ChatGPT connection.
    */
   createOrUpdateConnection(input: Partial<AIConnectionConfig> & { id: string; clientType: AIClientType; name: string }): AIConnectionDto {
     const now = Date.now();
     const existing = this.stmtGet.get(input.id) as AiConnectionRow | undefined;
 
-    let configJsonToStore: string | null = existing?.config_json || null;
-
-    if (input.baseUrl || input.apiKey !== undefined || input.model || input.apiFormat || input.metadata) {
-      let currentParsed: Record<string, any> = {};
-      if (configJsonToStore) {
-        try {
-          currentParsed = JSON.parse(configJsonToStore);
-        } catch {}
-      }
-
-      if (input.baseUrl !== undefined) currentParsed.baseUrl = input.baseUrl;
-      if (input.model !== undefined) currentParsed.model = input.model;
-      if (input.apiFormat !== undefined) currentParsed.apiFormat = input.apiFormat;
-      if (input.metadata) Object.assign(currentParsed, input.metadata);
-
-      if (input.apiKey) {
-        currentParsed.apiKeyEncrypted = this.secretStorage.encrypt(input.apiKey);
-        currentParsed.apiKeyMasked = this.secretStorage.maskApiKey(input.apiKey);
-      }
-
-      configJsonToStore = JSON.stringify(currentParsed);
-    }
-
-    const detected = this.detectClientConfigPath(input.clientType);
-
-    // If setting as primary, reset others first
-    if (input.isPrimary) {
-      this.stmtResetPrimary.run();
-    }
-
     const rowParam = {
       id: input.id,
       client_type: input.clientType,
       name: input.name,
-      category: input.category || (input.clientType === "deepseek" || input.clientType === "custom-openai" ? "tool-adapter" : "native-mcp"),
+      category: "native-mcp",
       status: existing?.status || "not_configured",
-      transport: input.transport || (input.clientType === "chatgpt" || input.clientType === "kimi-web" ? "tunnel" : "http"),
-      endpoint: input.endpoint || (input.clientType === "deepseek" ? "https://api.deepseek.com" : (input.clientType === "kimi-web" ? "Secure MCP Tunnel" : "http://127.0.0.1:18080/mcp")),
+      transport: "tunnel",
+      endpoint: input.endpoint || "Secure MCP Tunnel",
       token_id: input.tokenId !== undefined ? input.tokenId : (existing?.token_id || null),
-      config_json: configJsonToStore,
-      detected_config_path: input.detectedConfigPath !== undefined ? input.detectedConfigPath : (existing?.detected_config_path || detected.path),
-      is_primary: input.isPrimary ? 1 : (existing?.is_primary ?? 0),
+      config_json: null,
+      detected_config_path: null,
+      is_primary: 1,
       tool_allowlist_json: input.toolAllowlist ? JSON.stringify(input.toolAllowlist) : (existing?.tool_allowlist_json || null),
       created_at: existing?.created_at || now,
       updated_at: now,
@@ -274,25 +197,6 @@ export class ConnectionService {
 
     this.stmtUpsert.run(rowParam);
     return this.getConnection(input.id)!;
-  }
-
-  /**
-   * Sets a connection as the primary AI.
-   */
-  setPrimary(id: string): boolean {
-    const conn = this.stmtGet.get(id);
-    if (!conn) return false;
-    this.stmtResetPrimary.run();
-    this.stmtSetPrimary.run(id);
-    return true;
-  }
-
-  /**
-   * Deletes a custom connection.
-   */
-  deleteConnection(id: string): boolean {
-    const res = this.stmtDelete.run(id);
-    return res.changes > 0;
   }
 
   /**
@@ -322,21 +226,10 @@ export class ConnectionService {
   /**
    * Creates or rotates a dedicated MCP token for an AI connection.
    */
-  createOrRotateToken(connectionId: string, scopes = ["read", "write"]): { token: string; tokenId: string } {
+  createOrRotateToken(connectionId: string, scopes = ["read", "write", "execute"]): { token: string; tokenId: string } {
     let conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
     if (!conn) {
-      // Auto-create builtin connection record if not yet saved in database
-      if (connectionId === "conn_kimi_web") {
-        this.createOrUpdateConnection({
-          id: "conn_kimi_web",
-          clientType: "kimi-web",
-          name: "Kimi Web",
-          category: "native-mcp",
-          transport: "tunnel",
-          endpoint: "Secure MCP Tunnel",
-        });
-        conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
-      } else if (connectionId === "conn_chatgpt") {
+      if (connectionId === "conn_chatgpt") {
         this.createOrUpdateConnection({
           id: "conn_chatgpt",
           clientType: "chatgpt",
@@ -361,14 +254,11 @@ export class ConnectionService {
       } catch {}
     }
 
-    const isKimi = conn.client_type === "kimi-web" || connectionId === "conn_kimi_web";
-    const prefix = isKimi ? "lb_kimi_" : "lb_";
-
     const created = this.tokenService.createToken({
       name: `AI Client: ${conn.name}`,
       type: "mcp",
       scopes,
-      prefix,
+      prefix: "lb_",
     });
 
     this.db
@@ -398,135 +288,6 @@ export class ConnectionService {
     return true;
   }
 
-  /**
-   * Generates standard client configuration JSON snippet.
-   */
-  generateConfigSnippet(connectionId: string, token: string): Record<string, any> {
-    const conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
-    if (!conn) throw new Error(`Connection not found: ${connectionId}`);
-
-    const endpoint = conn.endpoint || "http://127.0.0.1:18080/mcp";
-
-    return {
-      mcpServers: {
-        nexus: {
-          url: endpoint,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      },
-    };
-  }
-
-  /**
-   * Previews configuration patch for client.
-   */
-  previewConfigPatch(connectionId: string, token: string): ConfigPreviewResult {
-    const conn = this.stmtGet.get(connectionId) as AiConnectionRow | undefined;
-    if (!conn) throw new Error(`Connection not found: ${connectionId}`);
-
-    const detected = this.detectClientConfigPath(conn.client_type as AIClientType);
-    const targetPath = conn.detected_config_path || detected.path || path.join(os.homedir(), `.${conn.client_type}`, "mcp.json");
-    const fileExists = fs.existsSync(targetPath);
-
-    let beforeContent: string | null = null;
-    let existingObj: Record<string, any> = {};
-
-    if (fileExists) {
-      try {
-        beforeContent = fs.readFileSync(targetPath, "utf8");
-        existingObj = JSON.parse(beforeContent);
-      } catch {
-        existingObj = {};
-      }
-    }
-
-    if (!existingObj.mcpServers) {
-      existingObj.mcpServers = {};
-    }
-
-    const snippet = this.generateConfigSnippet(connectionId, token);
-    const afterObj = {
-      ...existingObj,
-      mcpServers: {
-        ...existingObj.mcpServers,
-        ...snippet.mcpServers,
-      },
-    };
-
-    const afterContent = JSON.stringify(afterObj, null, 2);
-    const diffSummary = fileExists
-      ? `Update "nexus" server in existing configuration at ${targetPath}`
-      : `Create new MCP configuration with "nexus" server at ${targetPath}`;
-
-    return {
-      connectionId,
-      clientType: conn.client_type as AIClientType,
-      configFilePath: targetPath,
-      fileExists,
-      beforeContent,
-      afterContent,
-      diffSummary,
-    };
-  }
-
-  /**
-   * Atomically applies configuration patch with automatic backup.
-   */
-  applyConfigPatch(connectionId: string, token: string): ApplyConfigResult {
-    const preview = this.previewConfigPatch(connectionId, token);
-    const targetPath = preview.configFilePath;
-    const parentDir = path.dirname(targetPath);
-
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
-
-    let backupFilePath: string | undefined;
-
-    if (preview.fileExists && preview.beforeContent) {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      backupFilePath = `${targetPath}.nexus.bak.${timestamp}`;
-      fs.copyFileSync(targetPath, backupFilePath);
-    }
-
-    const tempPath = `${targetPath}.tmp.${Date.now()}`;
-    try {
-      fs.writeFileSync(tempPath, preview.afterContent, "utf8");
-      // Validate parse before replace
-      JSON.parse(fs.readFileSync(tempPath, "utf8"));
-      fs.renameSync(tempPath, targetPath);
-
-      this.updateStatus(connectionId, "configured");
-      return {
-        success: true,
-        configFilePath: targetPath,
-        backupFilePath,
-        message: `Successfully configured Nexus for ${preview.clientType}`,
-      };
-    } catch (err: any) {
-      if (fs.existsSync(tempPath)) {
-        try {
-          fs.unlinkSync(tempPath);
-        } catch {}
-      }
-      if (backupFilePath && fs.existsSync(backupFilePath)) {
-        fs.copyFileSync(backupFilePath, targetPath);
-      }
-      throw new Error(`Failed to apply configuration: ${err?.message || String(err)}`);
-    }
-  }
-
-  /**
-   * Rolls back configuration to specified backup file.
-   */
-  rollbackConfigPatch(targetPath: string, backupPath: string): boolean {
-    if (!fs.existsSync(backupPath)) return false;
-    fs.copyFileSync(backupPath, targetPath);
-    return true;
-  }
-
   private rowToDto(row: AiConnectionRow): AIConnectionDto {
     let scopes: string[] = ["read", "write", "execute"];
     let tokenMasked: string | null = null;
@@ -537,8 +298,7 @@ export class ConnectionService {
         try {
           scopes = JSON.parse(tokenRow.scopes || "[]");
         } catch {}
-        const prefix = tokenRow.name?.toLowerCase().includes("kimi") ? "lb_kimi_" : "lb_";
-        tokenMasked = `${prefix}••••${tokenRow.id.slice(-4).toUpperCase()}`;
+        tokenMasked = `lb_••••${tokenRow.id.slice(-4).toUpperCase()}`;
       }
     }
 
@@ -549,41 +309,27 @@ export class ConnectionService {
       } catch {}
     }
 
-    let parsedConfig: Record<string, any> = {};
-    if (row.config_json) {
-      try {
-        parsedConfig = JSON.parse(row.config_json);
-      } catch {}
-    }
-
-    const detected = this.detectClientConfigPath(row.client_type as AIClientType);
-
     return {
       id: row.id,
-      clientType: row.client_type as AIClientType,
+      clientType: "chatgpt",
       name: row.name,
-      category: row.category as AIConnectionCategory,
+      category: "native-mcp",
       status: row.status as AIConnectionStatus,
-      transport: row.transport as AIConnectionTransport,
-      endpoint: row.endpoint,
+      transport: "tunnel",
+      endpoint: row.endpoint || "Secure MCP Tunnel",
       tokenId: row.token_id,
       tokenMasked,
       scopes,
-      toolCount: toolAllowlist ? toolAllowlist.length : 55, // 55 total tools in Nexus
+      toolCount: 59, // 59 core MCP tools
       lastSeenAt: row.last_seen_at,
       lastConnectedAt: row.last_connected_at,
       latencyMs: row.status === "connected" ? 8 : null,
       lastError: row.last_error,
-      detectedConfigPath: row.detected_config_path || detected.path,
-      isDetected: detected.exists,
-      isPrimary: Boolean(row.is_primary),
+      detectedConfigPath: null,
+      isDetected: false,
+      isPrimary: true,
       toolAllowlist,
-      metadata: {
-        baseUrl: parsedConfig.baseUrl,
-        model: parsedConfig.model,
-        apiFormat: parsedConfig.apiFormat,
-        apiKeyMasked: parsedConfig.apiKeyMasked,
-      },
+      metadata: {},
     };
   }
 }

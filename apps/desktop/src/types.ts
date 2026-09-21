@@ -539,13 +539,8 @@ export type {
   AIConnectionDto,
   AIConnectionConfig,
   ConnectionHealthDto,
-  ConfigPreviewResult,
-  ApplyConfigResult,
-  ProviderPreset,
   TestConnectionResult,
   ClientAuditSource,
-  KimiPluginManifest,
-  KimiPluginExportResult,
   RemoteMcpEndpointResult,
   McpClientSnippet,
 } from "@localbridge/protocol";
@@ -653,32 +648,6 @@ export class RemoteMcpEndpointResolver {
         },
       },
     };
-  }
-
-  /**
-   * Generates Kimi Plugin Builder prompt using the real live endpoint.
-   * Returns null if Tunnel is offline.
-   */
-  static generatePluginBuilderPrompt(
-    tunnelStatus?: { status?: string; tunnel_id?: string | null; configured?: boolean } | null
-  ): string | null {
-    const res = RemoteMcpEndpointResolver.resolve(tunnelStatus);
-    if (!res.isAvailable || !res.endpoint) {
-      return null;
-    }
-
-    return `请创建名为 Nexus 的 MCP 插件。
-
-MCP Server:
-nexus
-
-URL:
-${res.endpoint}
-
-认证：
-该 MCP Server 需要授权。
-请不要将长期 Token 写入 manifest。
-完成结构校验并登记到个人插件。`;
   }
 }
 

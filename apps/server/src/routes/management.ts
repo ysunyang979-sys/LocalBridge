@@ -24,7 +24,6 @@ import type Database from "better-sqlite3";
 import type { JobRow } from "../db/schema.js";
 import { ConnectionService } from "../db/connection-service.js";
 import { AdapterRegistry } from "../adapters/index.js";
-import { KimiAuthTraceCollector } from "../auth/kimi-auth-trace.js";
 
 export interface ManagementRoutesOptions {
   tokenService: TokenService;
@@ -1825,18 +1824,13 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     return reply.status(200).send(advice);
   });
 
-  // AI Connection Center Routes
+  // ChatGPT Connection Routes
   fastify.get("/management/connections", async (_request, reply) => {
     if (!connService) {
       return reply.status(503).send({ error: "Connection service not initialized" });
     }
     const connections = connService.listConnections();
     return reply.status(200).send({ connections });
-  });
-
-  fastify.get("/management/connections/presets", async (_request, reply) => {
-    const presets = adpRegistry ? adpRegistry.getPresets() : [];
-    return reply.status(200).send({ presets });
   });
 
   fastify.get<{ Params: { id: string } }>("/management/connections/:id", async (request, reply) => {
@@ -1848,34 +1842,6 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       return reply.status(404).send({ error: "Connection not found" });
     }
     return reply.status(200).send(conn);
-  });
-
-  fastify.post<{ Body: Record<string, any> }>("/management/connections", async (request, reply) => {
-    if (!connService) {
-      return reply.status(503).send({ error: "Connection service not initialized" });
-    }
-    const input = request.body as any;
-    if (!input || !input.id || !input.clientType || !input.name) {
-      return reply.status(400).send({ error: "Missing required fields (id, clientType, name)" });
-    }
-    const updated = connService.createOrUpdateConnection(input);
-    return reply.status(200).send(updated);
-  });
-
-  fastify.delete<{ Params: { id: string } }>("/management/connections/:id", async (request, reply) => {
-    if (!connService) {
-      return reply.status(503).send({ error: "Connection service not initialized" });
-    }
-    const success = connService.deleteConnection(request.params.id);
-    return reply.status(200).send({ success, id: request.params.id });
-  });
-
-  fastify.post<{ Params: { id: string } }>("/management/connections/:id/primary", async (request, reply) => {
-    if (!connService) {
-      return reply.status(503).send({ error: "Connection service not initialized" });
-    }
-    const success = connService.setPrimary(request.params.id);
-    return reply.status(200).send({ success, id: request.params.id });
   });
 
   fastify.post<{ Params: { id: string }; Body?: { scopes?: string[] } }>(
@@ -1914,117 +1880,6 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     }
     const res = await adpRegistry.testConnection(request.params.id);
     return reply.status(200).send(res);
-  });
-
-  fastify.post<{ Params: { id: string }; Body: { token: string } }>(
-    "/management/connections/:id/config-preview",
-    async (request, reply) => {
-      if (!connService) {
-        return reply.status(503).send({ error: "Connection service not initialized" });
-      }
-      try {
-        const preview = connService.previewConfigPatch(request.params.id, request.body?.token);
-        return reply.status(200).send(preview);
-      } catch (err: any) {
-        return reply.status(400).send({ error: err?.message || String(err) });
-      }
-    }
-  );
-
-  fastify.post<{ Params: { id: string }; Body: { token: string } }>(
-    "/management/connections/:id/config-apply",
-    async (request, reply) => {
-      if (!connService) {
-        return reply.status(503).send({ error: "Connection service not initialized" });
-      }
-      try {
-        const result = connService.applyConfigPatch(request.params.id, request.body?.token);
-        return reply.status(200).send(result);
-      } catch (err: any) {
-        return reply.status(400).send({ error: err?.message || String(err) });
-      }
-    }
-  );
-
-  fastify.post<{ Body: { targetPath: string; backupPath: string } }>(
-    "/management/connections/config-rollback",
-    async (request, reply) => {
-      if (!connService) {
-        return reply.status(503).send({ error: "Connection service not initialized" });
-      }
-      const ok = connService.rollbackConfigPatch(request.body.targetPath, request.body.backupPath);
-      return reply.status(200).send({ success: ok });
-    }
-  );
-
-  // Kimi Web Plugin Routes
-  fastify.get<{ Querystring: { tunnelEndpoint?: string; authType?: string } }>(
-    "/management/connections/kimi-web/plugin-manifest",
-    async (request, reply) => {
-      if (!adpRegistry) {
-        return reply.status(503).send({ error: "Adapter registry not initialized" });
-      }
-      const adapter = adpRegistry.getAdapter("conn_kimi_web") as any;
-      if (!adapter || typeof adapter.generatePluginManifest !== "function") {
-        return reply.status(404).send({ error: "Kimi Web adapter not available" });
-      }
-      const tunnelEndpoint = request.query?.tunnelEndpoint;
-      const authType = request.query?.authType as any;
-      if (!tunnelEndpoint) {
-        return reply.status(400).send({
-          error: "Missing tunnelEndpoint. Secure Tunnel must be connected.",
-        });
-      }
-      try {
-        const manifest = adapter.generatePluginManifest(tunnelEndpoint, { authType });
-        return reply.status(200).send({ manifest });
-      } catch (err: any) {
-        return reply.status(400).send({ error: err?.message || String(err) });
-      }
-    }
-  );
-
-  fastify.post<{ Body?: { targetDir?: string; tunnelEndpoint?: string; authType?: "user_http" | "oauth" | "service_http" } }>(
-    "/management/connections/kimi-web/export-plugin",
-    async (request, reply) => {
-      if (!adpRegistry) {
-        return reply.status(503).send({ error: "Adapter registry not initialized" });
-      }
-      const adapter = adpRegistry.getAdapter("conn_kimi_web") as any;
-      if (!adapter || typeof adapter.exportPluginPackage !== "function") {
-        return reply.status(404).send({ error: "Kimi Web adapter not available" });
-      }
-      const tunnelEndpoint = request.body?.tunnelEndpoint;
-      const authType = request.body?.authType;
-      if (!tunnelEndpoint) {
-        return reply.status(400).send({
-          error: "Missing tunnelEndpoint. Secure Tunnel must be connected.",
-        });
-      }
-      try {
-        const result = adapter.exportPluginPackage(
-          request.body?.targetDir,
-          tunnelEndpoint,
-          { authType }
-        );
-        return reply.status(200).send(result);
-      } catch (err: any) {
-        return reply.status(400).send({ error: err?.message || String(err) });
-      }
-    }
-  );
-
-  fastify.get("/management/connections/kimi-web/auth-trace", async (_request, reply) => {
-    const collector = KimiAuthTraceCollector.getInstance();
-    return reply.status(200).send({
-      traces: collector.getRecentTraces(50),
-      summary: collector.formatSummary(),
-    });
-  });
-
-  fastify.post("/management/connections/kimi-web/auth-trace/clear", async (_request, reply) => {
-    KimiAuthTraceCollector.getInstance().clear();
-    return reply.status(200).send({ success: true });
   });
 };
 

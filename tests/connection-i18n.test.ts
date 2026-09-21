@@ -28,7 +28,7 @@ describe("AI Connection Center i18n Parity Suite", () => {
     const enKeys = getDeepKeys(enUS.aiConnections);
 
     expect(zhKeys).toEqual(enKeys);
-    expect(zhKeys.length).toBeGreaterThan(40);
+    expect(zhKeys.length).toBeGreaterThan(15);
   });
 
   it("verifies no empty string translations exist in aiConnections", () => {
@@ -47,23 +47,23 @@ describe("AI Connection Center i18n Parity Suite", () => {
     checkNonEmpty(enUS.aiConnections, "enUS.aiConnections");
   });
 
-  it("contains all essential Connection Center labels in both languages", () => {
+  it("contains all essential ChatGPT Connection labels in both languages", () => {
     const requiredKeys = [
       "title",
       "subtitle",
-      "primaryAi",
-      "availableClientsSection",
-      "apiModelsSection",
+      "testConnection",
+      "testingConnection",
+      "testSuccess",
+      "testFailed",
+      "rotateToken",
       "statusNotConfigured",
       "statusConfigured",
       "statusConnected",
       "statusError",
-      "addCustomConnection",
-      "applySuccess",
-      "setAsPrimary",
-      "isPrimary",
-      "drawerTitle",
-      "diffPreviewTitle",
+      "clientToken",
+      "remoteMcpEndpoint",
+      "copyEndpoint",
+      "openTunnel",
     ];
 
     for (const key of requiredKeys) {

@@ -11,8 +11,6 @@ import {
 } from "./types.js";
 import { hasToolScope, requiredScopeForTool } from "./scope-policy.js";
 import { checkLoopbackAndSecurity } from "../routes/management.js";
-import { resolvePublicOrigin } from "../auth/origin-resolver.js";
-import { KimiAuthTraceCollector } from "../auth/kimi-auth-trace.js";
 
 export interface McpRoutesOptions {
   tokenService: TokenService;
@@ -83,28 +81,10 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
     url: "/mcp",
     handler: async (request: FastifyRequest, reply: FastifyReply) => {
       if (request.method === "GET" && !request.headers.authorization) {
-        const origin = resolvePublicOrigin(request);
         reply.header(
           "WWW-Authenticate",
-          `Bearer realm="Nexus", resource_metadata="${origin}/.well-known/oauth-protected-resource", as_uri="${origin}", error="invalid_token", error_description="Bearer token required"`
+          'Bearer realm="Nexus", error="invalid_token", error_description="Bearer token required"'
         );
-        reply.header(
-          "Link",
-          `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
-        );
-        KimiAuthTraceCollector.getInstance().record({
-          timestamp: new Date().toISOString(),
-          method: "GET",
-          path: request.url,
-          statusCode: 401,
-          userAgent: request.headers["user-agent"],
-          accept: request.headers["accept"],
-          contentType: request.headers["content-type"],
-          authorizationPresent: false,
-          wwwAuthenticatePresent: true,
-          oauthStage: "mcp-probe",
-          resource: `${origin}/mcp`,
-        });
         return reply.status(401).send({
           error: "Unauthorized: Missing Bearer token in Authorization header",
           code: "MISSING_TOKEN",
@@ -264,28 +244,10 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
       // 3.6 Bearer Token Authentication & Cross-Token Isolation
       const authHeader = request.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        const origin = resolvePublicOrigin(request);
         reply.header(
           "WWW-Authenticate",
-          `Bearer realm="Nexus", resource_metadata="${origin}/.well-known/oauth-protected-resource", as_uri="${origin}", error="invalid_token", error_description="Bearer token required"`
+          'Bearer realm="Nexus", error="invalid_token", error_description="Bearer token required"'
         );
-        reply.header(
-          "Link",
-          `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
-        );
-        KimiAuthTraceCollector.getInstance().record({
-          timestamp: new Date().toISOString(),
-          method: request.method,
-          path: request.url,
-          statusCode: 401,
-          userAgent: request.headers["user-agent"],
-          accept: request.headers["accept"],
-          contentType: request.headers["content-type"],
-          authorizationPresent: false,
-          wwwAuthenticatePresent: true,
-          oauthStage: "mcp-probe",
-          resource: `${origin}/mcp`,
-        });
         return reply.status(401).send({
           error: "Unauthorized: Missing Bearer token in Authorization header",
           code: "MISSING_TOKEN",
@@ -303,28 +265,10 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
         } else if (validation.reason === "TOKEN_EXPIRED") {
           code = "TOKEN_EXPIRED";
         }
-        const origin = resolvePublicOrigin(request);
         reply.header(
           "WWW-Authenticate",
-          `Bearer realm="Nexus", resource_metadata="${origin}/.well-known/oauth-protected-resource", as_uri="${origin}", error="invalid_token", error_description="${validation.reason || "Invalid token"}"`
+          `Bearer realm="Nexus", error="invalid_token", error_description="${validation.reason || "Invalid token"}"`
         );
-        reply.header(
-          "Link",
-          `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
-        );
-        KimiAuthTraceCollector.getInstance().record({
-          timestamp: new Date().toISOString(),
-          method: request.method,
-          path: request.url,
-          statusCode: 401,
-          userAgent: request.headers["user-agent"],
-          accept: request.headers["accept"],
-          contentType: request.headers["content-type"],
-          authorizationPresent: true,
-          wwwAuthenticatePresent: true,
-          oauthStage: "mcp-probe",
-          resource: `${origin}/mcp`,
-        });
         return reply.status(401).send({
           error: `Unauthorized: ${validation.reason ?? "Invalid token"}`,
           code,
@@ -474,27 +418,6 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
 
       reply.raw.on("finish", cleanup);
       reply.raw.on("close", cleanup);
-
-      const isKimi =
-        tokenRecord.name?.toLowerCase().includes("kimi") ||
-        tokenRecord.id?.includes("kimi") ||
-        principal.id?.includes("kimi");
-      if (isKimi) {
-        KimiAuthTraceCollector.getInstance().record({
-          timestamp: new Date().toISOString(),
-          method: request.method,
-          path: request.url,
-          statusCode: 200,
-          userAgent: request.headers["user-agent"],
-          accept: request.headers["accept"],
-          contentType: request.headers["content-type"],
-          authorizationPresent: true,
-          wwwAuthenticatePresent: false,
-          oauthStage: "mcp-request",
-          clientId: principal.id,
-          scope: principal.scopes?.join(" "),
-        });
-      }
 
       try {
         reply.hijack();

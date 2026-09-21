@@ -1,34 +1,26 @@
-# LocalBridge
+# Nexus
 
-> 面向本地开发项目的安全模型上下文协议（Model Context Protocol, MCP）桥接系统。
+> ChatGPT 专用的 Local AI Control Plane，基于 LocalBridge 运行时架构构建。
 
-LocalBridge 允许 ChatGPT、Claude、Codex 等支持 MCP 的 AI 助手，在严格权限受控的前提下，安全地访问、搜索、修改、构建和测试用户本地电脑上的项目，而无需将整机磁盘暴露给 AI，也无需将源码上传给不可信的第三方。
+Nexus 是专门面向 ChatGPT 打造的本地 AI 控制面（Local AI Control Plane）。它通过高性能、强安全的 Secure MCP Tunnel，将 ChatGPT 深度连接至本地开发环境，使 ChatGPT 能够在严格权限约束与沙箱保护下，对本地项目执行检索、修改、构建、运行与测试，而无需暴露整机磁盘或将源代码泄露给第三方。
 
 ---
 
-## 总体架构设计
-
-LocalBridge 严格遵循 Server 与 Runner 权限分离原则：
-
 ```text
-AI Client (ChatGPT / Claude / Codex)
-        │
-        │ MCP 2026-07-28 Streamable HTTP (POST /mcp, Bearer lb_xxx)
-        ▼
-LocalBridge Server (Node.js + Fastify)
-        │
-        │ LocalBridge RPC (JSON-RPC 2.0 over WebSocket, Auth lbr_xxx)
-        ▼
-LocalBridge Runner (用户本地驻留 Node.js 守护进程)
-        │
-        ├── Filesystem (沙箱限制、Canonical Path 严格校验)
-        ├── Git CLI
-        ├── Shell (命令风险引擎识别、超时熔断)
-        ├── Build & Test 执行引擎
-        └── 长时间后台任务 (Jobs)
-        │
-        ▼
-用户授权项目目录 (例如 D:\Projects\my-app)
+ChatGPT
+   │
+   │ Secure MCP Tunnel (Streamable HTTP / SSE, Bearer lb_xxx)
+   ▼
+Nexus (Local AI Control Plane)
+   │
+   ├── 本地已授权项目 (Local Projects / 沙箱与规范路径校验)
+   ├── 59 个原生 MCP 工具 (Model Context Protocol)
+   ├── Git CLI 与托管工作树 (Managed Worktrees)
+   ├── 常驻运行时 (Persistent Runtime) 与后台任务 (Jobs)
+   ├── 代码智能分析 (Code Intelligence / LSP)
+   ├── 工作流会话与检查点 (Workflow Sessions & Checkpoints)
+   ├── 安全策略引擎与本地审批把关 (Policy Engine & Approval Gates)
+   └── 全权控制 (Full Control) 与 Laya 原生集成
 ```
 
 ### 核心安全保障
