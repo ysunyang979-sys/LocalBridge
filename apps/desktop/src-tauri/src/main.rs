@@ -1720,6 +1720,12 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     runner_cmd.env("LOCALBRIDGE_SERVER_URL", "ws://127.0.0.1:18080/runner/ws");
     runner_cmd.env("LOCALBRIDGE_RUNNER_TOKEN", &runner_token);
     runner_cmd.env("LOCALBRIDGE_PROJECTS_PATH", projects_path.to_string_lossy().to_string());
+    if let Some(lsp_dir) = resolve_resource_file(app, "lsp") {
+        runner_cmd.env("LOCALBRIDGE_LSP_DIR", lsp_dir.to_string_lossy().to_string());
+    }
+    if let Some(resources_dir) = runner_entry.parent().and_then(|p| p.parent()) {
+        runner_cmd.env("LOCALBRIDGE_RESOURCES_PATH", resources_dir.to_string_lossy().to_string());
+    }
 
     #[cfg(target_os = "windows")]
     runner_cmd.creation_flags(CREATE_NO_WINDOW);

@@ -28,7 +28,23 @@ if (!fs.existsSync(tunnelExe) || !fs.existsSync(cloudflaredExe) || !fs.existsSyn
   throw new Error("Tauri resource verification failed; bundled tunnel runtime or license missing.");
 }
 
-console.log("Bundled resources contain verified tunnel runtime and no database or migration-backup artifacts.");
+const lspCli = path.join(resources, "lsp/node_modules/typescript-language-server/lib/cli.mjs");
+const lspTsserver = path.join(resources, "lsp/node_modules/typescript/lib/tsserver.js");
+if (!fs.existsSync(lspCli) || !fs.existsSync(lspTsserver)) {
+  throw new Error("Tauri resource verification failed; bundled language server (typescript-language-server / typescript) missing.");
+}
+
+const bundledNodeExe = path.join(resources, "runtime/node.exe");
+if (fs.existsSync(bundledNodeExe)) {
+  const version = child_process.execFileSync(bundledNodeExe, [lspCli, "--version"], {
+    env: { PATH: "", SystemRoot: process.env.SystemRoot || "C:\\Windows" },
+  }).toString().trim();
+  if (!version.startsWith("6.")) {
+    throw new Error(`Tauri resource verification failed; unexpected language server version: ${version}`);
+  }
+}
+
+console.log("Bundled resources contain verified tunnel runtime, bundled language server, and no database or migration-backup artifacts.");
 
 // Section 9: Build Artifact Regression Test
 // Verify the bundled server runtime directly by launching it and fetching tools/list

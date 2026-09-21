@@ -19,6 +19,7 @@ const runtimeDir = path.join(resourcesDir, "runtime");
 const serverDir = path.join(resourcesDir, "server");
 const runnerDir = path.join(resourcesDir, "runner");
 const tunnelDir = path.join(resourcesDir, "tunnel");
+const lspDir = path.join(resourcesDir, "lsp");
 
 function findPnpmPackage(packageName: string, preferredVersion?: string): string {
   const pnpmDir = path.resolve(rootDir, "node_modules/.pnpm");
@@ -59,7 +60,7 @@ async function main() {
 
   // 1. Clean only the controlled build outputs. This makes preparation
   // deterministic and prevents stale runtime or database files being shipped.
-  for (const controlledDir of [runtimeDir, serverDir, runnerDir]) {
+  for (const controlledDir of [runtimeDir, serverDir, runnerDir, lspDir]) {
     const relative = path.relative(resourcesDir, controlledDir);
     if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(`Refusing to clean uncontrolled resource path: ${controlledDir}`);
@@ -71,6 +72,7 @@ async function main() {
   fs.mkdirSync(runtimeDir, { recursive: true });
   fs.mkdirSync(serverDir, { recursive: true });
   fs.mkdirSync(runnerDir, { recursive: true });
+  fs.mkdirSync(lspDir, { recursive: true });
 
   // Ensure workspace packages are freshly built from source before bundling server/runner.
   // Rebuilding packages is fast (<2s) and eliminates stale package bundle drift.
@@ -198,6 +200,37 @@ async function main() {
     fs.cpSync(externalTunnelSource, tunnelDir, { recursive: true });
   }
 
+  // 4c. Prepare Bundled Language Server (typescript-language-server + typescript)
+  console.log("\nBundling production Language Server dependencies...");
+  const lspNodeModules = path.join(lspDir, "node_modules");
+  fs.mkdirSync(lspNodeModules, { recursive: true });
+
+  const tsLspRoot = findPnpmPackage("typescript-language-server");
+  const destTsLsp = path.join(lspNodeModules, "typescript-language-server");
+  fs.mkdirSync(destTsLsp, { recursive: true });
+  fs.copyFileSync(path.join(tsLspRoot, "package.json"), path.join(destTsLsp, "package.json"));
+  fs.cpSync(path.join(tsLspRoot, "lib"), path.join(destTsLsp, "lib"), { recursive: true });
+  console.log(`-> Copied typescript-language-server to ${destTsLsp}`);
+
+  const tsRoot = findPnpmPackage("typescript");
+  const destTs = path.join(lspNodeModules, "typescript");
+  fs.mkdirSync(destTs, { recursive: true });
+  fs.copyFileSync(path.join(tsRoot, "package.json"), path.join(destTs, "package.json"));
+  fs.cpSync(path.join(tsRoot, "lib"), path.join(destTs, "lib"), { recursive: true });
+  if (fs.existsSync(path.join(tsRoot, "bin"))) {
+    fs.cpSync(path.join(tsRoot, "bin"), path.join(destTs, "bin"), { recursive: true });
+  }
+  if (fs.existsSync(path.join(tsRoot, "LICENSE.txt"))) {
+    fs.copyFileSync(path.join(tsRoot, "LICENSE.txt"), path.join(destTs, "LICENSE.txt"));
+  }
+  console.log(`-> Copied typescript to ${destTs}`);
+
+  fs.writeFileSync(
+    path.join(lspDir, "package.json"),
+    JSON.stringify({ name: "@localbridge/lsp-runtime", type: "module", private: true }, null, 2),
+    "utf-8"
+  );
+
   // 5. Verification Test
   console.log("\nVerifying bundled runtime integrity using bundled node.exe...");
   const verifyResult = child_process.execFileSync(destNodeExe, [
@@ -239,6 +272,20 @@ async function main() {
   ], { cwd: runnerDir, env: { ...process.env, LOCALBRIDGE_RUNNER_TOKEN: "lbr_test_test_test_test_test_test_123", LOCALBRIDGE_SERVER_URL: "ws://127.0.0.1:1/ignore", LOCALBRIDGE_LOG_LEVEL: "silent" } }).toString().trim();
 
   console.log(`Runner import verification: ${runnerImportTest}`);
+
+  // 8. Test bundled Language Server with bundled node.exe and sanitized/empty PATH
+  const lspCliPath = path.join(destTsLsp, "lib/cli.mjs");
+  const tsserverPath = path.join(destTs, "lib/tsserver.js");
+  if (!fs.existsSync(lspCliPath) || !fs.existsSync(tsserverPath)) {
+    throw new Error("Bundled LSP files missing after packaging!");
+  }
+  const lspVersion = child_process.execFileSync(destNodeExe, [lspCliPath, "--version"], {
+    env: { PATH: "", SystemRoot: process.env.SystemRoot || "C:\\Windows" },
+  }).toString().trim();
+  console.log(`Language server verification (--version): ${lspVersion}`);
+  if (!lspVersion.startsWith("6.")) {
+    throw new Error(`Unexpected bundled typescript-language-server version: ${lspVersion}`);
+  }
 
   const forbidden = fs.readdirSync(resourcesDir, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && /(?:\.db|\.db-wal|\.db-shm|\.bak)$/i.test(entry.name));
