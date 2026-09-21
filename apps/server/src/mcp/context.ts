@@ -12,7 +12,7 @@ import { WorkflowSessionManager } from "../session/manager.js";
 import { ManagedWorktreeManager } from "../worktree/manager.js";
 import { ServerPersistentRuntimeManager } from "../runtime/index.js";
 import {
-  DisabledDecisionProvider,
+  ManagedDecisionProvider,
   type DecisionProvider,
 } from "@localbridge/security";
 import type {
@@ -122,8 +122,22 @@ export class McpContext {
           })
         : undefined);
 
+    let initialConfig: Partial<DecisionProviderConfig> = { provider: "disabled" };
+    if (deps.db) {
+      try {
+        const row = deps.db
+          .prepare("SELECT value FROM system_settings WHERE key = 'intelligence_config'")
+          .get() as { value: string } | undefined;
+        if (row?.value) {
+          initialConfig = JSON.parse(row.value);
+        }
+      } catch {
+        // Table or row might not exist yet
+      }
+    }
+
     this.decisionProvider =
-      deps.decisionProvider ?? new DisabledDecisionProvider();
+      deps.decisionProvider ?? new ManagedDecisionProvider(initialConfig);
   }
 
   async getDecisionAdvice(context: DecisionContext): Promise<DecisionAdvice> {
@@ -137,7 +151,28 @@ export class McpContext {
   async updateIntelligenceConfig(
     config: Partial<DecisionProviderConfig>
   ): Promise<IntelligenceStatusDto> {
-    return this.decisionProvider.updateConfig(config);
+    const status = await this.decisionProvider.updateConfig(config);
+    if (this.db) {
+      try {
+        const fullConfig = {
+          provider: status.provider,
+          modelPath: status.modelPath,
+          pythonPath: status.pythonPath,
+          workerTimeoutMs: status.inferenceTimeoutMs,
+          startupTimeoutMs: status.startupTimeoutMs,
+          inferenceTimeoutMs: status.inferenceTimeoutMs,
+          developerOverride: status.developerOverride,
+        };
+        this.db
+          .prepare(
+            "INSERT INTO system_settings (key, value, updated_at) VALUES ('intelligence_config', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
+          )
+          .run(JSON.stringify(fullConfig), Date.now());
+      } catch (err) {
+        this.logger?.warn?.({ err }, "Failed to persist intelligence_config to system_settings");
+      }
+    }
+    return status;
   }
 
   getModelStatus(): ModelStatusDto {
@@ -156,16 +191,37 @@ export class McpContext {
     return this.decisionProvider.validateModelPath(dir);
   }
 
-  setModelPath(dir: string): Promise<ModelStatusDto> {
+  async setModelPath(dir: string): Promise<ModelStatusDto> {
     return this.decisionProvider.setModelPath(dir);
   }
 
-  importExistingModel(sourceDir: string, copyToManaged?: boolean): Promise<ModelStatusDto> {
+  async importExistingModel(sourceDir: string, copyToManaged?: boolean): Promise<ModelStatusDto> {
     return this.decisionProvider.importExistingModel(sourceDir, copyToManaged);
   }
 
-  downloadAndEnableModel(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
-    return this.decisionProvider.downloadAndEnable(options);
+  async downloadAndEnableModel(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
+    const status = await this.decisionProvider.downloadAndEnable(options);
+    if (this.db) {
+      try {
+        const fullConfig = {
+          provider: status.provider,
+          modelPath: status.modelPath,
+          pythonPath: status.pythonPath,
+          workerTimeoutMs: status.inferenceTimeoutMs,
+          startupTimeoutMs: status.startupTimeoutMs,
+          inferenceTimeoutMs: status.inferenceTimeoutMs,
+          developerOverride: status.developerOverride,
+        };
+        this.db
+          .prepare(
+            "INSERT INTO system_settings (key, value, updated_at) VALUES ('intelligence_config', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
+          )
+          .run(JSON.stringify(fullConfig), Date.now());
+      } catch (err) {
+        this.logger?.warn?.({ err }, "Failed to persist intelligence_config to system_settings");
+      }
+    }
+    return status;
   }
 
   recordSessionEvent(event: {

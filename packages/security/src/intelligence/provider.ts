@@ -1,6 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import fs from "node:fs";
-import * as path from "node:path";
 import * as readline from "node:readline";
 import type {
   DecisionContext,
@@ -19,19 +17,15 @@ import {
   getDevFallbackModelDir,
   validateModelDir,
 } from "./downloader.js";
+import {
+  resolveLayaExecutionEnvironment,
+  sanitizeLayaExecutionEnv,
+  type ResolvedLayaEnvironment,
+} from "./runtime.js";
 
 export function resolveDefaultPythonPath(): string {
-  if (
-    process.env.LOCALBRIDGE_LAYA_PYTHON_PATH &&
-    fs.existsSync(process.env.LOCALBRIDGE_LAYA_PYTHON_PATH)
-  ) {
-    return process.env.LOCALBRIDGE_LAYA_PYTHON_PATH;
-  }
-  const devConda = path.resolve("E:/Tools/Anado/Anaa/envs/nexus-laya/python.exe");
-  if (fs.existsSync(devConda)) {
-    return devConda;
-  }
-  return "python";
+  const env = resolveLayaExecutionEnvironment();
+  return env.pythonPath;
 }
 
 export function resolveDefaultModelPath(): string {
@@ -70,6 +64,11 @@ export class DisabledDecisionProvider implements DecisionProvider {
   getAdvice(_context: DecisionContext): Promise<DecisionAdvice> {
     return Promise.resolve({
       provider: "disabled",
+      providerUsed: "disabled",
+      fallbackUsed: false,
+      workerReady: false,
+      modelLoaded: false,
+      inferenceExecuted: false,
       risk: {
         label: "medium",
         confidence: 0.5,
@@ -88,15 +87,26 @@ export class DisabledDecisionProvider implements DecisionProvider {
   }
 
   getStatus(): IntelligenceStatusDto {
+    const resolved = resolveLayaExecutionEnvironment();
     return {
       provider: "disabled",
       status: "disabled",
       model: "Disabled",
       execution: "local",
+      latencyMs: 0,
       language: "Multilingual (100+ languages)",
       modelPath: this.downloadManager.getTargetDir(),
-      pythonPath: resolveDefaultPythonPath(),
+      pythonPath: resolved.pythonPath,
       lastError: null,
+      runtimeType: resolved.runtimeType,
+      workerStatus: "stopped",
+      modelLoaded: false,
+      providerClass: "DisabledDecisionProvider",
+      inferenceReady: false,
+      developerOverride: false,
+      warmInferenceMs: null,
+      startupTimeoutMs: 30000,
+      inferenceTimeoutMs: 5000,
     };
   }
 
@@ -151,12 +161,17 @@ export class LayaDecisionProvider implements DecisionProvider {
   private config: DecisionProviderConfig;
   private workerProcess: ChildProcess | null = null;
   private status: IntelligenceWorkerStatus = "disabled";
+  private workerStatus: "running" | "stopped" | "starting" | "error" = "stopped";
+  private modelLoaded = false;
   private lastError: string | null = null;
   private lastLatencyMs = 0;
+  private warmInferenceMs: number | null = null;
   private reqCounter = 0;
   private pendingRequests = new Map<string, PendingRequest>();
   private isShuttingDown = false;
   private downloadManager: ModelDownloadManager;
+  private resolvedEnv: ResolvedLayaEnvironment;
+  private readyWaiters: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
 
   constructor(
     config: Partial<DecisionProviderConfig> = {},
@@ -170,9 +185,16 @@ export class LayaDecisionProvider implements DecisionProvider {
       modelPath: config.modelPath || defaultModel,
       pythonPath: config.pythonPath || defaultPython,
       workerTimeoutMs: config.workerTimeoutMs || 5000,
+      startupTimeoutMs: config.startupTimeoutMs || 30000,
+      inferenceTimeoutMs: config.inferenceTimeoutMs || config.workerTimeoutMs || 5000,
+      developerOverride: config.developerOverride || false,
     };
 
     this.downloadManager = downloadManager || new ModelDownloadManager(this.config.modelPath);
+    this.resolvedEnv = resolveLayaExecutionEnvironment({
+      developerOverride: this.config.developerOverride,
+      customPythonPath: this.config.pythonPath,
+    });
 
     if (this.config.provider === "laya") {
       this.initWorker();
@@ -218,11 +240,9 @@ export class LayaDecisionProvider implements DecisionProvider {
   }
 
   async downloadAndEnable(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
-    // 1. Download model if needed
     const modelStatus = this.downloadManager.getStatus();
     if (!modelStatus.installed) {
       await this.downloadManager.startDownload(options);
-      // Wait for download to finish (or error)
       for (let i = 0; i < 600; i++) {
         await new Promise((r) => setTimeout(r, 200));
         const curr = this.downloadManager.getStatus();
@@ -233,32 +253,75 @@ export class LayaDecisionProvider implements DecisionProvider {
       }
     }
 
-    // 2. Enable provider and boot worker
     return this.updateConfig({
       provider: "laya",
       modelPath: this.downloadManager.getTargetDir(),
     });
   }
 
+  async ensureReady(timeoutMs?: number): Promise<boolean> {
+    const timeout = timeoutMs || this.config.startupTimeoutMs || 30000;
+    if (this.status === "ready" && this.modelLoaded) {
+      return true;
+    }
+    if (this.status === "error") {
+      throw new Error(this.lastError || "Laya worker encountered error on startup");
+    }
+
+    return new Promise<boolean>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const idx = this.readyWaiters.findIndex((w) => w.resolve === resolveWaiter);
+        if (idx !== -1) this.readyWaiters.splice(idx, 1);
+        reject(new Error(`Laya worker readiness timed out after ${timeout}ms`));
+      }, timeout);
+
+      const resolveWaiter = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+
+      const rejectWaiter = (err: Error) => {
+        clearTimeout(timer);
+        reject(err);
+      };
+
+      this.readyWaiters.push({ resolve: resolveWaiter, reject: rejectWaiter });
+    });
+  }
+
+  private notifyReady(err?: Error) {
+    const waiters = [...this.readyWaiters];
+    this.readyWaiters = [];
+    for (const waiter of waiters) {
+      if (err) {
+        waiter.reject(err);
+      } else {
+        waiter.resolve();
+      }
+    }
+  }
+
   private initWorker(): void {
     if (this.workerProcess || this.isShuttingDown) return;
 
-    this.status = "loading";
+    this.status = "starting";
+    this.workerStatus = "starting";
+    this.modelLoaded = false;
     this.lastError = null;
 
     try {
-      const workerScript = path.resolve(
-        process.cwd(),
-        "scripts",
-        "laya_worker.py"
-      );
+      this.resolvedEnv = resolveLayaExecutionEnvironment({
+        developerOverride: this.config.developerOverride,
+        customPythonPath: this.config.pythonPath,
+      });
 
-      this.workerProcess = spawn(this.config.pythonPath, [workerScript], {
+      const workerScript = this.resolvedEnv.workerScript;
+      const pythonExecutable = this.resolvedEnv.pythonPath;
+      const sanitizedEnv = sanitizeLayaExecutionEnv(process.env);
+
+      this.workerProcess = spawn(pythonExecutable, [workerScript], {
         stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          PYTHONUNBUFFERED: "1",
-        },
+        env: sanitizedEnv,
       });
 
       if (!this.workerProcess.stdout || !this.workerProcess.stdin) {
@@ -283,10 +346,12 @@ export class LayaDecisionProvider implements DecisionProvider {
 
       this.workerProcess.on("exit", (code) => {
         this.workerProcess = null;
+        this.workerStatus = "stopped";
+        this.modelLoaded = false;
         if (!this.isShuttingDown) {
           this.status = "offline";
           this.lastError = `Worker process exited with code ${code}`;
-          // Reject any pending requests with safe fallback
+          this.notifyReady(new Error(this.lastError));
           for (const [id, req] of this.pendingRequests.entries()) {
             clearTimeout(req.timer);
             req.resolve(this.getFallbackAdvice("worker_crash"));
@@ -297,17 +362,17 @@ export class LayaDecisionProvider implements DecisionProvider {
 
       this.workerProcess.on("error", (err) => {
         this.status = "error";
+        this.workerStatus = "error";
+        this.modelLoaded = false;
         this.lastError = err.message;
-      });
-
-      // Send initial configuration to worker
-      this.sendToWorker({
-        type: "init",
-        model_path: this.config.modelPath,
+        this.notifyReady(err);
       });
     } catch (err: any) {
       this.status = "error";
+      this.workerStatus = "error";
+      this.modelLoaded = false;
       this.lastError = err.message || "Failed to spawn Laya worker";
+      this.notifyReady(err);
     }
   }
 
@@ -329,13 +394,24 @@ export class LayaDecisionProvider implements DecisionProvider {
     try {
       const msg = JSON.parse(line);
       if (msg.type === "worker_started") {
-        // Worker process is up
+        this.status = "loading";
+        this.workerStatus = "running";
+        this.sendToWorker({
+          type: "init",
+          model_path: this.config.modelPath,
+        });
       } else if (msg.type === "init_ok") {
         this.status = "ready";
+        this.workerStatus = "running";
+        this.modelLoaded = Boolean(msg.loaded !== false && msg.model === "laya-multilingual");
         this.lastError = null;
+        this.notifyReady();
       } else if (msg.type === "init_error") {
         this.status = "error";
+        this.workerStatus = "error";
+        this.modelLoaded = false;
         this.lastError = msg.error || "Model initialization failed";
+        this.notifyReady(new Error(this.lastError || "Model initialization failed"));
       } else if (msg.type === "predict_ok") {
         const id = msg.id;
         const pending = this.pendingRequests.get(id);
@@ -344,6 +420,9 @@ export class LayaDecisionProvider implements DecisionProvider {
           this.pendingRequests.delete(id);
           const advice: DecisionAdvice = msg.advice;
           this.lastLatencyMs = advice.latencyMs;
+          if (advice.inferenceExecuted && !advice.fallbackUsed && advice.latencyMs > 0) {
+            this.warmInferenceMs = advice.latencyMs;
+          }
           pending.resolve(advice);
         }
       }
@@ -355,6 +434,11 @@ export class LayaDecisionProvider implements DecisionProvider {
   private getFallbackAdvice(reason: string): DecisionAdvice {
     return {
       provider: "laya",
+      providerUsed: "laya",
+      fallbackUsed: true,
+      workerReady: this.workerStatus === "running",
+      modelLoaded: this.modelLoaded,
+      inferenceExecuted: false,
       risk: {
         label: "medium",
         confidence: 0.5,
@@ -366,7 +450,7 @@ export class LayaDecisionProvider implements DecisionProvider {
       category: null,
       routing: {},
       reasoningTags: [`fallback:${reason}`],
-      latencyMs: 1,
+      latencyMs: 0,
       model: "laya-multilingual-fallback",
       advisoryOnly: true,
     };
@@ -378,18 +462,18 @@ export class LayaDecisionProvider implements DecisionProvider {
     }
 
     if (this.status !== "ready" && this.status !== "loading") {
-      // Offline / error -> non-blocking fallback
       return this.getFallbackAdvice("worker_unavailable");
     }
 
     const sanitized = sanitizeDecisionContext(context);
     const reqId = `req_${++this.reqCounter}_${Date.now()}`;
+    const timeoutMs = this.config.inferenceTimeoutMs || this.config.workerTimeoutMs || 5000;
 
     return new Promise<DecisionAdvice>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(reqId);
         resolve(this.getFallbackAdvice("timeout"));
-      }, this.config.workerTimeoutMs);
+      }, timeoutMs);
 
       this.pendingRequests.set(reqId, {
         resolve,
@@ -420,8 +504,17 @@ export class LayaDecisionProvider implements DecisionProvider {
       latencyMs: this.lastLatencyMs,
       language: "Multilingual (100+ languages)",
       modelPath: this.config.modelPath,
-      pythonPath: this.config.pythonPath,
+      pythonPath: this.resolvedEnv.pythonPath,
       lastError: this.lastError,
+      runtimeType: this.resolvedEnv.runtimeType,
+      workerStatus: this.workerStatus,
+      modelLoaded: this.modelLoaded,
+      providerClass: "LayaDecisionProvider",
+      inferenceReady: this.status === "ready" && this.modelLoaded,
+      developerOverride: Boolean(this.config.developerOverride),
+      warmInferenceMs: this.warmInferenceMs,
+      startupTimeoutMs: this.config.startupTimeoutMs || 30000,
+      inferenceTimeoutMs: this.config.inferenceTimeoutMs || 5000,
     };
   }
 
@@ -441,14 +534,23 @@ export class LayaDecisionProvider implements DecisionProvider {
     if (config.workerTimeoutMs !== undefined) {
       this.config.workerTimeoutMs = config.workerTimeoutMs;
     }
+    if (config.startupTimeoutMs !== undefined) {
+      this.config.startupTimeoutMs = config.startupTimeoutMs;
+    }
+    if (config.inferenceTimeoutMs !== undefined) {
+      this.config.inferenceTimeoutMs = config.inferenceTimeoutMs;
+    }
+    if (config.developerOverride !== undefined) {
+      this.config.developerOverride = config.developerOverride;
+    }
 
     if (this.config.provider === "disabled") {
       await this.shutdown();
       this.status = "disabled";
+      this.workerStatus = "stopped";
       return this.getStatus();
     }
 
-    // Restart worker with new parameters
     await this.shutdown();
     this.isShuttingDown = false;
     this.initWorker();
@@ -463,7 +565,6 @@ export class LayaDecisionProvider implements DecisionProvider {
       const proc = this.workerProcess;
       this.workerProcess = null;
 
-      // Allow 500ms graceful shutdown before SIGKILL
       await new Promise<void>((resolve) => {
         const killTimer = setTimeout(() => {
           try {
@@ -479,5 +580,141 @@ export class LayaDecisionProvider implements DecisionProvider {
       });
     }
     this.status = "disabled";
+    this.workerStatus = "stopped";
+    this.modelLoaded = false;
+  }
+}
+
+export class ManagedDecisionProvider implements DecisionProvider {
+  private activeProvider: DecisionProvider;
+  private downloadManager: ModelDownloadManager;
+  private config: DecisionProviderConfig;
+
+  constructor(
+    config: Partial<DecisionProviderConfig> = {},
+    downloadManager?: ModelDownloadManager
+  ) {
+    this.downloadManager =
+      downloadManager || new ModelDownloadManager(config.modelPath || resolveDefaultModelPath());
+
+    this.config = {
+      provider: config.provider || "disabled",
+      modelPath: config.modelPath || this.downloadManager.getTargetDir(),
+      pythonPath: config.pythonPath || resolveDefaultPythonPath(),
+      workerTimeoutMs: config.workerTimeoutMs || 5000,
+      startupTimeoutMs: config.startupTimeoutMs || 30000,
+      inferenceTimeoutMs: config.inferenceTimeoutMs || 5000,
+      developerOverride: config.developerOverride || false,
+    };
+
+    if (this.config.provider === "laya") {
+      this.activeProvider = new LayaDecisionProvider(this.config, this.downloadManager);
+    } else {
+      this.activeProvider = new DisabledDecisionProvider(this.downloadManager);
+    }
+  }
+
+  getAdvice(context: DecisionContext): Promise<DecisionAdvice> {
+    return this.activeProvider.getAdvice(context);
+  }
+
+  getStatus(): IntelligenceStatusDto {
+    return this.activeProvider.getStatus();
+  }
+
+  getModelStatus(): ModelStatusDto {
+    return this.downloadManager.getStatus();
+  }
+
+  startModelDownload(options?: ModelDownloadOptions): Promise<ModelStatusDto> {
+    return this.downloadManager.startDownload(options);
+  }
+
+  cancelModelDownload(): ModelStatusDto {
+    return this.downloadManager.cancelDownload();
+  }
+
+  validateModelPath(dir: string): ModelValidationResult {
+    return this.downloadManager.validateDirectory(dir);
+  }
+
+  async setModelPath(dir: string): Promise<ModelStatusDto> {
+    const status = this.downloadManager.setTargetDir(dir);
+    this.config.modelPath = dir;
+    if (this.activeProvider instanceof LayaDecisionProvider && status.installed) {
+      await this.activeProvider.setModelPath(dir);
+    }
+    return status;
+  }
+
+  async importExistingModel(sourceDir: string, copyToManaged = false): Promise<ModelStatusDto> {
+    const status = await this.downloadManager.importExistingModel(sourceDir, copyToManaged);
+    this.config.modelPath = this.downloadManager.getTargetDir();
+    if (this.activeProvider instanceof LayaDecisionProvider && status.installed) {
+      await this.activeProvider.setModelPath(this.config.modelPath);
+    }
+    return status;
+  }
+
+  async downloadAndEnable(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
+    const modelStatus = this.downloadManager.getStatus();
+    if (!modelStatus.installed) {
+      await this.downloadManager.startDownload(options);
+      for (let i = 0; i < 600; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        const curr = this.downloadManager.getStatus();
+        if (curr.installed) break;
+        if (curr.status === "error") {
+          throw new Error(curr.error || "Model download failed");
+        }
+      }
+    }
+
+    return this.updateConfig({
+      provider: "laya",
+      modelPath: this.downloadManager.getTargetDir(),
+    });
+  }
+
+  async updateConfig(
+    config: Partial<DecisionProviderConfig>
+  ): Promise<IntelligenceStatusDto> {
+    Object.assign(this.config, config);
+
+    if (config.modelPath) {
+      this.downloadManager.setTargetDir(config.modelPath);
+    }
+
+    if (config.provider === "laya") {
+      const validation = this.downloadManager.validateDirectory(this.config.modelPath);
+      if (!validation.valid) {
+        throw new Error(
+          `Cannot enable Laya decisions: model is not ready (${validation.error || "missing model files"}).`
+        );
+      }
+
+      await this.activeProvider.shutdown();
+      const layaProvider = new LayaDecisionProvider(this.config, this.downloadManager);
+      try {
+        await layaProvider.ensureReady(this.config.startupTimeoutMs || 30000);
+        this.activeProvider = layaProvider;
+        return layaProvider.getStatus();
+      } catch (err: any) {
+        await layaProvider.shutdown();
+        this.config.provider = "disabled";
+        this.activeProvider = new DisabledDecisionProvider(this.downloadManager);
+        throw err;
+      }
+    } else if (config.provider === "disabled") {
+      await this.activeProvider.shutdown();
+      this.activeProvider = new DisabledDecisionProvider(this.downloadManager);
+      return this.activeProvider.getStatus();
+    } else {
+      return this.activeProvider.updateConfig(config);
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    await this.activeProvider.shutdown();
   }
 }

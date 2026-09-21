@@ -34,12 +34,20 @@ export interface DecisionAdvice {
   latencyMs: number;
   model: string;
   advisoryOnly: true;
+
+  // Real inference & telemetry fields
+  providerUsed?: "laya" | "disabled" | string;
+  fallbackUsed?: boolean;
+  workerReady?: boolean;
+  modelLoaded?: boolean;
+  inferenceExecuted?: boolean;
 }
 
 export type DecisionProviderType = "disabled" | "laya";
 
 export type IntelligenceWorkerStatus =
   | "disabled"
+  | "starting"
   | "loading"
   | "ready"
   | "offline"
@@ -50,6 +58,9 @@ export interface DecisionProviderConfig {
   modelPath: string;
   pythonPath: string;
   workerTimeoutMs?: number;
+  startupTimeoutMs?: number;
+  inferenceTimeoutMs?: number;
+  developerOverride?: boolean;
 }
 
 export interface IntelligenceStatusDto {
@@ -63,6 +74,17 @@ export interface IntelligenceStatusDto {
   modelPath: string;
   pythonPath: string;
   lastError?: string | null;
+
+  // Real Worker & Runtime Telemetry
+  runtimeType?: "managed" | "developer-override" | "system";
+  workerStatus?: "running" | "stopped" | "starting" | "error";
+  modelLoaded?: boolean;
+  providerClass?: "LayaDecisionProvider" | "DisabledDecisionProvider";
+  inferenceReady?: boolean;
+  developerOverride?: boolean;
+  warmInferenceMs?: number | null;
+  startupTimeoutMs?: number;
+  inferenceTimeoutMs?: number;
 }
 
 export type ModelDownloadStatus =

@@ -98,6 +98,11 @@ def simulate_prediction(context, latency_ms=8):
 
     return {
         "provider": "laya",
+        "providerUsed": "laya",
+        "fallbackUsed": True,
+        "workerReady": True,
+        "modelLoaded": False,
+        "inferenceExecuted": False,
         "risk": {
             "label": risk_label,
             "confidence": confidence
@@ -112,7 +117,7 @@ def simulate_prediction(context, latency_ms=8):
             "suggestedSkill": "general"
         },
         "reasoningTags": reasoning_tags,
-        "latencyMs": latency_ms,
+        "latencyMs": 0,
         "model": "laya-multilingual-simulated",
         "advisoryOnly": True
     }
@@ -166,6 +171,11 @@ def handle_predict(req_id, context):
         
         advice = {
             "provider": "laya",
+            "providerUsed": "laya",
+            "fallbackUsed": False,
+            "workerReady": True,
+            "modelLoaded": True,
+            "inferenceExecuted": True,
             "risk": {
                 "label": risk_label,
                 "confidence": round(risk_conf, 4)
@@ -188,7 +198,7 @@ def handle_predict(req_id, context):
     except Exception as e:
         sys.stderr.write(f"[laya_worker] predict error: {e}\n{traceback.format_exc()}\n")
         # On error, fallback gracefully to simulation
-        advice = simulate_prediction(context, latency_ms=max(1, int((time.time() - start_time) * 1000)))
+        advice = simulate_prediction(context, latency_ms=0)
         send_response({"type": "predict_ok", "id": req_id, "advice": advice})
 
 def send_response(obj):
@@ -220,17 +230,17 @@ def main():
                 import laya
                 if model_path and os.path.exists(model_path):
                     model_agent = laya.load(model_path)
-                    send_response({"type": "init_ok", "model": "laya-multilingual", "path": model_path})
+                    send_response({"type": "init_ok", "model": "laya-multilingual", "path": model_path, "loaded": True})
                 else:
                     # Simulation mode
                     model_agent = None
-                    send_response({"type": "init_ok", "model": "laya-multilingual-simulated", "note": "Model path not found, using safe heuristic"})
+                    send_response({"type": "init_ok", "model": "laya-multilingual-simulated", "note": "Model path not found, using safe heuristic", "loaded": False})
             except ImportError:
                 model_agent = None
-                send_response({"type": "init_ok", "model": "laya-multilingual-simulated", "note": "Laya package not found, using safe heuristic"})
+                send_response({"type": "init_ok", "model": "laya-multilingual-simulated", "note": "Laya package not found, using safe heuristic", "loaded": False})
             except Exception as e:
                 model_agent = None
-                send_response({"type": "init_error", "error": str(e)})
+                send_response({"type": "init_error", "error": str(e), "loaded": False})
 
         elif req_type == "ping":
             send_response({"type": "pong", "loaded": model_agent is not None})

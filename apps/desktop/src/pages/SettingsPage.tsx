@@ -32,6 +32,13 @@ import {
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import { useTheme, type ThemeMode } from "../theme/ThemeContext.js";
+import {
+  mapRiskLabel,
+  mapApprovalRecommendation,
+  mapCategory,
+  mapReasoningTag,
+  formatLatency,
+} from "../i18n/intelligence-map.js";
 import nexusLogo from "../assets/nexus.png";
 import type {
   Project,
@@ -163,12 +170,24 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [intelProvider, setIntelProvider] = useState<"disabled" | "laya">("disabled");
   const [intelModelPath, setIntelModelPath] = useState("");
   const [intelPythonPath, setIntelPythonPath] = useState("");
-  const [intelWorkerTimeout, setIntelWorkerTimeout] = useState(5000);
+  const [intelStartupTimeout, setIntelStartupTimeout] = useState(30000);
+  const [intelInferenceTimeout, setIntelInferenceTimeout] = useState(5000);
+  const [intelDeveloperOverride, setIntelDeveloperOverride] = useState(false);
   const [intelBusy, setIntelBusy] = useState(false);
   const [intelTesting, setIntelTesting] = useState(false);
   const [intelSuccessMsg, setIntelSuccessMsg] = useState<string | null>(null);
   const [intelErrorMsg, setIntelErrorMsg] = useState<string | null>(null);
   const [testAdvice, setTestAdvice] = useState<DecisionAdvice | null>(null);
+
+  const applyIntelStatus = (res: IntelligenceStatusDto) => {
+    setIntelStatus(res);
+    setIntelProvider(res.provider);
+    if (res.modelPath) setIntelModelPath(res.modelPath);
+    if (res.pythonPath) setIntelPythonPath(res.pythonPath);
+    if (res.startupTimeoutMs) setIntelStartupTimeout(res.startupTimeoutMs);
+    if (res.inferenceTimeoutMs) setIntelInferenceTimeout(res.inferenceTimeoutMs);
+    if (res.developerOverride !== undefined) setIntelDeveloperOverride(res.developerOverride);
+  };
 
   // Model Download & Productization State
   const [modelStatus, setModelStatus] = useState<ModelStatusDto | null>(null);
@@ -215,10 +234,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
     bridge.getIntelligenceStatus().then((res) => {
       if (res) {
-        setIntelStatus(res);
-        setIntelProvider(res.provider);
-        if (res.modelPath) setIntelModelPath(res.modelPath);
-        if (res.pythonPath) setIntelPythonPath(res.pythonPath);
+        applyIntelStatus(res);
       }
     }).catch(() => {});
 
@@ -373,11 +389,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           const res = await bridge.setModelPath(selected);
           setModelStatus(res);
           const status = await bridge.getIntelligenceStatus();
-          setIntelStatus(status);
+          applyIntelStatus(status);
         }
       }
     } catch (err: any) {
       console.warn("Folder picker error:", err);
+    }
+  };
+
+  const handleBrowsePythonPath = async () => {
+    try {
+      const selected = await bridge.selectExecutableFile();
+      if (selected) {
+        setIntelPythonPath(selected);
+      }
+    } catch (err: any) {
+      console.warn("Python executable picker error:", err);
     }
   };
 
@@ -390,23 +417,29 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         return;
       }
       setIntelBusy(true);
+      setIntelErrorMsg(null);
       try {
         const res = await bridge.updateIntelligenceConfig({ provider: "laya" });
-        setIntelProvider("laya");
-        setIntelStatus(res);
-        setIntelSuccessMsg(t.intelligence.savedSuccess);
-        setTimeout(() => setIntelSuccessMsg(null), 3000);
+        applyIntelStatus(res);
+        if (res.provider === "laya") {
+          setIntelSuccessMsg(t.intelligence.savedSuccess);
+          setTimeout(() => setIntelSuccessMsg(null), 3000);
+        } else {
+          setIntelProvider("disabled");
+          setIntelErrorMsg(res.lastError || "Failed to start Laya worker");
+        }
       } catch (err: any) {
+        setIntelProvider("disabled");
         setIntelErrorMsg(err?.message || "Failed to enable Laya decisions");
       } finally {
         setIntelBusy(false);
       }
     } else {
       setIntelBusy(true);
+      setIntelErrorMsg(null);
       try {
         const res = await bridge.updateIntelligenceConfig({ provider: "disabled" });
-        setIntelProvider("disabled");
-        setIntelStatus(res);
+        applyIntelStatus(res);
         setIntelSuccessMsg(t.intelligence.savedSuccess);
         setTimeout(() => setIntelSuccessMsg(null), 3000);
       } catch (err: any) {
@@ -426,8 +459,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         proxyMode: downloadProxyMode,
         customProxyUrl: downloadProxyMode === "custom" ? downloadCustomProxyUrl.trim() : undefined,
       });
-      setIntelProvider(res.provider);
-      setIntelStatus(res);
+      applyIntelStatus(res);
       await loadModelStatus();
       setIntelSuccessMsg(t.intelligence.savedSuccess);
       setTimeout(() => setIntelSuccessMsg(null), 3000);
@@ -447,10 +479,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       const res = await bridge.updateIntelligenceConfig({
         provider: intelProvider,
         modelPath: intelModelPath.trim() || undefined,
-        pythonPath: intelPythonPath.trim() || undefined,
-        workerTimeoutMs: intelWorkerTimeout,
+        pythonPath: intelDeveloperOverride ? intelPythonPath.trim() || undefined : undefined,
+        startupTimeoutMs: intelStartupTimeout,
+        inferenceTimeoutMs: intelInferenceTimeout,
+        developerOverride: intelDeveloperOverride,
       });
-      setIntelStatus(res);
+      applyIntelStatus(res);
       setIntelSuccessMsg(t.intelligence.savedSuccess);
       setTimeout(() => setIntelSuccessMsg(null), 3000);
       onRefresh();
@@ -466,10 +500,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setTestAdvice(null);
     setIntelErrorMsg(null);
     try {
+      const isZh = language.startsWith("zh");
       const advice = await bridge.evaluateDecision({
-        operation: "command.execute",
-        command: "git status",
-        technicalContext: { tool: "bash", path: "src/index.ts" },
+        operation: isZh ? "command.execute" : "file.read",
+        command: isZh ? "rm -rf /" : undefined,
+        pathType: isZh ? undefined : "relative",
+        protectedResource: false,
+        locale: language,
       });
       setTestAdvice(advice);
     } catch (err: any) {
@@ -2406,13 +2443,206 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </div>
             </div>
 
-            {/* Advanced Developer Telemetry & Testing (Advanced Mode Only) */}
+            {/* Benchmark Section (Available for both Standard & Advanced Mode) */}
+            <div className="p-4 rounded-xl border border-theme-subtle bg-theme-card space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-semibold text-theme-primary">
+                    {t.intelligence.testInference}
+                  </div>
+                  <div className="text-[11px] text-theme-muted">
+                    {language.startsWith("zh")
+                      ? "向本地 Laya 模型发送真实操作评估请求，验证端到端推理管线与延迟。"
+                      : "Send a live operation request to the local Laya model to verify end-to-end inference and latency."}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTestBenchmark}
+                  disabled={intelTesting}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {intelTesting ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 text-white" />
+                  )}
+                  <span>{intelTesting ? t.intelligence.testing : t.intelligence.testInference}</span>
+                </button>
+              </div>
+
+              {/* Benchmark Result Card */}
+              {testAdvice && (() => {
+                const isPass =
+                  testAdvice.providerUsed === "laya" &&
+                  testAdvice.workerReady === true &&
+                  testAdvice.modelLoaded === true &&
+                  testAdvice.inferenceExecuted === true &&
+                  testAdvice.fallbackUsed === false;
+
+                const testRisk = typeof testAdvice.risk === "object" ? testAdvice.risk?.label : (testAdvice as any).risk;
+                const testConf = typeof testAdvice.risk === "object" ? testAdvice.risk?.confidence : (testAdvice as any).confidence;
+                const testConfPercent = Math.round(Number(testConf ?? 0.85) * 100);
+                const testRec = (testAdvice as any).recommendation || testAdvice.approval?.recommended;
+                const testCat = testAdvice.category || "general";
+                const testRationale =
+                  testAdvice.reasoningTags && testAdvice.reasoningTags.length > 0
+                    ? testAdvice.reasoningTags.map((tag) => mapReasoningTag(tag, language)).join(", ")
+                    : null;
+
+                if (isPass) {
+                  return (
+                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl space-y-3 pt-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>{t.intelligence.benchmarkPass}</span>
+                        </span>
+                        <span className="font-mono text-[11px] text-emerald-300">
+                          {formatLatency(testAdvice.latencyMs, true)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">{t.intelligence.riskEvaluation}</div>
+                          <div className="text-rose-400 font-bold mt-0.5">{mapRiskLabel(testRisk, language)}</div>
+                        </div>
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">{t.intelligence.recommendedAction}</div>
+                          <div className="text-theme-secondary font-bold mt-0.5">
+                            {mapApprovalRecommendation(testRec, language)}
+                          </div>
+                        </div>
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">{t.intelligence.confidenceLabel}</div>
+                          <div className="text-emerald-400 font-bold mt-0.5">
+                            {testConfPercent}%
+                          </div>
+                        </div>
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">{t.intelligence.categoryLabel}</div>
+                          <div className="text-theme-secondary mt-0.5 truncate">{mapCategory(testCat, language)}</div>
+                        </div>
+                      </div>
+                      {testRationale && (
+                        <div className="text-[11px] text-theme-secondary font-mono bg-theme-card p-2.5 rounded border border-theme-subtle">
+                          <span className="text-theme-muted">{t.intelligence.rationale}: </span>
+                          {testRationale}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Benchmark Not Executed or Fallback Used
+                return (
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3 pt-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-amber-400 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <span>
+                          {testAdvice.providerUsed === "disabled"
+                            ? t.intelligence.testNotExecuted
+                            : t.intelligence.testFailedFallback}
+                        </span>
+                      </span>
+                      <span className="font-mono text-[11px] text-amber-300">
+                        {formatLatency(testAdvice.latencyMs, false)}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-theme-secondary font-mono bg-theme-card p-2.5 rounded border border-theme-subtle space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-theme-muted">{t.intelligence.providerLabel}: </span>
+                        <span className="text-theme-primary font-semibold">
+                          {testAdvice.providerUsed === "disabled"
+                            ? "DisabledDecisionProvider"
+                            : "Fallback (Safe Heuristic)"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-theme-muted">{t.intelligence.rationale}: </span>
+                        <span>
+                          {testRationale || (testAdvice.providerUsed === "disabled" ? mapReasoningTag("intelligence_disabled", language) : "—")}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Advanced Developer Telemetry & Controls (Advanced Mode Only) */}
             {uxMode === "advanced" && (
               <div className="space-y-4 pt-4 border-t border-theme-subtle">
                 <div className="text-xs font-semibold text-theme-primary uppercase tracking-wider font-mono">
-                  Advanced Telemetry & Controls
+                  {t.intelligence.advancedTelemetryTitle}
                 </div>
 
+                {/* Real Worker & Runtime Telemetry Cockpit */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                  <div className="p-2.5 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.runtimeLabel}</div>
+                    <div className="font-mono text-theme-primary font-semibold mt-0.5 truncate">
+                      {intelStatus?.runtimeType === "developer-override"
+                        ? t.intelligence.runtimeDevOverride
+                        : t.intelligence.runtimeNexusManaged}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.workerLabel}</div>
+                    <div className="font-mono font-semibold mt-0.5 truncate">
+                      {intelStatus?.workerStatus === "running" ? (
+                        <span className="text-emerald-400">{t.intelligence.workerRunning}</span>
+                      ) : intelStatus?.workerStatus === "starting" ? (
+                        <span className="text-purple-400">{t.intelligence.workerStarting}</span>
+                      ) : intelStatus?.workerStatus === "error" ? (
+                        <span className="text-rose-400">{t.intelligence.workerError}</span>
+                      ) : (
+                        <span className="text-theme-muted">{t.intelligence.workerStopped}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.modelLabel}</div>
+                    <div className="font-mono font-semibold mt-0.5 truncate">
+                      {intelStatus?.modelLoaded ? (
+                        <span className="text-emerald-400">{t.intelligence.modelLoaded}</span>
+                      ) : (
+                        <span className="text-theme-muted">{t.intelligence.modelNotLoaded}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.providerLabel}</div>
+                    <div className="font-mono text-theme-secondary font-semibold mt-0.5 truncate text-[11px]">
+                      {intelStatus?.providerClass || (intelProvider === "laya" ? "LayaDecisionProvider" : "DisabledDecisionProvider")}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.inferenceLabel}</div>
+                    <div className="font-mono font-semibold mt-0.5 truncate">
+                      {intelStatus?.inferenceReady ? (
+                        <span className="text-emerald-400">{t.intelligence.inferenceReady}</span>
+                      ) : (
+                        <span className="text-theme-muted">{t.intelligence.inferenceNotReady}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.recentWarmInference}</div>
+                    <div className="font-mono text-emerald-400 font-semibold mt-0.5 truncate">
+                      {intelStatus?.warmInferenceMs ? `${intelStatus.warmInferenceMs} ms` : t.intelligence.warmInferenceNotMeasured}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Model Path Input */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-theme-secondary">
                     {t.intelligence.modelPath}
@@ -2435,63 +2665,91 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     </button>
                   </div>
                   <p className="text-[11px] text-theme-muted">
-                    Custom model directory path.
+                    {t.intelligence.customModelPathDesc}
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-theme-secondary">
-                    {t.intelligence.pythonPath}
-                  </label>
-                  <input
-                    type="text"
-                    value={intelPythonPath}
-                    onChange={(e) => setIntelPythonPath(e.target.value)}
-                    placeholder={t.intelligence.pythonPathPlaceholder}
-                    className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
-                  />
+                {/* Developer Runtime Override Control */}
+                <div className="p-3.5 bg-theme-card-muted/50 rounded-xl border border-theme-subtle space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-theme-primary">
+                      <input
+                        type="checkbox"
+                        checked={intelDeveloperOverride}
+                        onChange={(e) => setIntelDeveloperOverride(e.target.checked)}
+                        className="rounded border-theme-subtle text-purple-600 focus:ring-purple-500"
+                      />
+                      <span>{t.intelligence.developerOverrideCheckbox}</span>
+                    </label>
+                  </div>
                   <p className="text-[11px] text-theme-muted">
-                    Python interpreter with PyTorch/Transformers.
+                    {t.intelligence.developerOverrideDesc}
                   </p>
+
+                  {intelDeveloperOverride && (
+                    <div className="space-y-1.5 pt-1 border-t border-theme-subtle">
+                      <label className="text-xs font-medium text-theme-secondary">
+                        {t.intelligence.pythonPath}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={intelPythonPath}
+                          onChange={(e) => setIntelPythonPath(e.target.value)}
+                          placeholder={t.intelligence.pythonPathPlaceholder}
+                          className="flex-1 px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleBrowsePythonPath}
+                          className="px-3 py-2 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-subtle text-xs text-theme-primary transition flex items-center gap-1.5 shrink-0"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                          <span>{t.intelligence.browseBtn}</span>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-theme-muted">
+                        {t.intelligence.pythonInterpreterHelp}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-theme-secondary">
-                    Worker Timeout (ms)
-                  </label>
-                  <input
-                    type="number"
-                    value={intelWorkerTimeout}
-                    onChange={(e) => setIntelWorkerTimeout(Number(e.target.value) || 5000)}
-                    min={1000}
-                    max={60000}
-                    step={500}
-                    className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
-                  />
-                </div>
+                {/* Timeouts Configuration */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-theme-secondary">
+                      {t.intelligence.startupTimeoutLabel}
+                    </label>
+                    <input
+                      type="number"
+                      value={intelStartupTimeout}
+                      onChange={(e) => setIntelStartupTimeout(Number(e.target.value) || 30000)}
+                      min={5000}
+                      max={120000}
+                      step={1000}
+                      className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                  <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
-                    <div className="text-[10px] text-theme-muted">{t.intelligence.device}</div>
-                    <div className="font-mono text-theme-secondary font-semibold mt-0.5">
-                      {intelStatus?.execution?.toUpperCase() || "LOCAL"} &bull; CPU / CUDA
-                    </div>
-                  </div>
-                  <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
-                    <div className="text-[10px] text-theme-muted">{t.intelligence.latency}</div>
-                    <div className="font-mono text-theme-secondary font-semibold mt-0.5">
-                      {intelStatus?.latencyMs ? `${intelStatus.latencyMs} ms` : "—"}
-                    </div>
-                  </div>
-                  <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
-                    <div className="text-[10px] text-theme-muted">{t.intelligence.warmInferenceBenchmark}</div>
-                    <div className="font-mono text-emerald-400 font-semibold mt-0.5">
-                      &lt; 15 ms target
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-theme-secondary">
+                      {t.intelligence.inferenceTimeoutLabel}
+                    </label>
+                    <input
+                      type="number"
+                      value={intelInferenceTimeout}
+                      onChange={(e) => setIntelInferenceTimeout(Number(e.target.value) || 5000)}
+                      min={500}
+                      max={30000}
+                      step={500}
+                      className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                    />
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 pt-2 flex-wrap">
+                {/* Save and Apply Controls */}
+                <div className="flex items-center gap-3 pt-2">
                   <button
                     type="button"
                     onClick={handleSaveIntelligence}
@@ -2505,74 +2763,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     )}
                     <span>{intelBusy ? t.intelligence.saving : t.intelligence.saveAndRestart}</span>
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={handleTestBenchmark}
-                    disabled={intelTesting}
-                    className="px-4 py-2 rounded-lg text-xs font-medium bg-theme-card-muted hover:bg-theme-card text-theme-secondary border border-theme-subtle transition disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    {intelTesting ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Play className="w-3.5 h-3.5 text-sky-400" />
-                    )}
-                    <span>{intelTesting ? t.intelligence.testing : t.intelligence.testInference}</span>
-                  </button>
                 </div>
-
-                {/* Benchmark Result Card */}
-                {testAdvice && (() => {
-                  const testRisk = typeof testAdvice.risk === "object" ? testAdvice.risk?.label : (testAdvice as any).risk;
-                  const testRiskKey = String(testRisk || "").toUpperCase();
-                  const testConf = typeof testAdvice.risk === "object" ? testAdvice.risk?.confidence : (testAdvice as any).confidence;
-                  const testConfPercent = Math.round(Number(testConf ?? 0.85) * 100);
-                  const testRec = (testAdvice as any).recommendation || (testAdvice.approval?.recommended ? "APPROVE" : "ASK / REVIEW");
-                  const testCat = testAdvice.category || "General";
-                  const testRationale = (testAdvice as any).rationale || (testAdvice.reasoningTags && testAdvice.reasoningTags.length > 0 ? testAdvice.reasoningTags.join(", ") : null);
-
-                  return (
-                    <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-3 pt-3">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-purple-400 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          <span>{t.intelligence.testSuccess}</span>
-                        </span>
-                        <span className="font-mono text-[11px] text-purple-300">
-                          {testAdvice.latencyMs} ms
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                          <div className="text-[10px] text-theme-muted">{t.intelligence.riskEvaluation}</div>
-                          <div className="text-amber-400 font-bold mt-0.5 uppercase">{testRiskKey}</div>
-                        </div>
-                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                          <div className="text-[10px] text-theme-muted">{t.intelligence.recommendedAction}</div>
-                          <div className="text-theme-secondary font-bold mt-0.5 uppercase">
-                            {testRec}
-                          </div>
-                        </div>
-                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                          <div className="text-[10px] text-theme-muted">Confidence</div>
-                          <div className="text-emerald-400 font-bold mt-0.5">
-                            {testConfPercent}%
-                          </div>
-                        </div>
-                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                          <div className="text-[10px] text-theme-muted">Category</div>
-                          <div className="text-theme-secondary mt-0.5 truncate">{testCat}</div>
-                        </div>
-                      </div>
-                      {testRationale && (
-                        <div className="text-[11px] text-theme-secondary font-mono bg-theme-card p-2.5 rounded border border-theme-subtle">
-                          <span className="text-theme-muted">{t.intelligence.rationale}: </span>
-                          {testRationale}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
               </div>
             )}
 

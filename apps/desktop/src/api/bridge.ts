@@ -656,6 +656,28 @@ class ApiBridge {
     return null;
   }
 
+  async selectExecutableFile(): Promise<string | null> {
+    if (isTauri()) {
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({
+          directory: false,
+          multiple: false,
+          filters: [
+            { name: "Executable", extensions: ["exe"] },
+            { name: "All Files", extensions: ["*"] },
+          ],
+          title: "Select Python Executable",
+        });
+        if (typeof selected === "string") return selected;
+        return null;
+      } catch (err) {
+        console.warn("Tauri dialog error:", err);
+      }
+    }
+    return null;
+  }
+
   // Secure MCP Tunnel
   async getTunnelStatus(): Promise<TunnelStatusDto> {
     if (isTauri()) {
