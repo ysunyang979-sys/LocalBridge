@@ -1026,8 +1026,142 @@ fn desktop_test_ai_connection(
     desktop_management_call(state, "POST".into(), format!("/api/management/connections/{}/test", id), None)
 }
 
+// ============================================================
+// Skills Management IPC (Zero Management Secret Exposure)
+// ============================================================
 
+#[tauri::command]
+fn desktop_list_skills(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: Option<String>,
+    category: Option<String>,
+    source: Option<String>,
+    enabled_only: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let mut qs = Vec::new();
+    if let Some(p) = project_id {
+        qs.push(format!("projectId={}", p));
+    }
+    if let Some(c) = category {
+        qs.push(format!("category={}", c));
+    }
+    if let Some(s) = source {
+        qs.push(format!("source={}", s));
+    }
+    if let Some(e) = enabled_only {
+        qs.push(format!("enabledOnly={}", e));
+    }
+    let path = if qs.is_empty() {
+        "/api/skills".to_string()
+    } else {
+        format!("/api/skills?{}", qs.join("&"))
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
 
+#[tauri::command]
+fn desktop_get_skill(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    skill_id: String,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let path = if let Some(p) = project_id {
+        format!("/api/skills/{}?projectId={}", skill_id, p)
+    } else {
+        format!("/api/skills/{}", skill_id)
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn desktop_reload_skills(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_dirs: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "projectDirs": project_dirs.unwrap_or_else(|| serde_json::json!([]))
+    });
+    desktop_management_call(state, "POST".into(), "/api/skills/reload".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_toggle_skill(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    skill_id: String,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "enabled": enabled
+    });
+    desktop_management_call(
+        state,
+        "PATCH".into(),
+        format!("/api/skills/{}/toggle", skill_id),
+        Some(payload),
+    )
+}
+
+#[tauri::command]
+fn desktop_match_skill(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    query: String,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "query": query
+    });
+    if let Some(p) = project_id {
+        payload["projectId"] = serde_json::Value::String(p);
+    }
+    desktop_management_call(state, "POST".into(), "/api/skills/match".into(), Some(payload))
+}
+
+// Aliases for skills_* naming
+#[tauri::command]
+fn skills_list(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_id: Option<String>,
+    category: Option<String>,
+    source: Option<String>,
+    enabled_only: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    desktop_list_skills(state, project_id, category, source, enabled_only)
+}
+
+#[tauri::command]
+fn skills_get(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    skill_id: String,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    desktop_get_skill(state, skill_id, project_id)
+}
+
+#[tauri::command]
+fn skills_reload(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    project_dirs: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    desktop_reload_skills(state, project_dirs)
+}
+
+#[tauri::command]
+fn skills_toggle(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    skill_id: String,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    desktop_toggle_skill(state, skill_id, enabled)
+}
+
+#[tauri::command]
+fn skills_match(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    query: String,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    desktop_match_skill(state, query, project_id)
+}
 
 #[tauri::command]
 fn desktop_list_jobs(
@@ -2258,6 +2392,16 @@ fn main() {
             desktop_rotate_ai_connection_token,
             desktop_revoke_ai_connection_token,
             desktop_test_ai_connection,
+            desktop_list_skills,
+            desktop_get_skill,
+            desktop_reload_skills,
+            desktop_toggle_skill,
+            desktop_match_skill,
+            skills_list,
+            skills_get,
+            skills_reload,
+            skills_toggle,
+            skills_match,
             quit_nexus
         ])
         .setup(move |app| {

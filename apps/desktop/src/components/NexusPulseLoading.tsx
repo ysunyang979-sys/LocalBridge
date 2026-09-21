@@ -6,6 +6,7 @@ interface NexusPulseLoadingProps {
   tunnelConnected: boolean;
   runnerConnected: boolean;
   mcpActive: boolean;
+  toolsCount?: number;
 }
 
 export const NexusPulseLoading: React.FC<NexusPulseLoadingProps> = ({
@@ -13,6 +14,7 @@ export const NexusPulseLoading: React.FC<NexusPulseLoadingProps> = ({
   tunnelConnected,
   runnerConnected,
   mcpActive,
+  toolsCount,
 }) => {
   const [visible, setVisible] = useState(true);
   const [fading, setFading] = useState(false);
@@ -50,7 +52,7 @@ export const NexusPulseLoading: React.FC<NexusPulseLoadingProps> = ({
     },
     {
       id: "mcp",
-      label: "MCP Tools (55)",
+      label: `MCP Tools (${toolsCount ?? 62})`,
       icon: Server,
       done: mcpActive,
     },

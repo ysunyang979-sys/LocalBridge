@@ -193,6 +193,10 @@ export class McpContext {
     return status;
   }
 
+  public getRegisteredToolsCount(): number {
+    return Object.keys(MCP_TOOL_SCOPE).length;
+  }
+
   getModelStatus(): ModelStatusDto {
     return this.decisionProvider.getModelStatus();
   }

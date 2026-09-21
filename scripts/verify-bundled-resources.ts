@@ -99,6 +99,47 @@ async function verifyBundledServerMcpSchema() {
       throw new Error(`Bundled server failed to start within timeout during resource verification.\nStdout: ${serverStdout}\nStderr: ${serverStderr}`);
     }
 
+    // Check /api/mcp/status toolsCount
+    const statusRes = await fetch(`http://127.0.0.1:${testPort}/api/mcp/status`, {
+      headers: { authorization: `Bearer ${mgmtToken}` },
+    });
+    const statusData = (await statusRes.json()) as any;
+    if (statusData.toolsCount !== 62) {
+      throw new Error(`Bundled server /api/mcp/status toolsCount mismatch: expected 62, got ${statusData.toolsCount}`);
+    }
+
+    // Check /api/skills endpoint on bundled server
+    const skillsRes = await fetch(`http://127.0.0.1:${testPort}/api/skills`, {
+      headers: { authorization: `Bearer ${mgmtToken}` },
+    });
+    if (skillsRes.status !== 200) {
+      throw new Error(`Bundled server /api/skills returned HTTP ${skillsRes.status}`);
+    }
+    const skillsData = (await skillsRes.json()) as any;
+    if (skillsData.count !== 8) {
+      throw new Error(`Bundled server /api/skills count mismatch: expected 8, got ${skillsData.count}`);
+    }
+
+    // Verify bundled skills files on disk
+    const bundledSkillsDir = path.join(resources, "skills");
+    const expectedBuiltins = [
+      "nexus.project-inspect",
+      "nexus.fix-build",
+      "nexus.run-tests",
+      "nexus.code-debug",
+      "nexus.safe-refactor",
+      "nexus.git-review",
+      "nexus.start-dev-runtime",
+      "nexus.project-cleanup",
+    ];
+    for (const sk of expectedBuiltins) {
+      const yamlFile = path.join(bundledSkillsDir, sk, "skill.yaml");
+      const mdFile = path.join(bundledSkillsDir, sk, "SKILL.md");
+      if (!fs.existsSync(yamlFile) || !fs.existsSync(mdFile)) {
+        throw new Error(`Bundled skills directory missing definition or guide for ${sk}`);
+      }
+    }
+
     // Create an MCP token
     const tokenRes = await fetch(`http://127.0.0.1:${testPort}/api/tokens`, {
       method: "POST",
@@ -132,6 +173,21 @@ async function verifyBundledServerMcpSchema() {
     });
     const listData = await listRes.json();
     const tools = listData.result?.tools ?? [];
+
+    if (tools.length !== 62) {
+      throw new Error(`Bundled server tools/list returned ${tools.length} tools, expected exactly 62!`);
+    }
+
+    const requiredSkillTools = [
+      "localbridge_skill_list",
+      "localbridge_skill_get",
+      "localbridge_skill_match",
+    ];
+    for (const st of requiredSkillTools) {
+      if (!tools.find((t: any) => t.name === st)) {
+        throw new Error(`Bundled server tools/list is missing required skill tool: ${st}`);
+      }
+    }
 
     const cmdRun = tools.find((t: any) => t.name === "localbridge_command_run");
     if (!cmdRun) throw new Error("localbridge_command_run tool missing from bundled server tools/list");

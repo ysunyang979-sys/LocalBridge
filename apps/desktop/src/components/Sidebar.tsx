@@ -333,7 +333,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     {mcpStatus?.paused
                       ? (t.control?.mcpPaused || "PAUSED")
-                      : `${mcpStatus?.toolsCount || 55} ${t.intelligence?.statusReady || "READY"}`}
+                      : `${mcpStatus?.toolsCount ?? 62} ${t.intelligence?.statusReady || "READY"}`}
                   </span>
                 </span>
               </div>

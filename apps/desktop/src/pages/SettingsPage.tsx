@@ -1554,7 +1554,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       </span>
                     </div>
                     <div className="text-[11px] text-theme-muted font-mono mt-0.5">
-                      <span>Scopes: read, write, execute &bull; 55 {isZh ? "工具" : "tools"} &bull; 12 ms</span>
+                      <span>Scopes: read, write, execute &bull; 62 {isZh ? "工具" : "tools"} &bull; 12 ms</span>
                     </div>
                   </div>
                 </div>

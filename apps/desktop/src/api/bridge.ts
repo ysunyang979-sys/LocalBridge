@@ -739,6 +739,14 @@ class ApiBridge {
     source?: SkillSource;
     enabledOnly?: boolean;
   }): Promise<{ count: number; skills: SkillMetadata[] }> {
+    if (isTauri()) {
+      return invoke<{ count: number; skills: SkillMetadata[] }>("desktop_list_skills", {
+        projectId: params?.projectId ?? null,
+        category: params?.category ?? null,
+        source: params?.source ?? null,
+        enabledOnly: params?.enabledOnly ?? null,
+      });
+    }
     const query = new URLSearchParams();
     if (params?.projectId) query.set("projectId", params.projectId);
     if (params?.category) query.set("category", params.category);
@@ -749,6 +757,12 @@ class ApiBridge {
   }
 
   async getSkill(skillId: string, projectId?: string): Promise<SkillDefinition> {
+    if (isTauri()) {
+      return invoke<SkillDefinition>("desktop_get_skill", {
+        skillId,
+        projectId: projectId ?? null,
+      });
+    }
     const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return this.fetchJson<SkillDefinition>(`/api/skills/${encodeURIComponent(skillId)}${qs}`);
   }
@@ -758,6 +772,11 @@ class ApiBridge {
     count: number;
     skills: SkillMetadata[];
   }> {
+    if (isTauri()) {
+      return invoke<{ reloaded: boolean; count: number; skills: SkillMetadata[] }>("desktop_reload_skills", {
+        projectDirs: projectDirs ?? null,
+      });
+    }
     return this.fetchJson<{ reloaded: boolean; count: number; skills: SkillMetadata[] }>(
       "/api/skills/reload",
       {
@@ -771,6 +790,12 @@ class ApiBridge {
     skillId: string,
     enabled: boolean
   ): Promise<{ success: boolean; skill: SkillDefinition }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; skill: SkillDefinition }>("desktop_toggle_skill", {
+        skillId,
+        enabled,
+      });
+    }
     return this.fetchJson<{ success: boolean; skill: SkillDefinition }>(
       `/api/skills/${encodeURIComponent(skillId)}/toggle`,
       {
@@ -781,6 +806,12 @@ class ApiBridge {
   }
 
   async matchSkill(query: string, projectId?: string): Promise<SkillMatchResult> {
+    if (isTauri()) {
+      return invoke<SkillMatchResult>("desktop_match_skill", {
+        query,
+        projectId: projectId ?? null,
+      });
+    }
     return this.fetchJson<SkillMatchResult>("/api/skills/match", {
       method: "POST",
       body: JSON.stringify({ query, projectId }),

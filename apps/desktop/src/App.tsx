@@ -338,6 +338,7 @@ export const App: React.FC = () => {
           }
           runnerConnected={runners.length > 0}
           mcpActive={mcpStatus !== null && !mcpStatus.paused}
+          toolsCount={mcpStatus?.toolsCount}
         />
 
         {startupError && (
