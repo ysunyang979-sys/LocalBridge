@@ -29,21 +29,25 @@ export function createLogger(options: LoggerOptions = {}) {
       process.env.NODE_ENV === "development");
 
   if (isPretty) {
-    return pino({
-      level,
-      redact: {
-        paths: REDACTED_PATHS,
-        censor: "[REDACTED]",
-      },
-      transport: {
-        target: "pino-pretty",
-        options: {
-          colorize: true,
-          translateTime: "HH:MM:ss.l",
-          ignore: "pid,hostname",
+    try {
+      return pino({
+        level,
+        redact: {
+          paths: REDACTED_PATHS,
+          censor: "[REDACTED]",
         },
-      },
-    });
+        transport: {
+          target: "pino-pretty",
+          options: {
+            colorize: true,
+            translateTime: "HH:MM:ss.l",
+            ignore: "pid,hostname",
+          },
+        },
+      });
+    } catch {
+      // Fallback to standard pino below if pino-pretty transport is unavailable
+    }
   }
 
   return pino({

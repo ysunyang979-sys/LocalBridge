@@ -33,6 +33,7 @@ describe("Connection Center Light Theme Contrast Suite", () => {
   it("enforces disabled button opacity >= 0.45 for accessibility and readability", () => {
     // Check for disabled button styling rule in CSS
     const hasDisabledRule =
+      cssContent.includes("opacity: 0.65") ||
       cssContent.includes("opacity: 0.52") ||
       cssContent.includes("opacity: 0.5") ||
       cssContent.includes("disabled:opacity-");

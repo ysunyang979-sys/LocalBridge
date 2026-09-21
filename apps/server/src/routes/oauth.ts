@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import type { OAuthService } from "../auth/oauth-service.js";
 import type { ServerProjectService } from "../runner/project-service.js";
+import { resolvePublicOrigin } from "../auth/origin-resolver.js";
+import { KimiAuthTraceCollector } from "../auth/kimi-auth-trace.js";
 
 export interface OAuthRoutesOptions {
   oauthService: OAuthService;
@@ -40,19 +42,22 @@ export const oauthRoutes: FastifyPluginAsync<OAuthRoutesOptions> = async (
     );
   }
 
-  function getOrigin(request: FastifyRequest): string {
-    const host = request.headers.host || "localhost:18080";
-    const proto =
-      (request.headers["x-forwarded-proto"] as string) ||
-      (host.includes("localbridge.dev") || host.includes("trycloudflare.com")
-        ? "https"
-        : "http");
-    return `${proto}://${host}`;
-  }
-
   // 1. RFC 9207 OAuth 2.0 Protected Resource Metadata
   fastify.get("/.well-known/oauth-protected-resource", async (request, reply) => {
-    const origin = getOrigin(request);
+    const origin = resolvePublicOrigin(request);
+    KimiAuthTraceCollector.getInstance().record({
+      timestamp: new Date().toISOString(),
+      method: "GET",
+      path: request.url,
+      statusCode: 200,
+      userAgent: request.headers["user-agent"],
+      accept: request.headers["accept"],
+      contentType: request.headers["content-type"],
+      authorizationPresent: false,
+      wwwAuthenticatePresent: false,
+      oauthStage: "oauth-discovery",
+      resource: `${origin}/mcp`,
+    });
     return reply.status(200).send({
       resource: `${origin}/mcp`,
       authorization_servers: [origin],
@@ -63,8 +68,21 @@ export const oauthRoutes: FastifyPluginAsync<OAuthRoutesOptions> = async (
   });
 
   // 2. RFC 8414 OAuth 2.0 Authorization Server Metadata
-  fastify.get("/.well-known/oauth-authorization-server", async (request, reply) => {
-    const origin = getOrigin(request);
+  const sendAuthServerMetadata = async (request: FastifyRequest, reply: FastifyReply) => {
+    const origin = resolvePublicOrigin(request);
+    KimiAuthTraceCollector.getInstance().record({
+      timestamp: new Date().toISOString(),
+      method: "GET",
+      path: request.url,
+      statusCode: 200,
+      userAgent: request.headers["user-agent"],
+      accept: request.headers["accept"],
+      contentType: request.headers["content-type"],
+      authorizationPresent: false,
+      wwwAuthenticatePresent: false,
+      oauthStage: "oauth-discovery",
+      resource: `${origin}/mcp`,
+    });
     return reply.status(200).send({
       issuer: origin,
       authorization_endpoint: `${origin}/oauth/authorize`,
@@ -76,7 +94,10 @@ export const oauthRoutes: FastifyPluginAsync<OAuthRoutesOptions> = async (
       scopes_supported: ["read", "write", "execute"],
       token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
     });
-  });
+  };
+
+  fastify.get("/.well-known/oauth-authorization-server", sendAuthServerMetadata);
+  fastify.get("/.well-known/openid-configuration", sendAuthServerMetadata);
 
   // 3. GET /oauth/authorize - Consent page
   fastify.get(
@@ -110,6 +131,22 @@ export const oauthRoutes: FastifyPluginAsync<OAuthRoutesOptions> = async (
 
       const clientDisplayName =
         clientId === "conn_kimi_web" ? "Kimi Web" : clientId;
+
+      KimiAuthTraceCollector.getInstance().record({
+        timestamp: new Date().toISOString(),
+        method: "GET",
+        path: request.url,
+        statusCode: 200,
+        userAgent: request.headers["user-agent"],
+        accept: request.headers["accept"],
+        contentType: request.headers["content-type"],
+        authorizationPresent: false,
+        wwwAuthenticatePresent: false,
+        oauthStage: "oauth-authorize",
+        clientId,
+        redirectUriHostOnly: redirectUri,
+        scope: q.scope,
+      });
 
       let projectNames: string[] = [];
       try {
@@ -390,6 +427,22 @@ export const oauthRoutes: FastifyPluginAsync<OAuthRoutesOptions> = async (
           codeChallengeMethod: "S256",
         });
 
+        KimiAuthTraceCollector.getInstance().record({
+          timestamp: new Date().toISOString(),
+          method: "POST",
+          path: request.url,
+          statusCode: 302,
+          userAgent: request.headers["user-agent"],
+          accept: request.headers["accept"],
+          contentType: request.headers["content-type"],
+          authorizationPresent: false,
+          wwwAuthenticatePresent: false,
+          oauthStage: "oauth-authorize",
+          clientId: b.client_id || "conn_kimi_web",
+          redirectUriHostOnly: redirectUri,
+          scope: scopes.join(" "),
+        });
+
         const url = new URL(redirectUri);
         url.searchParams.set("code", code);
         if (state) url.searchParams.set("state", state);
@@ -440,6 +493,21 @@ export const oauthRoutes: FastifyPluginAsync<OAuthRoutesOptions> = async (
           refreshToken: b.refresh_token,
         });
 
+        KimiAuthTraceCollector.getInstance().record({
+          timestamp: new Date().toISOString(),
+          method: "POST",
+          path: request.url,
+          statusCode: 200,
+          userAgent: request.headers["user-agent"],
+          accept: request.headers["accept"],
+          contentType: request.headers["content-type"],
+          authorizationPresent: false,
+          wwwAuthenticatePresent: false,
+          oauthStage: "oauth-token",
+          clientId: b.client_id,
+          redirectUriHostOnly: b.redirect_uri,
+        });
+
         return reply
           .status(200)
           .header("Cache-Control", "no-store")
@@ -469,6 +537,18 @@ export const oauthRoutes: FastifyPluginAsync<OAuthRoutesOptions> = async (
       if (b.token) {
         oauthService.revokeToken(b.token);
       }
+      KimiAuthTraceCollector.getInstance().record({
+        timestamp: new Date().toISOString(),
+        method: "POST",
+        path: request.url,
+        statusCode: 200,
+        userAgent: request.headers["user-agent"],
+        accept: request.headers["accept"],
+        contentType: request.headers["content-type"],
+        authorizationPresent: false,
+        wwwAuthenticatePresent: false,
+        oauthStage: "oauth-revoke",
+      });
       return reply.status(200).send({ success: true });
     }
   );

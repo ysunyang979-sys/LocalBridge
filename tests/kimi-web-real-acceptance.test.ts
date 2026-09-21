@@ -189,6 +189,11 @@ describe("Nexus Kimi Web Final Acceptance Test Suite", () => {
 
   // 5. kimi-web-endpoint-health
   describe("Dimension 5: Remote MCP Endpoint Health & HTTP 401 Interpretation", () => {
+    const originalFetch = globalThis.fetch;
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
     it("interprets HTTP 401/403 as endpoint reachable with auth required", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         status: 401,

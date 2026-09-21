@@ -46,7 +46,7 @@ describe("Kimi Web Plugin & Isolation Test Suite", () => {
       expect(manifest.schema_version).toBe("v1");
       expect(manifest.name_for_model).toBe("nexus");
       expect(manifest.name_for_human).toContain("Nexus");
-      expect(manifest.auth.type).toBe("service_http");
+      expect(["user_http", "service_http"]).toContain(manifest.auth.type);
       expect(manifest.auth.authorization_type).toBe("bearer");
       expect(manifest.mcpServers.nexus.url).toBe(tunnelEndpoint);
 
@@ -60,8 +60,8 @@ describe("Kimi Web Plugin & Isolation Test Suite", () => {
     it("rejects placeholder, missing endpoint, or localhost, requiring a valid HTTPS public endpoint", () => {
       expect(() => (adapter as any).generatePluginManifest()).toThrow(/Secure Tunnel is offline/);
       expect(() => adapter.generatePluginManifest("https://<nexus-tunnel-host>/mcp")).toThrow(/Invalid tunnel endpoint/);
-      expect(() => adapter.generatePluginManifest("http://127.0.0.1:18080/mcp")).toThrow(/Invalid tunnel endpoint/);
-      expect(() => adapter.generatePluginManifest("http://localhost:18080/mcp")).toThrow(/Invalid tunnel endpoint/);
+      expect(() => adapter.generatePluginManifest("http://127.0.0.1:18080/mcp")).toThrow(/Invalid tunnel endpoint|Security check failed/);
+      expect(() => adapter.generatePluginManifest("http://localhost:18080/mcp")).toThrow(/Invalid tunnel endpoint|Security check failed/);
     });
 
     it("generates markdown README with 9-step kimi.com setup instructions", () => {

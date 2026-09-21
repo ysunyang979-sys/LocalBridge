@@ -24,6 +24,7 @@ import type Database from "better-sqlite3";
 import type { JobRow } from "../db/schema.js";
 import { ConnectionService } from "../db/connection-service.js";
 import { AdapterRegistry } from "../adapters/index.js";
+import { KimiAuthTraceCollector } from "../auth/kimi-auth-trace.js";
 
 export interface ManagementRoutesOptions {
   tokenService: TokenService;
@@ -392,23 +393,42 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
   fastify.post<{ Body?: { reason?: string } }>("/shutdown", async (request, reply) => {
     mcpContext.setPaused(true);
     const reason = request.body?.reason || "Desktop shutdown";
+
+    // Run cleanups in parallel with a bounded 500ms timeout
+    const cleanupTasks: Promise<any>[] = [];
     if (mcpContext.persistentRuntimeManager) {
-      try {
-        await mcpContext.persistentRuntimeManager.stopAllRuntimes(reason);
-      } catch (err) {
-        fastify.log.warn({ err }, "Failed to stop runtimes during shutdown");
-      }
+      cleanupTasks.push(
+        mcpContext.persistentRuntimeManager.stopAllRuntimes(reason).catch((err) => {
+          fastify.log.warn({ err }, "Failed to stop runtimes during shutdown");
+        })
+      );
     }
     for (const runner of runnerRegistry.list()) {
-      try {
-        await rpcService.request(runner.id, RunnerRpcMethods.JobCancelAll, { reason });
-        await rpcService.request(runner.id, RunnerRpcMethods.SystemShutdown, { reason });
-      } catch (err) {
-        fastify.log.warn({ runnerId: runner.id, err }, "Graceful Runner shutdown failed");
-      }
+      cleanupTasks.push(
+        Promise.all([
+          rpcService.request(runner.id, RunnerRpcMethods.JobCancelAll, { reason }),
+          rpcService.request(runner.id, RunnerRpcMethods.SystemShutdown, { reason }),
+        ]).catch((err) => {
+          fastify.log.warn({ runnerId: runner.id, err }, "Graceful Runner shutdown failed");
+        })
+      );
     }
-    setTimeout(() => { void fastify.close(); }, 100);
-    return reply.status(200).send({ shuttingDown: true });
+
+    const timeoutPromise = new Promise((res) => setTimeout(res, 300));
+    await Promise.race([Promise.all(cleanupTasks), timeoutPromise]);
+
+    setTimeout(() => {
+      try {
+        if (typeof (fastify.server as any)?.closeAllConnections === "function") {
+          (fastify.server as any).closeAllConnections();
+        }
+        void fastify.close();
+      } catch {}
+      if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+        setTimeout(() => process.exit(0), 50);
+      }
+    }, 30);
+    return reply.header("Connection", "close").status(200).send({ shuttingDown: true });
   });
 
   // ==========================================
@@ -1938,7 +1958,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
   );
 
   // Kimi Web Plugin Routes
-  fastify.get<{ Querystring: { tunnelEndpoint?: string } }>(
+  fastify.get<{ Querystring: { tunnelEndpoint?: string; authType?: string } }>(
     "/management/connections/kimi-web/plugin-manifest",
     async (request, reply) => {
       if (!adpRegistry) {
@@ -1949,13 +1969,14 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         return reply.status(404).send({ error: "Kimi Web adapter not available" });
       }
       const tunnelEndpoint = request.query?.tunnelEndpoint;
+      const authType = request.query?.authType as any;
       if (!tunnelEndpoint) {
         return reply.status(400).send({
           error: "Missing tunnelEndpoint. Secure Tunnel must be connected.",
         });
       }
       try {
-        const manifest = adapter.generatePluginManifest(tunnelEndpoint);
+        const manifest = adapter.generatePluginManifest(tunnelEndpoint, { authType });
         return reply.status(200).send({ manifest });
       } catch (err: any) {
         return reply.status(400).send({ error: err?.message || String(err) });
@@ -1963,7 +1984,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     }
   );
 
-  fastify.post<{ Body?: { targetDir?: string; tunnelEndpoint?: string } }>(
+  fastify.post<{ Body?: { targetDir?: string; tunnelEndpoint?: string; authType?: "user_http" | "oauth" | "service_http" } }>(
     "/management/connections/kimi-web/export-plugin",
     async (request, reply) => {
       if (!adpRegistry) {
@@ -1974,6 +1995,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
         return reply.status(404).send({ error: "Kimi Web adapter not available" });
       }
       const tunnelEndpoint = request.body?.tunnelEndpoint;
+      const authType = request.body?.authType;
       if (!tunnelEndpoint) {
         return reply.status(400).send({
           error: "Missing tunnelEndpoint. Secure Tunnel must be connected.",
@@ -1982,7 +2004,8 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       try {
         const result = adapter.exportPluginPackage(
           request.body?.targetDir,
-          tunnelEndpoint
+          tunnelEndpoint,
+          { authType }
         );
         return reply.status(200).send(result);
       } catch (err: any) {
@@ -1990,5 +2013,18 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       }
     }
   );
+
+  fastify.get("/management/connections/kimi-web/auth-trace", async (_request, reply) => {
+    const collector = KimiAuthTraceCollector.getInstance();
+    return reply.status(200).send({
+      traces: collector.getRecentTraces(50),
+      summary: collector.formatSummary(),
+    });
+  });
+
+  fastify.post("/management/connections/kimi-web/auth-trace/clear", async (_request, reply) => {
+    KimiAuthTraceCollector.getInstance().clear();
+    return reply.status(200).send({ success: true });
+  });
 };
 

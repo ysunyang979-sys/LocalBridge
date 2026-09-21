@@ -11,6 +11,8 @@ import {
 } from "./types.js";
 import { hasToolScope, requiredScopeForTool } from "./scope-policy.js";
 import { checkLoopbackAndSecurity } from "../routes/management.js";
+import { resolvePublicOrigin } from "../auth/origin-resolver.js";
+import { KimiAuthTraceCollector } from "../auth/kimi-auth-trace.js";
 
 export interface McpRoutesOptions {
   tokenService: TokenService;
@@ -75,11 +77,40 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
     });
   });
 
-  // 2. Reject non-POST HTTP methods on /mcp
+  // 2. Handle /mcp probes and non-POST HTTP methods
   fastify.route({
     method: ["GET", "DELETE", "PUT", "PATCH"],
     url: "/mcp",
-    handler: async (_request: FastifyRequest, reply: FastifyReply) => {
+    handler: async (request: FastifyRequest, reply: FastifyReply) => {
+      if (request.method === "GET" && !request.headers.authorization) {
+        const origin = resolvePublicOrigin(request);
+        reply.header(
+          "WWW-Authenticate",
+          `Bearer realm="Nexus", resource_metadata="${origin}/.well-known/oauth-protected-resource", as_uri="${origin}", error="invalid_token", error_description="Bearer token required"`
+        );
+        reply.header(
+          "Link",
+          `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
+        );
+        KimiAuthTraceCollector.getInstance().record({
+          timestamp: new Date().toISOString(),
+          method: "GET",
+          path: request.url,
+          statusCode: 401,
+          userAgent: request.headers["user-agent"],
+          accept: request.headers["accept"],
+          contentType: request.headers["content-type"],
+          authorizationPresent: false,
+          wwwAuthenticatePresent: true,
+          oauthStage: "mcp-probe",
+          resource: `${origin}/mcp`,
+        });
+        return reply.status(401).send({
+          error: "Unauthorized: Missing Bearer token in Authorization header",
+          code: "MISSING_TOKEN",
+        });
+      }
+
       return reply.status(405).send({
         jsonrpc: "2.0",
         error: {
@@ -230,28 +261,31 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
         });
       }
 
-      function getRequestOrigin(): string {
-        const host = request.headers.host || "localhost:18080";
-        const proto =
-          (request.headers["x-forwarded-proto"] as string) ||
-          (host.includes("localbridge.dev") || host.includes("trycloudflare.com")
-            ? "https"
-            : "http");
-        return `${proto}://${host}`;
-      }
-
       // 3.6 Bearer Token Authentication & Cross-Token Isolation
       const authHeader = request.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        const origin = getRequestOrigin();
+        const origin = resolvePublicOrigin(request);
         reply.header(
           "WWW-Authenticate",
-          `Bearer realm="Nexus", error="invalid_token", error_description="Bearer token required"`
+          `Bearer realm="Nexus", resource_metadata="${origin}/.well-known/oauth-protected-resource", as_uri="${origin}", error="invalid_token", error_description="Bearer token required"`
         );
         reply.header(
           "Link",
           `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
         );
+        KimiAuthTraceCollector.getInstance().record({
+          timestamp: new Date().toISOString(),
+          method: request.method,
+          path: request.url,
+          statusCode: 401,
+          userAgent: request.headers["user-agent"],
+          accept: request.headers["accept"],
+          contentType: request.headers["content-type"],
+          authorizationPresent: false,
+          wwwAuthenticatePresent: true,
+          oauthStage: "mcp-probe",
+          resource: `${origin}/mcp`,
+        });
         return reply.status(401).send({
           error: "Unauthorized: Missing Bearer token in Authorization header",
           code: "MISSING_TOKEN",
@@ -269,15 +303,28 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
         } else if (validation.reason === "TOKEN_EXPIRED") {
           code = "TOKEN_EXPIRED";
         }
-        const origin = getRequestOrigin();
+        const origin = resolvePublicOrigin(request);
         reply.header(
           "WWW-Authenticate",
-          `Bearer realm="Nexus", error="invalid_token", error_description="${validation.reason || "Invalid token"}"`
+          `Bearer realm="Nexus", resource_metadata="${origin}/.well-known/oauth-protected-resource", as_uri="${origin}", error="invalid_token", error_description="${validation.reason || "Invalid token"}"`
         );
         reply.header(
           "Link",
           `<${origin}/.well-known/oauth-protected-resource>; rel="describedby"`
         );
+        KimiAuthTraceCollector.getInstance().record({
+          timestamp: new Date().toISOString(),
+          method: request.method,
+          path: request.url,
+          statusCode: 401,
+          userAgent: request.headers["user-agent"],
+          accept: request.headers["accept"],
+          contentType: request.headers["content-type"],
+          authorizationPresent: true,
+          wwwAuthenticatePresent: true,
+          oauthStage: "mcp-probe",
+          resource: `${origin}/mcp`,
+        });
         return reply.status(401).send({
           error: `Unauthorized: ${validation.reason ?? "Invalid token"}`,
           code,
@@ -391,12 +438,12 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
       // 3.8 Ensure Accept Header accommodates both application/json and text/event-stream
       const currentAccept = request.raw.headers.accept ?? "";
       if (
-        !currentAccept.includes("text/event-stream") ||
-        !currentAccept.includes("application/json")
+        !currentAccept ||
+        currentAccept === "*/*" ||
+        !currentAccept.includes("application/json") ||
+        !currentAccept.includes("text/event-stream")
       ) {
-        request.raw.headers.accept = currentAccept
-          ? `${currentAccept}, text/event-stream, application/json`
-          : "application/json, text/event-stream";
+        request.raw.headers.accept = "application/json, text/event-stream";
       }
 
       // 3.9 Create fresh stateless McpServer and Transport for this request
@@ -427,6 +474,27 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
 
       reply.raw.on("finish", cleanup);
       reply.raw.on("close", cleanup);
+
+      const isKimi =
+        tokenRecord.name?.toLowerCase().includes("kimi") ||
+        tokenRecord.id?.includes("kimi") ||
+        principal.id?.includes("kimi");
+      if (isKimi) {
+        KimiAuthTraceCollector.getInstance().record({
+          timestamp: new Date().toISOString(),
+          method: request.method,
+          path: request.url,
+          statusCode: 200,
+          userAgent: request.headers["user-agent"],
+          accept: request.headers["accept"],
+          contentType: request.headers["content-type"],
+          authorizationPresent: true,
+          wwwAuthenticatePresent: false,
+          oauthStage: "mcp-request",
+          clientId: principal.id,
+          scope: principal.scopes?.join(" "),
+        });
+      }
 
       try {
         reply.hijack();

@@ -19,6 +19,7 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub mod tunnel;
+pub mod shutdown;
 
 #[cfg(target_os = "windows")]
 pub mod job_object {
@@ -162,38 +163,34 @@ struct SupervisorState {
 
 impl SupervisorState {
     fn shutdown(&mut self) {
+        shutdown::mark_shutting_down();
         self.tunnel_supervisor.shutdown();
         let port = if self.server_port == 0 { 18080 } else { self.server_port };
         let token = get_management_token(self);
         if !token.is_empty() {
-            let _ = loopback_management_request(
+            let _ = shutdown::fast_loopback_request(
                 port,
                 &token,
                 "POST",
                 "/api/pause",
                 Some(&serde_json::json!({ "paused": true })),
+                200,
             );
-            let _ = loopback_management_request(
-                port,
-                &token,
-                "POST",
-                "/api/emergency-stop",
-                Some(&serde_json::json!({ "reason": "Desktop shutdown" })),
-            );
-            let _ = loopback_management_request(
+            let _ = shutdown::fast_loopback_request(
                 port,
                 &token,
                 "POST",
                 "/api/shutdown",
                 Some(&serde_json::json!({ "reason": "Desktop shutdown" })),
+                400,
             );
         }
-        std::thread::sleep(Duration::from_millis(750));
+        std::thread::sleep(Duration::from_millis(100));
         if let Some(mut runner) = self.runner_process.take() {
-            terminate_owned_process_tree(&mut runner);
+            shutdown::terminate_child_process_tree(&mut runner);
         }
         if let Some(mut server) = self.server_process.take() {
-            terminate_owned_process_tree(&mut server);
+            shutdown::terminate_child_process_tree(&mut server);
         }
     }
 }
@@ -1938,6 +1935,8 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         let mut server_cmd = Command::new(&node_path);
         server_cmd.arg(&server_entry);
         server_cmd.current_dir(server_cwd);
+        server_cmd.env("NODE_ENV", "production");
+        server_cmd.env("LOCALBRIDGE_LOG_PRETTY", "false");
         server_cmd.env("LOCALBRIDGE_SERVER_PORT", "18080");
         server_cmd.env("LOCALBRIDGE_SERVER_HOST", "127.0.0.1");
         server_cmd.env("LOCALBRIDGE_SERVER_DB_PATH", db_path.to_string_lossy().to_string());
@@ -1984,6 +1983,56 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         if let Ok(mut state) = supervisor.lock() {
             state.server_process = Some(server_child);
         }
+
+        // Start server process lifecycle monitor immediately so that any server exit is caught
+        let sup_srv_mon = supervisor.clone();
+        let app_srv_mon = app.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_millis(50));
+                if shutdown::is_shutting_down() {
+                    break;
+                }
+                let server_exited = {
+                    if let Ok(mut s) = sup_srv_mon.lock() {
+                        if let Some(ref mut proc) = s.server_process {
+                            proc.try_wait().ok().flatten().is_some()
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                };
+                if server_exited && !shutdown::is_shutting_down() {
+                    let (port, token, runner_proc, server_proc) = {
+                        if let Ok(mut s) = sup_srv_mon.lock() {
+                            let port = s.server_port;
+                            let token = get_management_token(&s);
+                            let runner = s.runner_process.take();
+                            let server = s.server_process.take();
+                            (port, token, runner, server)
+                        } else {
+                            (18080, String::new(), None, None)
+                        }
+                    };
+                    let sup_tunnel = sup_srv_mon.clone();
+                    shutdown::fast_shutdown(
+                        &app_srv_mon,
+                        port,
+                        token,
+                        move || {
+                            if let Ok(mut s) = sup_tunnel.lock() {
+                                s.tunnel_supervisor.shutdown();
+                            }
+                        },
+                        runner_proc,
+                        server_proc,
+                    );
+                    break;
+                }
+            }
+        });
     }
 
     // 7. Start Runner
@@ -1991,6 +2040,8 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     let mut runner_cmd = Command::new(&node_path);
     runner_cmd.arg(&runner_entry);
     runner_cmd.current_dir(runner_cwd);
+    runner_cmd.env("NODE_ENV", "production");
+    runner_cmd.env("LOCALBRIDGE_LOG_PRETTY", "false");
     runner_cmd.env("LOCALBRIDGE_SERVER_URL", "ws://127.0.0.1:18080/runner/ws");
     runner_cmd.env("LOCALBRIDGE_RUNNER_TOKEN", &runner_token);
     runner_cmd.env("LOCALBRIDGE_PROJECTS_PATH", projects_path.to_string_lossy().to_string());
@@ -2036,11 +2087,34 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     if !runner_ready {
         terminate_owned_process_tree(&mut runner_child);
         let message = "Bundled LocalBridge Runner failed authenticated registration.".to_string();
+        eprintln!("[LocalBridge Supervisor] {}", message);
         if let Ok(mut state) = supervisor.lock() {
             state.startup_error = Some(message.clone());
-            state.shutdown();
         }
-        eprintln!("[LocalBridge Supervisor] {}", message);
+        let (port, token, runner_proc, server_proc) = {
+            if let Ok(mut s) = supervisor.lock() {
+                let port = s.server_port;
+                let token = get_management_token(&s);
+                let runner = s.runner_process.take();
+                let server = s.server_process.take();
+                (port, token, runner, server)
+            } else {
+                (18080, String::new(), None, None)
+            }
+        };
+        let sup_tunnel = supervisor.clone();
+        shutdown::fast_shutdown(
+            app,
+            port,
+            token,
+            move || {
+                if let Ok(mut s) = sup_tunnel.lock() {
+                    s.tunnel_supervisor.shutdown();
+                }
+            },
+            runner_proc,
+            server_proc,
+        );
         return;
     }
     if let Ok(mut state) = supervisor.lock() {
@@ -2072,21 +2146,20 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     std::thread::spawn(move || {
         let backoffs = [5, 10, 20, 30, 60];
         loop {
-            std::thread::sleep(Duration::from_millis(1500));
-
-            let (should_run, health_port, is_running, auto_reconnect, reconnect_attempts) = {
-                let Ok(mut s) = sup_monitor.lock() else { continue; };
-                let should_run = s.tunnel_supervisor.should_run;
-                let health_port = s.tunnel_supervisor.config.as_ref().map(|c| c.health_port).unwrap_or(8080);
-                let auto_reconnect = s.tunnel_supervisor.config.as_ref().map(|c| c.auto_reconnect).unwrap_or(true);
-                let reconnect_attempts = s.tunnel_supervisor.reconnect_attempts;
-                let is_running = s.tunnel_supervisor.is_active();
-                (should_run, health_port, is_running, auto_reconnect, reconnect_attempts)
-            };
-
-            if !should_run {
-                continue;
+            std::thread::sleep(Duration::from_millis(1000));
+            if shutdown::is_shutting_down() {
+                break;
             }
+
+            let (health_port, is_running, auto_reconnect, reconnect_attempts) = {
+                let Ok(s) = sup_monitor.lock() else { continue; };
+                (
+                    s.tunnel_supervisor.config.as_ref().map(|c| c.health_port).unwrap_or(18082),
+                    s.tunnel_supervisor.process.is_some(),
+                    s.tunnel_supervisor.config.as_ref().map(|c| c.auto_reconnect).unwrap_or(false),
+                    s.tunnel_supervisor.reconnect_attempts,
+                )
+            };
 
             if is_running {
                 let is_ready = tunnel::TunnelSupervisor::check_readyz(health_port);
@@ -2134,13 +2207,21 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
                     }
                 }
 
-                std::thread::sleep(Duration::from_secs(backoff_secs));
+                for _ in 0..(backoff_secs * 10) {
+                    if shutdown::is_shutting_down() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                if shutdown::is_shutting_down() {
+                    break;
+                }
 
                 let can_retry = {
                     let Ok(s) = sup_monitor.lock() else { continue; };
                     s.tunnel_supervisor.should_run
                 };
-                if can_retry {
+                if can_retry && !shutdown::is_shutting_down() {
                     let _ = spawn_tunnel_internal(&app_monitor, sup_monitor.clone());
                 }
             }
@@ -2148,9 +2229,38 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     });
 }
 
+#[tauri::command]
+fn quit_nexus(app: tauri::AppHandle, state: tauri::State<Arc<Mutex<SupervisorState>>>) {
+    let (port, token, runner_proc, server_proc) = {
+        if let Ok(mut s) = state.lock() {
+            let port = s.server_port;
+            let token = get_management_token(&s);
+            let runner = s.runner_process.take();
+            let server = s.server_process.take();
+            (port, token, runner, server)
+        } else {
+            (18080, String::new(), None, None)
+        }
+    };
+    let sup_tunnel = state.inner().clone();
+    shutdown::fast_shutdown(
+        &app,
+        port,
+        token,
+        move || {
+            if let Ok(mut s) = sup_tunnel.lock() {
+                s.tunnel_supervisor.shutdown();
+            }
+        },
+        runner_proc,
+        server_proc,
+    );
+}
+
 fn main() {
     let supervisor = Arc::new(Mutex::new(SupervisorState::default()));
     let supervisor_exit_clone = supervisor.clone();
+    let supervisor_tray = supervisor.clone();
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -2243,18 +2353,20 @@ fn main() {
             desktop_apply_ai_connection_config,
             desktop_rollback_ai_connection_config,
             desktop_get_kimi_plugin_manifest,
-            desktop_export_kimi_plugin
+            desktop_export_kimi_plugin,
+            quit_nexus
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit Nexus", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
 
+            let sup_tray = supervisor_tray.clone();
             let _tray = TrayIconBuilder::new()
                 .icon(Image::from_bytes(include_bytes!("../icons/32x32.png"))?)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
+                .on_menu_event(move |app, event| {
                     match event.id.as_ref() {
                         "open" => {
                             if let Some(w) = app.get_webview_window("main") {
@@ -2264,7 +2376,30 @@ fn main() {
                             }
                         }
                         "quit" => {
-                            app.exit(0);
+                            let (port, token, runner_proc, server_proc) = {
+                                if let Ok(mut s) = sup_tray.lock() {
+                                    let port = s.server_port;
+                                    let token = get_management_token(&s);
+                                    let runner = s.runner_process.take();
+                                    let server = s.server_process.take();
+                                    (port, token, runner, server)
+                                } else {
+                                    (18080, String::new(), None, None)
+                                }
+                            };
+                            let sup_tunnel = sup_tray.clone();
+                            shutdown::fast_shutdown(
+                                app,
+                                port,
+                                token,
+                                move || {
+                                    if let Ok(mut s) = sup_tunnel.lock() {
+                                        s.tunnel_supervisor.shutdown();
+                                    }
+                                },
+                                runner_proc,
+                                server_proc,
+                            );
                         }
                         _ => {}
                     }
@@ -2365,11 +2500,32 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while running LocalBridge Desktop application");
 
-    app.run(move |_app_handle, event| {
+    app.run(move |app_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
-            if let Ok(mut state) = supervisor_exit_clone.lock() {
-                state.shutdown();
-            }
+            let (port, token, runner_proc, server_proc) = {
+                if let Ok(mut s) = supervisor_exit_clone.lock() {
+                    let port = s.server_port;
+                    let token = get_management_token(&s);
+                    let runner = s.runner_process.take();
+                    let server = s.server_process.take();
+                    (port, token, runner, server)
+                } else {
+                    (18080, String::new(), None, None)
+                }
+            };
+            let sup_tunnel = supervisor_exit_clone.clone();
+            shutdown::fast_shutdown(
+                app_handle,
+                port,
+                token,
+                move || {
+                    if let Ok(mut s) = sup_tunnel.lock() {
+                        s.tunnel_supervisor.shutdown();
+                    }
+                },
+                runner_proc,
+                server_proc,
+            );
         }
     });
 }

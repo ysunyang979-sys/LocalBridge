@@ -125,7 +125,7 @@ export class KimiWebPluginAdapter extends BaseAIAdapter {
           authValid: hasConfiguredToken,
           message: hasConfiguredToken
             ? "公网端点可达，已配置认证令牌"
-            : "公网端点可达，等待授权",
+            : "公网端点可达，等待授权 (服务可达，需要认证)",
           details: {
             endpoint: "reachable",
             auth: hasConfiguredToken ? "authorized" : "not_authorized",
@@ -210,9 +210,41 @@ export class KimiWebPluginAdapter extends BaseAIAdapter {
 
   generatePluginManifest(
     tunnelEndpoint: string,
-    options?: { scopes?: string[]; tokenInstructions?: string }
+    options?: {
+      scopes?: string[];
+      tokenInstructions?: string;
+      authType?: "user_http" | "oauth" | "service_http";
+    }
   ): KimiPluginManifest {
     const cleanUrl = this.validateTunnelEndpoint(tunnelEndpoint);
+    const authType = options?.authType || "user_http";
+
+    let authConfig: KimiPluginManifest["auth"];
+    if (authType === "oauth") {
+      authConfig = {
+        type: "oauth",
+        authorization_type: "bearer",
+        instructions:
+          options?.tokenInstructions ||
+          "点击授权进入 Nexus 授权流，授予 Kimi Web 访问已授权项目的权限。",
+      };
+    } else if (authType === "user_http") {
+      authConfig = {
+        type: "user_http",
+        authorization_type: "bearer",
+        instructions:
+          options?.tokenInstructions ||
+          "请输入 Nexus 桌面端为 Kimi Web 生成的专属安全令牌 (Bearer Token)。请勿将长期令牌写入 manifest 或公开提交。",
+      };
+    } else {
+      authConfig = {
+        type: "service_http",
+        authorization_type: "bearer",
+        instructions:
+          options?.tokenInstructions ||
+          "请输入 Nexus 为 Kimi Web 专属生成的安全令牌 (Bearer Token)。请勿将长期令牌写入 manifest 或公开提交。",
+      };
+    }
 
     const manifest: KimiPluginManifest = {
       schema_version: "v1",
@@ -221,13 +253,7 @@ export class KimiWebPluginAdapter extends BaseAIAdapter {
       description_for_human: "让 Kimi 安全访问由 Nexus 授权的本地项目、Git、Runtime 和代码智能能力。",
       description_for_model:
         "Securely access Nexus-authorized local projects, Git, runtimes and code intelligence.",
-      auth: {
-        type: "service_http",
-        authorization_type: "bearer",
-        instructions:
-          options?.tokenInstructions ||
-          "请输入 Nexus 为 Kimi Web 专属生成的安全令牌 (Bearer Token)。请勿将长期令牌写入 manifest 或公开提交。",
-      },
+      auth: authConfig,
       api: {
         type: "mcp",
         url: cleanUrl,
@@ -312,8 +338,12 @@ Nexus Local MCP Server & Security Engine
       readme.includes("lb_") ||
       readme.includes("lbr_") ||
       readme.includes("lm_") ||
+      cleanUrl.includes("127.0.0.1") ||
+      cleanUrl.includes("localhost") ||
       readme.includes("127.0.0.1") ||
-      readme.includes("<nexus-tunnel-host>")
+      readme.includes("localhost") ||
+      readme.includes("<nexus-tunnel-host>") ||
+      readme.includes("<placeholder>")
     ) {
       throw new Error(
         "Security check failed: Kimi plugin README contains prohibited credentials, local addresses, or placeholders."
@@ -323,7 +353,11 @@ Nexus Local MCP Server & Security Engine
     return readme;
   }
 
-  exportPluginPackage(targetBaseDir?: string, tunnelEndpoint?: string): KimiPluginExportResult {
+  exportPluginPackage(
+    targetBaseDir?: string,
+    tunnelEndpoint?: string,
+    options?: { authType?: "user_http" | "oauth" | "service_http" }
+  ): KimiPluginExportResult {
     const cleanEndpoint = this.validateTunnelEndpoint(tunnelEndpoint);
 
     const baseDir =
@@ -337,7 +371,7 @@ Nexus Local MCP Server & Security Engine
       fs.mkdirSync(exportDir, { recursive: true });
     }
 
-    const manifest = this.generatePluginManifest(cleanEndpoint);
+    const manifest = this.generatePluginManifest(cleanEndpoint, options);
     const readme = this.generateReadme(cleanEndpoint);
 
     const manifestPath = path.join(exportDir, "kimi.plugin.json");
@@ -359,3 +393,30 @@ Nexus Local MCP Server & Security Engine
 }
 
 export const KimiWebAdapter = KimiWebPluginAdapter;
+
+export function generatePluginManifest(options: {
+  publicEndpoint: string;
+  scopes?: string[];
+  tokenInstructions?: string;
+  authType?: "user_http" | "oauth" | "service_http";
+}): KimiPluginManifest {
+  const adapter = new KimiWebPluginAdapter(null, null);
+  return adapter.generatePluginManifest(options.publicEndpoint, {
+    scopes: options.scopes,
+    tokenInstructions: options.tokenInstructions,
+    authType: options.authType,
+  });
+}
+
+export function exportPluginPackage(
+  targetBaseDir: string,
+  tunnelEndpoint: string,
+  options?: {
+    scopes?: string[];
+    tokenInstructions?: string;
+    authType?: "user_http" | "oauth" | "service_http";
+  }
+): KimiPluginExportResult {
+  const adapter = new KimiWebPluginAdapter(null, null);
+  return adapter.exportPluginPackage(targetBaseDir, tunnelEndpoint, options);
+}
