@@ -81,6 +81,19 @@ export interface ModelDownloadProgress {
   currentFile: string;
 }
 
+export interface ModelDownloadOptions {
+  proxyMode?: "system" | "direct" | "custom";
+  customProxyUrl?: string;
+}
+
+export interface ModelValidationResult {
+  valid: boolean;
+  modelPath: string;
+  missingFiles: string[];
+  totalBytes: number;
+  error?: string | null;
+}
+
 export interface ModelStatusDto {
   installed: boolean;
   status: ModelDownloadStatus;
@@ -88,4 +101,10 @@ export interface ModelStatusDto {
   progress: ModelDownloadProgress | null;
   error: string | null;
 }
+
+export interface ModelImportOptions {
+  sourceDir: string;
+  copyToManaged?: boolean;
+}
+
 

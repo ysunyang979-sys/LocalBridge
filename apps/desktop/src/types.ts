@@ -483,4 +483,23 @@ export interface ModelStatusDto {
   error: string | null;
 }
 
+export interface ModelDownloadOptions {
+  proxyMode?: "direct" | "system" | "custom";
+  customProxyUrl?: string;
+}
+
+export interface ModelValidationResult {
+  valid: boolean;
+  modelPath: string;
+  missingFiles: string[];
+  totalBytes: number;
+  error: string | null;
+}
+
+export interface ModelImportOptions {
+  sourceDir: string;
+  copyToManaged?: boolean;
+}
+
+
 

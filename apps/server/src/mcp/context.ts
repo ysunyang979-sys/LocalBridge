@@ -21,6 +21,8 @@ import type {
   DecisionProviderConfig,
   IntelligenceStatusDto,
   ModelStatusDto,
+  ModelDownloadOptions,
+  ModelValidationResult,
 } from "@localbridge/protocol";
 import type { McpPrincipal } from "./types.js";
 
@@ -142,16 +144,28 @@ export class McpContext {
     return this.decisionProvider.getModelStatus();
   }
 
-  startModelDownload(): Promise<ModelStatusDto> {
-    return this.decisionProvider.startModelDownload();
+  startModelDownload(options?: ModelDownloadOptions): Promise<ModelStatusDto> {
+    return this.decisionProvider.startModelDownload(options);
   }
 
   cancelModelDownload(): ModelStatusDto {
     return this.decisionProvider.cancelModelDownload();
   }
 
-  downloadAndEnableModel(): Promise<IntelligenceStatusDto> {
-    return this.decisionProvider.downloadAndEnable();
+  validateModelPath(dir: string): ModelValidationResult {
+    return this.decisionProvider.validateModelPath(dir);
+  }
+
+  setModelPath(dir: string): Promise<ModelStatusDto> {
+    return this.decisionProvider.setModelPath(dir);
+  }
+
+  importExistingModel(sourceDir: string, copyToManaged?: boolean): Promise<ModelStatusDto> {
+    return this.decisionProvider.importExistingModel(sourceDir, copyToManaged);
+  }
+
+  downloadAndEnableModel(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
+    return this.decisionProvider.downloadAndEnable(options);
   }
 
   recordSessionEvent(event: {

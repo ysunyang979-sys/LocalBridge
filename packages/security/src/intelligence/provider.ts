@@ -9,11 +9,15 @@ import type {
   IntelligenceStatusDto,
   IntelligenceWorkerStatus,
   ModelStatusDto,
+  ModelDownloadOptions,
+  ModelValidationResult,
 } from "@localbridge/protocol";
 import { sanitizeDecisionContext } from "./redaction.js";
 import {
   ModelDownloadManager,
   getDefaultModelDir,
+  getDevFallbackModelDir,
+  validateModelDir,
 } from "./downloader.js";
 
 export function resolveDefaultPythonPath(): string {
@@ -32,11 +36,11 @@ export function resolveDefaultPythonPath(): string {
 
 export function resolveDefaultModelPath(): string {
   const prodModel = getDefaultModelDir();
-  if (fs.existsSync(prodModel)) {
+  if (validateModelDir(prodModel).valid) {
     return prodModel;
   }
-  const devModel = path.resolve("E:/workspace/models/laya-multilingual");
-  if (fs.existsSync(devModel)) {
+  const devModel = getDevFallbackModelDir();
+  if (validateModelDir(devModel).valid) {
     return devModel;
   }
   return prodModel;
@@ -46,9 +50,12 @@ export interface DecisionProvider {
   getAdvice(context: DecisionContext): Promise<DecisionAdvice>;
   getStatus(): IntelligenceStatusDto;
   getModelStatus(): ModelStatusDto;
-  startModelDownload(): Promise<ModelStatusDto>;
+  startModelDownload(options?: ModelDownloadOptions): Promise<ModelStatusDto>;
   cancelModelDownload(): ModelStatusDto;
-  downloadAndEnable(): Promise<IntelligenceStatusDto>;
+  validateModelPath(dir: string): ModelValidationResult;
+  setModelPath(dir: string): Promise<ModelStatusDto>;
+  importExistingModel(sourceDir: string, copyToManaged?: boolean): Promise<ModelStatusDto>;
+  downloadAndEnable(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto>;
   updateConfig(config: Partial<DecisionProviderConfig>): Promise<IntelligenceStatusDto>;
   shutdown(): Promise<void>;
 }
@@ -57,7 +64,7 @@ export class DisabledDecisionProvider implements DecisionProvider {
   private downloadManager: ModelDownloadManager;
 
   constructor(downloadManager?: ModelDownloadManager) {
-    this.downloadManager = downloadManager || new ModelDownloadManager();
+    this.downloadManager = downloadManager || new ModelDownloadManager(resolveDefaultModelPath());
   }
 
   getAdvice(_context: DecisionContext): Promise<DecisionAdvice> {
@@ -97,16 +104,32 @@ export class DisabledDecisionProvider implements DecisionProvider {
     return this.downloadManager.getStatus();
   }
 
-  startModelDownload(): Promise<ModelStatusDto> {
-    return this.downloadManager.startDownload();
+  validateModelPath(dir: string): ModelValidationResult {
+    return this.downloadManager.validateDirectory(dir);
+  }
+
+  setModelPath(dir: string): Promise<ModelStatusDto> {
+    return Promise.resolve(this.downloadManager.setTargetDir(dir));
+  }
+
+  importExistingModel(sourceDir: string, copyToManaged = false): Promise<ModelStatusDto> {
+    return this.downloadManager.importExistingModel(sourceDir, copyToManaged);
+  }
+
+  startModelDownload(options?: ModelDownloadOptions): Promise<ModelStatusDto> {
+    return this.downloadManager.startDownload(options);
   }
 
   cancelModelDownload(): ModelStatusDto {
     return this.downloadManager.cancelDownload();
   }
 
-  downloadAndEnable(): Promise<IntelligenceStatusDto> {
-    return Promise.resolve(this.getStatus());
+  async downloadAndEnable(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
+    const modelStatus = this.downloadManager.getStatus();
+    if (!modelStatus.installed) {
+      await this.downloadManager.startDownload(options);
+    }
+    return this.getStatus();
   }
 
   updateConfig(_config: Partial<DecisionProviderConfig>): Promise<IntelligenceStatusDto> {
@@ -160,19 +183,45 @@ export class LayaDecisionProvider implements DecisionProvider {
     return this.downloadManager.getStatus();
   }
 
-  startModelDownload(): Promise<ModelStatusDto> {
-    return this.downloadManager.startDownload();
+  startModelDownload(options?: ModelDownloadOptions): Promise<ModelStatusDto> {
+    return this.downloadManager.startDownload(options);
   }
 
   cancelModelDownload(): ModelStatusDto {
     return this.downloadManager.cancelDownload();
   }
 
-  async downloadAndEnable(): Promise<IntelligenceStatusDto> {
+  validateModelPath(dir: string): ModelValidationResult {
+    return this.downloadManager.validateDirectory(dir);
+  }
+
+  async setModelPath(dir: string): Promise<ModelStatusDto> {
+    const status = this.downloadManager.setTargetDir(dir);
+    this.config.modelPath = dir;
+    if (this.config.provider === "laya" && status.installed) {
+      await this.shutdown();
+      this.isShuttingDown = false;
+      this.initWorker();
+    }
+    return status;
+  }
+
+  async importExistingModel(sourceDir: string, copyToManaged = false): Promise<ModelStatusDto> {
+    const status = await this.downloadManager.importExistingModel(sourceDir, copyToManaged);
+    this.config.modelPath = this.downloadManager.getTargetDir();
+    if (this.config.provider === "laya" && status.installed) {
+      await this.shutdown();
+      this.isShuttingDown = false;
+      this.initWorker();
+    }
+    return status;
+  }
+
+  async downloadAndEnable(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
     // 1. Download model if needed
     const modelStatus = this.downloadManager.getStatus();
     if (!modelStatus.installed) {
-      await this.downloadManager.startDownload();
+      await this.downloadManager.startDownload(options);
       // Wait for download to finish (or error)
       for (let i = 0; i < 600; i++) {
         await new Promise((r) => setTimeout(r, 200));

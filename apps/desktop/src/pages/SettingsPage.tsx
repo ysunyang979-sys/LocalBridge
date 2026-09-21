@@ -27,6 +27,7 @@ import {
   Brain,
   Download,
   DownloadCloud,
+  FolderOpen,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -44,6 +45,7 @@ import type {
   IntelligenceStatusDto,
   DecisionAdvice,
   ModelStatusDto,
+  ModelValidationResult,
   UserExperienceMode,
 } from "../types.js";
 
@@ -172,6 +174,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [modelStatus, setModelStatus] = useState<ModelStatusDto | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [showModelPrompt, setShowModelPrompt] = useState(false);
+  const [downloadProxyMode, setDownloadProxyMode] = useState<"system" | "direct" | "custom">("system");
+  const [downloadCustomProxyUrl, setDownloadCustomProxyUrl] = useState("");
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importSourceDir, setImportSourceDir] = useState("");
+  const [importCopyToManaged, setImportCopyToManaged] = useState(false);
+  const [importValidation, setImportValidation] = useState<ModelValidationResult | null>(null);
+  const [importValidating, setImportValidating] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const loadModelStatus = async () => {
     try {
@@ -263,7 +274,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setDownloadBusy(true);
     setIntelErrorMsg(null);
     try {
-      const res = await bridge.startModelDownload();
+      const res = await bridge.startModelDownload({
+        proxyMode: downloadProxyMode,
+        customProxyUrl: downloadProxyMode === "custom" ? downloadCustomProxyUrl.trim() : undefined,
+      });
       setModelStatus(res);
     } catch (err: any) {
       setIntelErrorMsg(err?.message || "Failed to start download");
@@ -281,6 +295,89 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setIntelErrorMsg(err?.message || "Failed to cancel download");
     } finally {
       setDownloadBusy(false);
+    }
+  };
+
+  const handleBrowseImportFolder = async () => {
+    try {
+      const selected = await bridge.selectModelDirectory();
+      if (selected) {
+        setImportSourceDir(selected);
+        setImportValidating(true);
+        setImportError(null);
+        try {
+          const val = await bridge.validateModelPath(selected);
+          setImportValidation(val);
+        } catch (e: any) {
+          setImportError(e.message || "Failed to validate directory");
+        } finally {
+          setImportValidating(false);
+        }
+      }
+    } catch (err: any) {
+      setImportError(err.message || String(err));
+    }
+  };
+
+  const handleValidateImportDir = async (dir: string) => {
+    setImportSourceDir(dir);
+    if (!dir.trim()) {
+      setImportValidation(null);
+      return;
+    }
+    setImportValidating(true);
+    setImportError(null);
+    try {
+      const val = await bridge.validateModelPath(dir.trim());
+      setImportValidation(val);
+    } catch (e: any) {
+      setImportError(e.message || "Failed to validate directory");
+    } finally {
+      setImportValidating(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importSourceDir.trim()) return;
+    setImportBusy(true);
+    setImportError(null);
+    try {
+      const res = await bridge.importExistingModel({
+        sourceDir: importSourceDir.trim(),
+        copyToManaged: importCopyToManaged,
+      });
+      setModelStatus(res);
+      if (res.modelPath) {
+        setIntelModelPath(res.modelPath);
+      }
+      setShowImportModal(false);
+      setShowModelPrompt(false);
+      const status = await bridge.getIntelligenceStatus();
+      setIntelStatus(status);
+      setIntelSuccessMsg(t.intelligence.savedSuccess);
+      setTimeout(() => setIntelSuccessMsg(null), 3000);
+    } catch (err: any) {
+      setImportError(err.message || "Failed to import model");
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const handleBrowseAdvancedModelPath = async () => {
+    try {
+      const selected = await bridge.selectModelDirectory();
+      if (selected) {
+        setIntelModelPath(selected);
+        const val = await bridge.validateModelPath(selected);
+        if (val.valid) {
+          const res = await bridge.setModelPath(selected);
+          setModelStatus(res);
+          const status = await bridge.getIntelligenceStatus();
+          setIntelStatus(status);
+        }
+      }
+    } catch (err: any) {
+      console.warn("Folder picker error:", err);
     }
   };
 
@@ -325,7 +422,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setDownloadBusy(true);
     setIntelErrorMsg(null);
     try {
-      const res = await bridge.downloadAndEnableModel();
+      const res = await bridge.downloadAndEnableModel({
+        proxyMode: downloadProxyMode,
+        customProxyUrl: downloadProxyMode === "custom" ? downloadCustomProxyUrl.trim() : undefined,
+      });
       setIntelProvider(res.provider);
       setIntelStatus(res);
       await loadModelStatus();
@@ -2090,7 +2190,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   </div>
                 </div>
 
-                {/* Download Actions */}
+                {/* Download / Import Actions */}
                 {modelStatus?.status === "downloading" ? (
                   <button
                     type="button"
@@ -2106,19 +2206,84 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     <span>{t.intelligence.modelReady || "Ready"}</span>
                   </div>
                 ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleStartDownload}
+                      disabled={downloadBusy}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50"
+                    >
+                      {downloadBusy ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <DownloadCloud className="w-3.5 h-3.5" />
+                      )}
+                      <span>{t.intelligence.downloadModelBtn || "Download Model"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowImportModal(true);
+                        setImportSourceDir("");
+                        setImportValidation(null);
+                        setImportError(null);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-theme-card hover:bg-theme-card-hover text-theme-primary border border-theme-subtle transition shadow-sm"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                      <span>{t.intelligence.importExistingModelBtn || "Import Existing Model"}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Proxy Settings Selector */}
+              <div className="flex items-center gap-2 text-xs pt-1 flex-wrap">
+                <span className="text-theme-muted font-medium">{t.intelligence.proxyLabel}:</span>
+                <div className="inline-flex rounded-lg p-0.5 bg-theme-input border border-theme-subtle">
                   <button
                     type="button"
-                    onClick={handleStartDownload}
-                    disabled={downloadBusy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50"
+                    onClick={() => setDownloadProxyMode("system")}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      downloadProxyMode === "system"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "text-theme-muted hover:text-theme-primary"
+                    }`}
                   >
-                    {downloadBusy ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <DownloadCloud className="w-3.5 h-3.5" />
-                    )}
-                    <span>{t.intelligence.downloadModelBtn || "Download Model"}</span>
+                    {t.intelligence.proxySystem}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setDownloadProxyMode("direct")}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      downloadProxyMode === "direct"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "text-theme-muted hover:text-theme-primary"
+                    }`}
+                  >
+                    {t.intelligence.proxyDirect}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDownloadProxyMode("custom")}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      downloadProxyMode === "custom"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "text-theme-muted hover:text-theme-primary"
+                    }`}
+                  >
+                    {t.intelligence.proxyCustom}
+                  </button>
+                </div>
+                {downloadProxyMode === "custom" && (
+                  <input
+                    type="text"
+                    value={downloadCustomProxyUrl}
+                    onChange={(e) => setDownloadCustomProxyUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:10808"
+                    className="px-2.5 py-1 rounded-lg bg-theme-input border border-theme-input text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500 w-48"
+                  />
                 )}
               </div>
 
@@ -2191,12 +2356,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       {t.intelligence.modelRequiredPrompt || "Laya Multilingual is required to enable decision intelligence."}
                     </div>
                     <div className="text-[11px] text-theme-muted">
-                      Download the model to your local machine to provide non-blocking risk assessment.
+                      Download or import the model to provide local risk assessment.
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
                   <button
                     type="button"
                     onClick={handleDownloadAndEnable}
@@ -2205,6 +2370,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{t.intelligence.downloadAndEnableBtn || "Download & Enable"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowImportModal(true);
+                      setImportSourceDir("");
+                      setImportValidation(null);
+                      setImportError(null);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-theme-card hover:bg-theme-card-hover text-theme-primary border border-theme-subtle transition shadow-sm"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{t.intelligence.importExistingModelBtn || "Import Existing Model"}</span>
                   </button>
                   <button
                     type="button"
@@ -2239,13 +2417,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   <label className="text-xs font-medium text-theme-secondary">
                     {t.intelligence.modelPath}
                   </label>
-                  <input
-                    type="text"
-                    value={intelModelPath}
-                    onChange={(e) => setIntelModelPath(e.target.value)}
-                    placeholder={t.intelligence.modelPathPlaceholder}
-                    className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={intelModelPath}
+                      onChange={(e) => setIntelModelPath(e.target.value)}
+                      placeholder={t.intelligence.modelPathPlaceholder}
+                      className="flex-1 px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleBrowseAdvancedModelPath}
+                      className="px-3 py-2 rounded-lg bg-theme-card hover:bg-theme-card-hover border border-theme-subtle text-xs text-theme-primary transition flex items-center gap-1.5 shrink-0"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                      <span>{t.intelligence.browseBtn || "Browse..."}</span>
+                    </button>
+                  </div>
                   <p className="text-[11px] text-theme-muted">
                     Custom model directory path.
                   </p>
@@ -2385,6 +2573,180 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* Import Existing Model Modal */}
+            {showImportModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="bg-theme-card border border-theme-subtle rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="w-5 h-5 text-sky-400" />
+                      <h3 className="font-semibold text-theme-primary text-sm">
+                        {t.intelligence.importModalTitle}
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowImportModal(false)}
+                      className="text-theme-muted hover:text-theme-primary transition"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-theme-muted">
+                    {t.intelligence.importModalSubtitle}
+                  </p>
+
+                  {/* Folder path input */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-theme-secondary">
+                      {t.intelligence.modelPath}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={importSourceDir}
+                        onChange={(e) => handleValidateImportDir(e.target.value)}
+                        placeholder="E:\workspace\models\laya-multilingual"
+                        className="flex-1 px-3 py-2 rounded-lg bg-theme-input border border-theme-input text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleBrowseImportFolder}
+                        className="px-3 py-2 rounded-lg bg-theme-card-muted hover:bg-theme-card border border-theme-subtle text-xs text-theme-primary transition flex items-center gap-1.5 shrink-0"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
+                        <span>{t.intelligence.browseBtn}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live validation feedback */}
+                  {importValidating && (
+                    <div className="flex items-center gap-2 text-xs text-purple-400 font-mono">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Validating model files...</span>
+                    </div>
+                  )}
+
+                  {importValidation && !importValidating && (
+                    <div
+                      className={`p-3 rounded-lg border text-xs flex items-start gap-2 ${
+                        importValidation.valid
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                          : "bg-red-500/10 border-red-500/30 text-red-400"
+                      }`}
+                    >
+                      {importValidation.valid ? (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                      )}
+                      <div className="space-y-0.5">
+                        <div className="font-semibold">
+                          {importValidation.valid
+                            ? t.intelligence.modelValidSuccess
+                            : t.intelligence.modelValidError}
+                        </div>
+                        {!importValidation.valid && importValidation.missingFiles?.length > 0 && (
+                          <div className="text-[11px] text-red-300 font-mono">
+                            Missing: {importValidation.missingFiles.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {importError && (
+                    <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+                      {importError}
+                    </div>
+                  )}
+
+                  {/* Import Mode Radio Options */}
+                  <div className="space-y-2 pt-1">
+                    <div
+                      onClick={() => setImportCopyToManaged(false)}
+                      className={`p-3 rounded-lg border cursor-pointer transition flex items-start gap-3 ${
+                        !importCopyToManaged
+                          ? "bg-purple-500/10 border-purple-500"
+                          : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            !importCopyToManaged
+                              ? "border-purple-500 bg-purple-500"
+                              : "border-theme-muted"
+                          }`}
+                        >
+                          {!importCopyToManaged && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-xs text-theme-primary">
+                          {t.intelligence.importOptionUseExisting}
+                        </div>
+                        <div className="text-[11px] text-theme-muted mt-0.5">
+                          Points Nexus directly to this path. Zero file copy, instant ready.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => setImportCopyToManaged(true)}
+                      className={`p-3 rounded-lg border cursor-pointer transition flex items-start gap-3 ${
+                        importCopyToManaged
+                          ? "bg-purple-500/10 border-purple-500"
+                          : "bg-theme-card-muted border-theme-subtle hover:border-theme-muted"
+                      }`}
+                    >
+                      <div className="mt-0.5">
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            importCopyToManaged
+                              ? "border-purple-500 bg-purple-500"
+                              : "border-theme-muted"
+                          }`}
+                        >
+                          {importCopyToManaged && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-xs text-theme-primary">
+                          {t.intelligence.importOptionCopyToManaged}
+                        </div>
+                        <div className="text-[11px] text-theme-muted mt-0.5">
+                          Fast local copy into managed model directory with zero network download.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-theme-subtle">
+                    <button
+                      type="button"
+                      onClick={() => setShowImportModal(false)}
+                      className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-theme-muted hover:text-theme-primary transition"
+                    >
+                      {t.common?.cancel || "Cancel"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmImport}
+                      disabled={!importValidation?.valid || importBusy}
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50"
+                    >
+                      {importBusy && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                      <span>{t.intelligence.confirmImportBtn}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

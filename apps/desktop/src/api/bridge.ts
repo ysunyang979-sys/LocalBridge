@@ -24,6 +24,9 @@ import type {
   DecisionProviderConfig,
   IntelligenceStatusDto,
   ModelStatusDto,
+  ModelDownloadOptions,
+  ModelValidationResult,
+  ModelImportOptions,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -635,6 +638,24 @@ class ApiBridge {
     return null;
   }
 
+  async selectModelDirectory(): Promise<string | null> {
+    if (isTauri()) {
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({
+          directory: true,
+          multiple: false,
+          title: "Select Laya Model Directory",
+        });
+        if (typeof selected === "string") return selected;
+        return null;
+      } catch (err) {
+        console.warn("Tauri dialog error:", err);
+      }
+    }
+    return null;
+  }
+
   // Secure MCP Tunnel
   async getTunnelStatus(): Promise<TunnelStatusDto> {
     if (isTauri()) {
@@ -937,12 +958,23 @@ class ApiBridge {
 
   // Intelligence & DecisionProvider
   async getIntelligenceStatus(): Promise<IntelligenceStatusDto> {
+    if (isTauri()) {
+      return invoke<IntelligenceStatusDto>("desktop_get_intelligence_status");
+    }
     return this.fetchJson<IntelligenceStatusDto>("/api/management/intelligence/status");
   }
 
   async updateIntelligenceConfig(
     config: Partial<DecisionProviderConfig>
   ): Promise<IntelligenceStatusDto> {
+    if (isTauri()) {
+      return invoke<IntelligenceStatusDto>("desktop_update_intelligence_config", {
+        provider: config.provider,
+        modelPath: config.modelPath,
+        pythonPath: config.pythonPath,
+        workerTimeoutMs: config.workerTimeoutMs,
+      });
+    }
     return this.fetchJson<IntelligenceStatusDto>("/api/management/intelligence/config", {
       method: "POST",
       body: JSON.stringify(config),
@@ -950,6 +982,9 @@ class ApiBridge {
   }
 
   async evaluateDecision(context: DecisionContext): Promise<DecisionAdvice> {
+    if (isTauri()) {
+      return invoke<DecisionAdvice>("desktop_evaluate_intelligence", { context });
+    }
     return this.fetchJson<DecisionAdvice>("/api/management/intelligence/evaluate", {
       method: "POST",
       body: JSON.stringify(context),
@@ -957,24 +992,77 @@ class ApiBridge {
   }
 
   async getModelStatus(): Promise<ModelStatusDto> {
+    if (isTauri()) {
+      return invoke<ModelStatusDto>("desktop_get_model_status");
+    }
     return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/status");
   }
 
-  async startModelDownload(): Promise<ModelStatusDto> {
+  async startModelDownload(options?: ModelDownloadOptions): Promise<ModelStatusDto> {
+    if (isTauri()) {
+      return invoke<ModelStatusDto>("desktop_start_model_download", {
+        proxyMode: options?.proxyMode,
+        customProxyUrl: options?.customProxyUrl,
+      });
+    }
     return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/download", {
       method: "POST",
+      body: options ? JSON.stringify(options) : undefined,
     });
   }
 
   async cancelModelDownload(): Promise<ModelStatusDto> {
+    if (isTauri()) {
+      return invoke<ModelStatusDto>("desktop_cancel_model_download");
+    }
     return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/cancel", {
       method: "POST",
     });
   }
 
-  async downloadAndEnableModel(): Promise<IntelligenceStatusDto> {
+  async downloadAndEnableModel(options?: ModelDownloadOptions): Promise<IntelligenceStatusDto> {
+    if (isTauri()) {
+      return invoke<IntelligenceStatusDto>("desktop_download_and_enable_model", {
+        proxyMode: options?.proxyMode,
+        customProxyUrl: options?.customProxyUrl,
+      });
+    }
     return this.fetchJson<IntelligenceStatusDto>("/api/management/intelligence/model/download-and-enable", {
       method: "POST",
+      body: options ? JSON.stringify(options) : undefined,
+    });
+  }
+
+  async validateModelPath(modelPath: string): Promise<ModelValidationResult> {
+    if (isTauri()) {
+      return invoke<ModelValidationResult>("desktop_validate_model_path", { modelPath });
+    }
+    return this.fetchJson<ModelValidationResult>("/api/management/intelligence/model/validate", {
+      method: "POST",
+      body: JSON.stringify({ modelPath }),
+    });
+  }
+
+  async setModelPath(modelPath: string): Promise<ModelStatusDto> {
+    if (isTauri()) {
+      return invoke<ModelStatusDto>("desktop_set_model_path", { modelPath });
+    }
+    return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/set-path", {
+      method: "POST",
+      body: JSON.stringify({ modelPath }),
+    });
+  }
+
+  async importExistingModel(options: ModelImportOptions): Promise<ModelStatusDto> {
+    if (isTauri()) {
+      return invoke<ModelStatusDto>("desktop_import_model", {
+        sourceDir: options.sourceDir,
+        copyToManaged: options.copyToManaged,
+      });
+    }
+    return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/import", {
+      method: "POST",
+      body: JSON.stringify(options),
     });
   }
 }

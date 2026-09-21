@@ -837,6 +837,19 @@ export interface I18nDictionary {
     executionLabel: string;
     layaDecisionsTitle: string;
     advisoryOnly: string;
+    importExistingModelBtn: string;
+    importModalTitle: string;
+    importModalSubtitle: string;
+    browseBtn: string;
+    modelValidSuccess: string;
+    modelValidError: string;
+    importOptionUseExisting: string;
+    importOptionCopyToManaged: string;
+    confirmImportBtn: string;
+    proxyLabel: string;
+    proxySystem: string;
+    proxyDirect: string;
+    proxyCustom: string;
   };
   onboarding: {
     welcomeTitle: string;

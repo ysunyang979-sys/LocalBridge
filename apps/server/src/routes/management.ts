@@ -8,6 +8,8 @@ import {
   type ApprovalRisk,
   type ProjectTrustPolicy,
   type DecisionContext,
+  type ModelDownloadOptions,
+  type ModelImportOptions,
 } from "@localbridge/protocol";
 import type { TokenService } from "../db/token-service.js";
 import type { RunnerRegistry } from "../runner/registry.js";
@@ -82,14 +84,17 @@ export function checkLoopbackAndSecurity(
 
   // 3. Browser-Origin / CSRF Attack Defense
   const origin = request.headers.origin;
+  let isTauriOrigin = false;
+  let isLocalUrlOrigin = false;
+
   if (origin) {
     const allowedOrigins = [
       "tauri://localhost",
       "http://tauri.localhost",
       "https://tauri.localhost",
     ];
-    const isTauriOrigin = allowedOrigins.includes(origin);
-    const isLocalUrlOrigin =
+    isTauriOrigin = allowedOrigins.includes(origin);
+    isLocalUrlOrigin =
       origin.startsWith("http://127.0.0.1:") ||
       origin.startsWith("http://localhost:") ||
       origin === "http://127.0.0.1" ||
@@ -104,7 +109,7 @@ export function checkLoopbackAndSecurity(
   }
 
   const secFetchSite = request.headers["sec-fetch-site"];
-  if (secFetchSite === "cross-site") {
+  if (secFetchSite === "cross-site" && !isTauriOrigin && !isLocalUrlOrigin) {
     reply.status(403).send({
       error: "Forbidden: Cross-site browser requests are blocked",
       code: "BROWSER_CROSS_ORIGIN_FORBIDDEN",
@@ -1648,8 +1653,10 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     return reply.status(200).send(status);
   });
 
-  fastify.post("/management/intelligence/model/download", async (_request, reply) => {
-    const status = await mcpContext.startModelDownload();
+  fastify.post<{
+    Body?: ModelDownloadOptions;
+  }>("/management/intelligence/model/download", async (request, reply) => {
+    const status = await mcpContext.startModelDownload(request.body);
     return reply.status(200).send(status);
   });
 
@@ -1658,9 +1665,60 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     return reply.status(200).send(status);
   });
 
-  fastify.post("/management/intelligence/model/download-and-enable", async (_request, reply) => {
+  fastify.post<{
+    Body: { modelPath: string };
+  }>("/management/intelligence/model/validate", async (request, reply) => {
+    const modelPath = request.body?.modelPath;
+    if (!modelPath) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Field 'modelPath' is required",
+      });
+    }
+    const result = mcpContext.validateModelPath(modelPath);
+    return reply.status(200).send(result);
+  });
+
+  fastify.post<{
+    Body: { modelPath: string };
+  }>("/management/intelligence/model/set-path", async (request, reply) => {
+    const modelPath = request.body?.modelPath;
+    if (!modelPath) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Field 'modelPath' is required",
+      });
+    }
+    const status = await mcpContext.setModelPath(modelPath);
+    return reply.status(200).send(status);
+  });
+
+  fastify.post<{
+    Body: ModelImportOptions;
+  }>("/management/intelligence/model/import", async (request, reply) => {
+    const sourceDir = request.body?.sourceDir;
+    if (!sourceDir) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Field 'sourceDir' is required",
+      });
+    }
     try {
-      const status = await mcpContext.downloadAndEnableModel();
+      const status = await mcpContext.importExistingModel(sourceDir, !!request.body?.copyToManaged);
+      return reply.status(200).send(status);
+    } catch (err: any) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: err.message || "Failed to import existing model",
+      });
+    }
+  });
+
+  fastify.post<{
+    Body?: ModelDownloadOptions;
+  }>("/management/intelligence/model/download-and-enable", async (request, reply) => {
+    try {
+      const status = await mcpContext.downloadAndEnableModel(request.body);
       return reply.status(200).send(status);
     } catch (err: any) {
       return reply.status(500).send({

@@ -872,6 +872,122 @@ fn desktop_finish_session(
     desktop_management_call(state, "POST".into(), format!("/api/management/sessions/{}/finish", session_id), Some(payload))
 }
 
+#[tauri::command]
+fn desktop_get_intelligence_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/management/intelligence/status".into(), None)
+}
+
+#[tauri::command]
+fn desktop_update_intelligence_config(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    provider: Option<String>,
+    model_path: Option<String>,
+    python_path: Option<String>,
+    worker_timeout_ms: Option<u64>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({});
+    if let Some(p) = provider {
+        payload["provider"] = serde_json::json!(p);
+    }
+    if let Some(mp) = model_path {
+        payload["modelPath"] = serde_json::json!(mp);
+    }
+    if let Some(pp) = python_path {
+        payload["pythonPath"] = serde_json::json!(pp);
+    }
+    if let Some(to) = worker_timeout_ms {
+        payload["workerTimeoutMs"] = serde_json::json!(to);
+    }
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/config".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_get_model_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/management/intelligence/model/status".into(), None)
+}
+
+#[tauri::command]
+fn desktop_start_model_download(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    proxy_mode: Option<String>,
+    custom_proxy_url: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({});
+    if let Some(pm) = proxy_mode {
+        payload["proxyMode"] = serde_json::json!(pm);
+    }
+    if let Some(cpu) = custom_proxy_url {
+        payload["customProxyUrl"] = serde_json::json!(cpu);
+    }
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/model/download".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_cancel_model_download(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/model/cancel".into(), None)
+}
+
+#[tauri::command]
+fn desktop_download_and_enable_model(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    proxy_mode: Option<String>,
+    custom_proxy_url: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({});
+    if let Some(pm) = proxy_mode {
+        payload["proxyMode"] = serde_json::json!(pm);
+    }
+    if let Some(cpu) = custom_proxy_url {
+        payload["customProxyUrl"] = serde_json::json!(cpu);
+    }
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/model/download-and-enable".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_validate_model_path(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    model_path: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "modelPath": model_path });
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/model/validate".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_set_model_path(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    model_path: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "modelPath": model_path });
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/model/set-path".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_import_model(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    source_dir: String,
+    copy_to_managed: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({
+        "sourceDir": source_dir,
+        "copyToManaged": copy_to_managed.unwrap_or(false)
+    });
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/model/import".into(), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_evaluate_intelligence(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    context: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), "/api/management/intelligence/evaluate".into(), Some(context))
+}
+
 
 #[tauri::command]
 fn desktop_list_jobs(
@@ -1942,7 +2058,17 @@ fn main() {
             desktop_get_session_handoff,
             desktop_start_session,
             desktop_checkpoint_session,
-            desktop_finish_session
+            desktop_finish_session,
+            desktop_get_intelligence_status,
+            desktop_update_intelligence_config,
+            desktop_get_model_status,
+            desktop_start_model_download,
+            desktop_cancel_model_download,
+            desktop_download_and_enable_model,
+            desktop_validate_model_path,
+            desktop_set_model_path,
+            desktop_import_model,
+            desktop_evaluate_intelligence
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;
