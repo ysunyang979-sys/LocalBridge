@@ -480,6 +480,23 @@ export interface IntelligenceStatusDto {
   warmInferenceMs?: number | null;
   startupTimeoutMs?: number;
   inferenceTimeoutMs?: number;
+  lastInferenceAt?: string | null;
+  lastInferenceLatencyMs?: number | null;
+  recentInference?: LayaRecentInferenceDto | null;
+}
+
+export interface LayaRecentInferenceDto {
+  source: "chatgpt" | "nexus_internal";
+  operation: string;
+  target?: string;
+  risk: "low" | "medium" | "high" | "critical";
+  recommendation: "approve" | "review" | "deny";
+  confidence: number;
+  providerUsed: string;
+  fallbackUsed: boolean;
+  inferenceExecuted: boolean;
+  latencyMs: number;
+  timestamp: string;
 }
 
 export type UserExperienceMode = "standard" | "advanced";

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface DecisionContext {
   operation: string;
   toolName?: string;
@@ -85,6 +87,9 @@ export interface IntelligenceStatusDto {
   warmInferenceMs?: number | null;
   startupTimeoutMs?: number;
   inferenceTimeoutMs?: number;
+  lastInferenceAt?: string | null;
+  lastInferenceLatencyMs?: number | null;
+  recentInference?: LayaRecentInferenceDto | null;
 }
 
 export type ModelDownloadStatus =
@@ -129,4 +134,65 @@ export interface ModelImportOptions {
   copyToManaged?: boolean;
 }
 
+// Laya MCP Bridge DTOs
+export interface LayaMcpStatusResult {
+  enabled: boolean;
+  provider: string;
+  workerReady: boolean;
+  modelLoaded: boolean;
+  inferenceReady: boolean;
+  modelPathConfigured: boolean;
+  lastInferenceAt: string | null;
+  lastInferenceLatencyMs: number | null;
+}
 
+export const LayaMcpStatusParamsSchema = z.object({});
+
+export const LayaMcpAssessParamsSchema = z.object({
+  projectId: z.string().optional(),
+  operation: z.string().min(1, "operation is required"),
+  target: z.string().optional(),
+  command: z.string().optional(),
+  description: z.string().optional(),
+  skillId: z.string().optional(),
+  context: z.string().optional(),
+});
+
+export interface LayaMcpAssessParams {
+  projectId?: string;
+  operation: string;
+  target?: string;
+  command?: string;
+  description?: string;
+  skillId?: string;
+  context?: string;
+}
+
+export interface LayaMcpAssessResult {
+  risk: "low" | "medium" | "high" | "critical";
+  recommendation: "approve" | "review" | "deny";
+  confidence: number;
+  category: string;
+  reason: string;
+  providerUsed: string;
+  fallbackUsed: boolean;
+  workerReady: boolean;
+  modelLoaded: boolean;
+  inferenceExecuted: boolean;
+  inferenceLatencyMs?: number;
+  suggestedSkill?: string;
+}
+
+export interface LayaRecentInferenceDto {
+  source: "chatgpt" | "nexus_internal";
+  operation: string;
+  target?: string;
+  risk: "low" | "medium" | "high" | "critical";
+  recommendation: "approve" | "review" | "deny";
+  confidence: number;
+  providerUsed: string;
+  fallbackUsed: boolean;
+  inferenceExecuted: boolean;
+  latencyMs: number;
+  timestamp: string;
+}

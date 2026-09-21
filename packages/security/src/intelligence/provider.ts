@@ -9,6 +9,7 @@ import type {
   ModelStatusDto,
   ModelDownloadOptions,
   ModelValidationResult,
+  LayaRecentInferenceDto,
 } from "@localbridge/protocol";
 import { sanitizeDecisionContext } from "./redaction.js";
 import {
@@ -44,6 +45,8 @@ export interface DecisionProvider {
   getAdvice(context: DecisionContext): Promise<DecisionAdvice>;
   getStatus(): IntelligenceStatusDto;
   getModelStatus(): ModelStatusDto;
+  getRecentInference(): LayaRecentInferenceDto | null;
+  recordRecentInference?(entry: LayaRecentInferenceDto): void;
   startModelDownload(options?: ModelDownloadOptions): Promise<ModelStatusDto>;
   cancelModelDownload(): ModelStatusDto;
   validateModelPath(dir: string): ModelValidationResult;
@@ -107,7 +110,24 @@ export class DisabledDecisionProvider implements DecisionProvider {
       warmInferenceMs: null,
       startupTimeoutMs: 30000,
       inferenceTimeoutMs: 5000,
+      lastInferenceAt: this.lastInferenceAt,
+      lastInferenceLatencyMs: this.lastInferenceLatencyMs,
+      recentInference: this.recentInference,
     };
+  }
+
+  private recentInference: LayaRecentInferenceDto | null = null;
+  private lastInferenceAt: string | null = null;
+  private lastInferenceLatencyMs: number | null = null;
+
+  getRecentInference(): LayaRecentInferenceDto | null {
+    return this.recentInference;
+  }
+
+  recordRecentInference(entry: LayaRecentInferenceDto): void {
+    this.recentInference = entry;
+    this.lastInferenceAt = entry.timestamp;
+    this.lastInferenceLatencyMs = entry.latencyMs;
   }
 
   getModelStatus(): ModelStatusDto {
@@ -166,6 +186,9 @@ export class LayaDecisionProvider implements DecisionProvider {
   private lastError: string | null = null;
   private lastLatencyMs = 0;
   private warmInferenceMs: number | null = null;
+  private lastInferenceAt: string | null = null;
+  private lastInferenceLatencyMs: number | null = null;
+  private recentInference: LayaRecentInferenceDto | null = null;
   private reqCounter = 0;
   private pendingRequests = new Map<string, PendingRequest>();
   private isShuttingDown = false;
@@ -185,7 +208,7 @@ export class LayaDecisionProvider implements DecisionProvider {
       modelPath: config.modelPath || defaultModel,
       pythonPath: config.pythonPath || defaultPython,
       workerTimeoutMs: config.workerTimeoutMs || 5000,
-      startupTimeoutMs: config.startupTimeoutMs || 30000,
+      startupTimeoutMs: config.startupTimeoutMs || 60000,
       inferenceTimeoutMs: config.inferenceTimeoutMs || config.workerTimeoutMs || 5000,
       developerOverride: config.developerOverride || false,
     };
@@ -448,12 +471,50 @@ export class LayaDecisionProvider implements DecisionProvider {
         confidence: 0.5,
       },
       category: null,
-      routing: {},
+      routing: {
+        suggestedSkill: "nexus.general",
+      },
       reasoningTags: [`fallback:${reason}`],
       latencyMs: 0,
       model: "laya-multilingual-fallback",
       advisoryOnly: true,
     };
+  }
+
+  private recordAdviceTelemetry(context: DecisionContext, advice: DecisionAdvice): void {
+    const timestamp = new Date().toISOString();
+    this.lastInferenceAt = timestamp;
+    this.lastInferenceLatencyMs = advice.latencyMs;
+
+    const recommendation: "approve" | "review" | "deny" = advice.approval.recommended
+      ? "approve"
+      : advice.risk.label === "critical" || advice.risk.label === "high"
+      ? "deny"
+      : "review";
+
+    this.recentInference = {
+      source: (context.source as any) === "chatgpt" ? "chatgpt" : "nexus_internal",
+      operation: context.operation || "unknown",
+      target: (context.target as string) || (context.command as string) || undefined,
+      risk: advice.risk.label,
+      recommendation,
+      confidence: advice.risk.confidence,
+      providerUsed: advice.providerUsed || advice.provider || "laya",
+      fallbackUsed: advice.fallbackUsed ?? true,
+      inferenceExecuted: advice.inferenceExecuted ?? false,
+      latencyMs: advice.latencyMs,
+      timestamp,
+    };
+  }
+
+  getRecentInference(): LayaRecentInferenceDto | null {
+    return this.recentInference;
+  }
+
+  recordRecentInference(entry: LayaRecentInferenceDto): void {
+    this.recentInference = entry;
+    this.lastInferenceAt = entry.timestamp;
+    this.lastInferenceLatencyMs = entry.latencyMs;
   }
 
   async getAdvice(context: DecisionContext): Promise<DecisionAdvice> {
@@ -462,14 +523,16 @@ export class LayaDecisionProvider implements DecisionProvider {
     }
 
     if (this.status !== "ready" && this.status !== "loading") {
-      return this.getFallbackAdvice("worker_unavailable");
+      const fallback = this.getFallbackAdvice("worker_unavailable");
+      this.recordAdviceTelemetry(context, fallback);
+      return fallback;
     }
 
     const sanitized = sanitizeDecisionContext(context);
     const reqId = `req_${++this.reqCounter}_${Date.now()}`;
     const timeoutMs = this.config.inferenceTimeoutMs || this.config.workerTimeoutMs || 5000;
 
-    return new Promise<DecisionAdvice>((resolve) => {
+    const advice = await new Promise<DecisionAdvice>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(reqId);
         resolve(this.getFallbackAdvice("timeout"));
@@ -493,6 +556,9 @@ export class LayaDecisionProvider implements DecisionProvider {
         resolve(this.getFallbackAdvice("send_failed"));
       }
     });
+
+    this.recordAdviceTelemetry(context, advice);
+    return advice;
   }
 
   getStatus(): IntelligenceStatusDto {
@@ -515,6 +581,9 @@ export class LayaDecisionProvider implements DecisionProvider {
       warmInferenceMs: this.warmInferenceMs,
       startupTimeoutMs: this.config.startupTimeoutMs || 30000,
       inferenceTimeoutMs: this.config.inferenceTimeoutMs || 5000,
+      lastInferenceAt: this.lastInferenceAt,
+      lastInferenceLatencyMs: this.lastInferenceLatencyMs,
+      recentInference: this.recentInference,
     };
   }
 
@@ -602,7 +671,7 @@ export class ManagedDecisionProvider implements DecisionProvider {
       modelPath: config.modelPath || this.downloadManager.getTargetDir(),
       pythonPath: config.pythonPath || resolveDefaultPythonPath(),
       workerTimeoutMs: config.workerTimeoutMs || 5000,
-      startupTimeoutMs: config.startupTimeoutMs || 30000,
+      startupTimeoutMs: config.startupTimeoutMs || 60000,
       inferenceTimeoutMs: config.inferenceTimeoutMs || 5000,
       developerOverride: config.developerOverride || false,
     };
@@ -620,6 +689,16 @@ export class ManagedDecisionProvider implements DecisionProvider {
 
   getStatus(): IntelligenceStatusDto {
     return this.activeProvider.getStatus();
+  }
+
+  getRecentInference(): LayaRecentInferenceDto | null {
+    return this.activeProvider.getRecentInference();
+  }
+
+  recordRecentInference(entry: LayaRecentInferenceDto): void {
+    if (this.activeProvider.recordRecentInference) {
+      this.activeProvider.recordRecentInference(entry);
+    }
   }
 
   getModelStatus(): ModelStatusDto {

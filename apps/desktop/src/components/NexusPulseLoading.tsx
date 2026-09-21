@@ -52,7 +52,7 @@ export const NexusPulseLoading: React.FC<NexusPulseLoadingProps> = ({
     },
     {
       id: "mcp",
-      label: `MCP Tools (${toolsCount ?? 62})`,
+      label: `MCP Tools (${toolsCount ?? 64})`,
       icon: Server,
       done: mcpActive,
     },

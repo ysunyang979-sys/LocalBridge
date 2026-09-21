@@ -74,4 +74,8 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   localbridge_skill_list: { readOnlyHint: true },
   localbridge_skill_get: { readOnlyHint: true },
   localbridge_skill_match: { readOnlyHint: true },
+
+  // Laya Decision Intelligence tools
+  localbridge_laya_status: { readOnlyHint: true },
+  localbridge_laya_assess: { readOnlyHint: true },
 };

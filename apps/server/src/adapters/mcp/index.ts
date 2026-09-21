@@ -17,7 +17,7 @@ export class ChatGPTConnectorAdapter extends BaseAIAdapter {
       lastConnectedAt: conn?.lastConnectedAt || null,
       lastSeenAt: conn?.lastSeenAt || null,
       latencyMs: conn?.status === "connected" ? 8 : null,
-      toolCount: 62,
+      toolCount: 64,
       lastError: conn?.lastError || null,
       authValid: Boolean(conn?.tokenId),
     };
@@ -32,7 +32,7 @@ export class ChatGPTConnectorAdapter extends BaseAIAdapter {
       success: true,
       stage: "tools",
       latencyMs: Math.max(1, Date.now() - start),
-      toolCount: 62,
+      toolCount: 64,
       message: hasToken
         ? "ChatGPT MCP Tunnel is ready with authenticated token."
         : "ChatGPT MCP Tunnel is online. Configure token to link.",

@@ -124,7 +124,22 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
           projectId: args?.projectId,
         });
 
-        const match = context.skillRegistry.matchSkills(args.query, args?.projectId);
+        let layaRec = args?.layaRecommendation;
+        if (!layaRec && context.getIntelligenceStatus().status !== "disabled") {
+          try {
+            const advice = await context.getDecisionAdvice({
+              operation: "skill_match",
+              context: args.query,
+              projectId: args?.projectId,
+              source: "chatgpt",
+            });
+            layaRec = advice.routing?.suggestedSkill;
+          } catch {
+            // Advisory failure is non-blocking
+          }
+        }
+
+        const match = context.skillRegistry.matchSkills(args.query, args?.projectId, layaRec);
 
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_skill_match",

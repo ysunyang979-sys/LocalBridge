@@ -81,7 +81,7 @@ def simulate_prediction(context, latency_ms=8):
         cat = "write"
     elif "command" in op or "job" in op or cmd:
         cat = "execute"
-    elif "git" in op:
+    elif "git" in op or "git" in cmd:
         cat = "git"
     elif "runtime" in op:
         cat = "runtime"
@@ -95,6 +95,22 @@ def simulate_prediction(context, latency_ms=8):
         reasoning_tags.append("protected_resource")
     if cmd:
         reasoning_tags.append("has_command")
+
+    suggested_skill = "nexus.general"
+    if "build" in op or "compile" in op or "build" in cmd:
+        suggested_skill = "nexus.fix-build"
+    elif "test" in op or "test" in cmd:
+        suggested_skill = "nexus.run-tests"
+    elif "debug" in op or "lsp" in op:
+        suggested_skill = "nexus.code-debug"
+    elif "git" in op or "git" in cmd:
+        suggested_skill = "nexus.git-review"
+    elif "runtime" in op or "server" in op or "start" in op:
+        suggested_skill = "nexus.start-dev-runtime"
+    elif "clean" in op or "rm" in cmd:
+        suggested_skill = "nexus.project-cleanup"
+    elif "inspect" in op or cat == "read":
+        suggested_skill = "nexus.project-inspect"
 
     return {
         "provider": "laya",
@@ -114,7 +130,7 @@ def simulate_prediction(context, latency_ms=8):
         "category": cat,
         "routing": {
             "suggestedTool": context.get("toolName"),
-            "suggestedSkill": "general"
+            "suggestedSkill": suggested_skill
         },
         "reasoningTags": reasoning_tags,
         "latencyMs": 0,
@@ -129,17 +145,6 @@ def handle_predict(req_id, context):
     if model_agent is None:
         advice = simulate_prediction(context, latency_ms=5)
         send_response({"type": "predict_ok", "id": req_id, "advice": advice})
-        return
-
-    if model_agent == "mock_agent":
-        elapsed_ms = max(1, int((time.time() - start_time) * 1000))
-        sim = simulate_prediction(context, latency_ms=elapsed_ms)
-        sim["modelLoaded"] = True
-        sim["inferenceExecuted"] = True
-        sim["fallbackUsed"] = False
-        sim["latencyMs"] = max(1, elapsed_ms)
-        sim["model"] = "laya-multilingual"
-        send_response({"type": "predict_ok", "id": req_id, "advice": sim})
         return
 
     try:
@@ -180,6 +185,27 @@ def handle_predict(req_id, context):
         if context.get("protectedResource"):
             reasoning_tags.append("protected_resource")
         
+        # Infer suggested skill based on domain and operation
+        suggested_skill = "nexus.general"
+        op_lower = (context.get("operation") or "").lower()
+        cmd_lower = (context.get("command") or "").lower()
+        if "build" in op_lower or "compile" in op_lower or "build" in cmd_lower:
+            suggested_skill = "nexus.fix-build"
+        elif "test" in op_lower or "test" in cmd_lower:
+            suggested_skill = "nexus.run-tests"
+        elif "debug" in op_lower or "lsp" in op_lower:
+            suggested_skill = "nexus.code-debug"
+        elif "refactor" in op_lower:
+            suggested_skill = "nexus.safe-refactor"
+        elif "git" in op_lower or "git" in cmd_lower:
+            suggested_skill = "nexus.git-review"
+        elif "runtime" in op_lower or "server" in op_lower or "start" in op_lower:
+            suggested_skill = "nexus.start-dev-runtime"
+        elif "clean" in op_lower or "rm" in cmd_lower:
+            suggested_skill = "nexus.project-cleanup"
+        elif "inspect" in op_lower or cat_val == "read":
+            suggested_skill = "nexus.project-inspect"
+
         advice = {
             "provider": "laya",
             "providerUsed": "laya",
@@ -198,7 +224,7 @@ def handle_predict(req_id, context):
             "category": cat_val,
             "routing": {
                 "suggestedTool": context.get("toolName"),
-                "suggestedSkill": "general"
+                "suggestedSkill": suggested_skill
             },
             "reasoningTags": reasoning_tags,
             "latencyMs": elapsed_ms,
@@ -242,10 +268,11 @@ def main():
                 if model_path and os.path.exists(model_path):
                     try:
                         model_agent = laya.load(model_path)
+                        send_response({"type": "init_ok", "model": "laya-multilingual", "path": model_path, "loaded": True})
                     except Exception as load_err:
-                        sys.stderr.write(f"[laya_worker] model load error: {load_err}, using mock_agent\n")
-                        model_agent = "mock_agent"
-                    send_response({"type": "init_ok", "model": "laya-multilingual", "path": model_path, "loaded": True})
+                        sys.stderr.write(f"[laya_worker] model load error: {load_err}, falling back to safe simulation\n")
+                        model_agent = None
+                        send_response({"type": "init_ok", "model": "laya-multilingual-simulated", "note": f"Model load failed: {load_err}", "loaded": False})
                 else:
                     # Simulation mode
                     model_agent = None

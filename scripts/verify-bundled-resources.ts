@@ -104,8 +104,8 @@ async function verifyBundledServerMcpSchema() {
       headers: { authorization: `Bearer ${mgmtToken}` },
     });
     const statusData = (await statusRes.json()) as any;
-    if (statusData.toolsCount !== 62) {
-      throw new Error(`Bundled server /api/mcp/status toolsCount mismatch: expected 62, got ${statusData.toolsCount}`);
+    if (statusData.toolsCount !== 64) {
+      throw new Error(`Bundled server /api/mcp/status toolsCount mismatch: expected 64, got ${statusData.toolsCount}`);
     }
 
     // Check /api/skills endpoint on bundled server
@@ -174,8 +174,8 @@ async function verifyBundledServerMcpSchema() {
     const listData = await listRes.json();
     const tools = listData.result?.tools ?? [];
 
-    if (tools.length !== 62) {
-      throw new Error(`Bundled server tools/list returned ${tools.length} tools, expected exactly 62!`);
+    if (tools.length !== 64) {
+      throw new Error(`Bundled server tools/list returned ${tools.length} tools, expected exactly 64!`);
     }
 
     const requiredSkillTools = [
@@ -186,6 +186,16 @@ async function verifyBundledServerMcpSchema() {
     for (const st of requiredSkillTools) {
       if (!tools.find((t: any) => t.name === st)) {
         throw new Error(`Bundled server tools/list is missing required skill tool: ${st}`);
+      }
+    }
+
+    const requiredLayaTools = [
+      "localbridge_laya_status",
+      "localbridge_laya_assess",
+    ];
+    for (const lt of requiredLayaTools) {
+      if (!tools.find((t: any) => t.name === lt)) {
+        throw new Error(`Bundled server tools/list is missing required laya tool: ${lt}`);
       }
     }
 

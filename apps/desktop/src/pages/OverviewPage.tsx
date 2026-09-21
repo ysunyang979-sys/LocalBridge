@@ -125,7 +125,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
               </span>
             </div>
             <div className="text-xs text-theme-muted mt-1">
-              {mcpStatus?.toolsCount ?? 62} safe tools &bull; MCP {mcpStatus?.protocolVersion || "2026-07-28"}
+              {mcpStatus?.toolsCount ?? 64} safe tools &bull; MCP {mcpStatus?.protocolVersion || "2026-07-28"}
             </div>
           </div>
         </div>

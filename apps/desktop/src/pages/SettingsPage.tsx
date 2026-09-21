@@ -1554,7 +1554,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                       </span>
                     </div>
                     <div className="text-[11px] text-theme-muted font-mono mt-0.5">
-                      <span>Scopes: read, write, execute &bull; 62 {isZh ? "工具" : "tools"} &bull; 12 ms</span>
+                      <span>Scopes: read, write, execute &bull; 64 {isZh ? "工具" : "tools"} &bull; 12 ms</span>
                     </div>
                   </div>
                 </div>
@@ -2737,6 +2737,99 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               })()}
             </div>
 
+            {/* Recent Real MCP Inference Card */}
+            <div className="p-4 rounded-xl border border-theme-subtle bg-theme-card space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-semibold text-theme-primary flex items-center gap-2">
+                    <Activity className="w-3.5 h-3.5 text-purple-400" />
+                    <span>{isZh ? "最近一次真实 MCP 推理" : "Recent Real MCP Inference"}</span>
+                  </div>
+                  <div className="text-[11px] text-theme-muted">
+                    {isZh
+                      ? "实时记录 ChatGPT 通过 MCP 调用或系统触发的真实模型决策与风险评估。"
+                      : "Telemetry of the latest model decision or risk assessment triggered via MCP or internal pipeline."}
+                  </div>
+                </div>
+                {intelStatus?.recentInference && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                    {intelStatus.recentInference.source === "chatgpt" ? "ChatGPT MCP" : "Internal Pipeline"}
+                  </span>
+                )}
+              </div>
+
+              {intelStatus?.recentInference ? (
+                <div className="p-3 bg-theme-card-muted/50 rounded-lg border border-theme-subtle space-y-2.5">
+                  <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-theme-primary">
+                        {intelStatus.recentInference.operation}
+                      </span>
+                      {intelStatus.recentInference.target && (
+                        <span className="font-mono text-[11px] text-theme-muted truncate max-w-[200px]" title={intelStatus.recentInference.target}>
+                          ({intelStatus.recentInference.target})
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-mono">
+                      <span className="text-theme-muted">
+                        {new Date(intelStatus.recentInference.timestamp).toLocaleTimeString()}
+                      </span>
+                      <span className="text-purple-400 font-semibold">
+                        {intelStatus.recentInference.latencyMs} ms
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">{isZh ? "风险级别" : "Risk Level"}</div>
+                      <div className={`font-bold mt-0.5 ${
+                        intelStatus.recentInference.risk === "low"
+                          ? "text-emerald-400"
+                          : intelStatus.recentInference.risk === "medium"
+                          ? "text-amber-400"
+                          : "text-rose-400"
+                      }`}>
+                        {mapRiskLabel(intelStatus.recentInference.risk, language)}
+                      </div>
+                    </div>
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">{isZh ? "建议动作" : "Recommendation"}</div>
+                      <div className="text-theme-secondary font-bold mt-0.5">
+                        {mapApprovalRecommendation(intelStatus.recentInference.recommendation === "approve", language)}
+                      </div>
+                    </div>
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">{isZh ? "置信度" : "Confidence"}</div>
+                      <div className="text-emerald-400 font-bold mt-0.5">
+                        {Math.round(intelStatus.recentInference.confidence * 100)}%
+                      </div>
+                    </div>
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">{isZh ? "推理执行" : "Execution"}</div>
+                      <div className="text-theme-secondary mt-0.5 truncate text-[11px]">
+                        {intelStatus.recentInference.inferenceExecuted
+                          ? (isZh ? "PyTorch 真实推理" : "Real Neural")
+                          : (intelStatus.recentInference.fallbackUsed ? (isZh ? "降级回退" : "Fallback") : "—")}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] font-mono text-theme-muted pt-1">
+                    <span>Provider: <strong className="text-theme-secondary">{intelStatus.recentInference.providerUsed}</strong></span>
+                    <span>Status: <strong className={intelStatus.recentInference.fallbackUsed ? "text-amber-400" : "text-emerald-400"}>
+                      {intelStatus.recentInference.fallbackUsed ? "Fallback" : "Verified Real Model"}
+                    </strong></span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 text-center text-xs font-mono text-theme-muted bg-theme-card-muted/30 rounded-lg border border-dashed border-theme-subtle">
+                  {isZh ? "暂无 MCP 推理记录。当 ChatGPT 发起评估或执行高风险操作时将在此显示。" : "No MCP inference recorded yet. Will display when ChatGPT requests assessment or performs mutating operations."}
+                </div>
+              )}
+            </div>
+
             {/* Advanced Developer Telemetry & Controls (Advanced Mode Only) */}
             {uxMode === "advanced" && (
               <div className="space-y-4 pt-4 border-t border-theme-subtle">
@@ -3393,7 +3486,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     : "Local AI Control Plane for ChatGPT · Securely connect ChatGPT to your authorized local environment."}
                 </div>
                 <div className="text-[10px] font-mono text-theme-muted">
-                  62 MCP Tools &bull; Nexus Skills v1 &bull; Secure MCP Tunnel &bull; Full Control &bull; Laya Decision Intelligence &bull; Code Intelligence &bull; Persistent Runtime
+                  64 MCP Tools &bull; Nexus Skills v1 &bull; Secure MCP Tunnel &bull; Full Control &bull; Laya Decision Intelligence &bull; Code Intelligence &bull; Persistent Runtime
                 </div>
               </div>
             </div>

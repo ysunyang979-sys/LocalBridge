@@ -359,6 +359,27 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
           body.params.arguments.isDeviceScope = fullControlSession.scope === "device";
         }
 
+        // Automated Advisory Pipeline: Mutating/executing operations query Laya advisory
+        // Safe read operations bypass inference to preserve peak performance
+        if (
+          (requiredScope === "write" || requiredScope === "execute") &&
+          mcpContext.getIntelligenceStatus().status !== "disabled"
+        ) {
+          try {
+            const rawArgs = body.params?.arguments || {};
+            await mcpContext.getDecisionAdvice({
+              operation: toolName,
+              toolName,
+              projectId: rawArgs.projectId,
+              target: rawArgs.path || rawArgs.relativePath || rawArgs.target,
+              command: rawArgs.command || (rawArgs.args ? rawArgs.args.join(" ") : undefined),
+              source: "chatgpt",
+            });
+          } catch {
+            // Advisory failure must never block or alter policy execution
+          }
+        }
+
         mcpContext.logAudit("mcp_tool_started", {
           principal,
           toolName,

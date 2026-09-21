@@ -111,7 +111,13 @@ export class SkillResolver {
       }
 
       // D. Laya Recommendation Bonus
-      if (layaRecommendation && (layaRecommendation === skill.id || layaRecommendation === skill.id.replace("nexus.", ""))) {
+      const isLayaRecommended = Boolean(
+        layaRecommendation &&
+          (layaRecommendation === skill.id ||
+            layaRecommendation === skill.id.replace("nexus.", "") ||
+            `nexus.${layaRecommendation}` === skill.id)
+      );
+      if (isLayaRecommended) {
         score += 0.25;
       }
 
@@ -129,7 +135,7 @@ export class SkillResolver {
         if (catMatches.length > 0) {
           reasonParts.push(`matched category: ${skill.category}`);
         }
-        if (layaRecommendation && layaRecommendation === skill.id) {
+        if (isLayaRecommended) {
           reasonParts.push(`recommended by Laya`);
         }
         bestReason = reasonParts.length > 0 ? reasonParts.join(", ") : `matched skill description`;

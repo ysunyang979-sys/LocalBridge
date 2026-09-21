@@ -122,7 +122,7 @@ export class SkillRegistry {
     return true;
   }
 
-  matchSkills(query: string, projectId?: string): SkillMatchResult {
-    return this.resolver.resolve(query, projectId);
+  matchSkills(query: string, projectId?: string, layaRecommendation?: string): SkillMatchResult {
+    return this.resolver.resolve(query, projectId, layaRecommendation);
   }
 }

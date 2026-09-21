@@ -36,6 +36,8 @@ export const MCP_TOOL_SCOPE: Readonly<Record<string, McpScope>> = Object.freeze(
   localbridge_skill_list: "read",
   localbridge_skill_get: "read",
   localbridge_skill_match: "read",
+  localbridge_laya_status: "read",
+  localbridge_laya_assess: "read",
   localbridge_session_start: "write",
   localbridge_session_checkpoint: "write",
   localbridge_session_finish: "write",
