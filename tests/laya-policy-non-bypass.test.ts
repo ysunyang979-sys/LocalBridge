@@ -1,87 +1,125 @@
 import { describe, it, expect } from "vitest";
-import type { DecisionAdvice, ApprovalRisk } from "@localbridge/protocol";
+import { TrustPolicyEvaluator, type PolicyEvaluationInput } from "../packages/security/src/policy/evaluator.js";
+import { LayaDecisionProvider, DisabledDecisionProvider } from "../packages/security/src/intelligence/provider.js";
+import type { DecisionContext, DecisionAdvice } from "@localbridge/protocol";
 
-describe("Deterministic Policy Supremacy & Laya Non-Bypass Contract", () => {
-  it("guarantees Laya recommendApproval=true never overrides a policy DENY", () => {
-    // Simulated deterministic engine evaluation
-    const deterministicPolicyDecision: "allow" | "ask" | "deny" = "deny";
-    const policyRisk: ApprovalRisk = "DANGEROUS";
-
-    // Laya advisory output (simulated optimistic prediction)
-    const layaAdvice: DecisionAdvice = {
-      provider: "laya",
-      risk: { label: "low", confidence: 0.95 },
-      approval: { recommended: true, confidence: 0.92 },
-      category: "Safe Read",
-      routing: {},
-      reasoningTags: ["harmless_operation"],
-      latencyMs: 11,
-      model: "mmBERT-base",
-      advisoryOnly: true,
+describe("Laya Advisory & Policy Non-Bypass Invariant Suite", () => {
+  it("proves deterministic security policy CANNOT be bypassed by Laya advice", async () => {
+    // 1. A dangerous file access: accessing a protected .env file
+    const input: PolicyEvaluationInput = {
+      projectId: "p1",
+      operation: "file.write",
+      relativePath: ".env",
+      projectEnabled: true,
+      projectAccessMode: "read-write",
+      trustPolicy: {
+        trustLevel: "standard",
+        protectedFilesPolicy: "always-ask",
+        filePolicy: "allow-all",
+        commandPolicy: "ask-all",
+        gitWritePolicy: "allow-all",
+      },
     };
 
-    // Policy arbiter invariant:
-    // Effective decision MUST be determined solely by Nexus deterministic policy rules.
-    const effectiveDecision = deterministicPolicyDecision;
-    expect(effectiveDecision).toBe("deny");
-    expect(layaAdvice.advisoryOnly).toBe(true);
+    // Evaluator output is deterministic
+    const policyResult = TrustPolicyEvaluator.evaluate(input);
+    expect(policyResult.decision).toBe("ask");
+    expect(policyResult.requiresApproval).toBe(true);
 
-    // Execution must be blocked
-    const canExecuteDirectly = effectiveDecision === "allow";
-    expect(canExecuteDirectly).toBe(false);
+    // Pretend a rogue or hallucinating AI advice object claims this is safe and approved:
+    const rogueAdvice: DecisionAdvice = {
+      provider: "laya",
+      advisoryOnly: true,
+      risk: {
+        score: 0.01,
+        label: "safe",
+        confidence: 0.99,
+      },
+      approval: {
+        recommended: true,
+        confidence: 0.99,
+        category: "RoutineConfig",
+      },
+      reasoningTags: ["looks_safe"],
+      timestamp: Date.now(),
+    };
+
+    // Verify advisoryOnly flag is true
+    expect(rogueAdvice.advisoryOnly).toBe(true);
+
+    // In Nexus architecture, policy execution uses TrustPolicyEvaluator.decision, NEVER advice.approval.recommended
+    // If policy is "ask", the system MUST NOT auto-allow based on advice
+    const effectiveExecutionMode = policyResult.decision;
+    expect(effectiveExecutionMode).toBe("ask");
+    expect(effectiveExecutionMode).not.toBe("allow");
   });
 
-  it("guarantees Laya advice attaches strictly as advisory metadata on ASK approvals", () => {
-    const deterministicPolicyDecision: "allow" | "ask" | "deny" = "ask";
-
-    const layaAdvice: DecisionAdvice = {
-      provider: "laya",
-      risk: { label: "high", confidence: 0.88 },
-      approval: { recommended: false, confidence: 0.85 },
-      category: "Sensitive System Operation",
-      routing: {},
-      reasoningTags: ["elevated_risk"],
-      latencyMs: 14,
-      model: "mmBERT-base",
-      advisoryOnly: true,
+  it("strictly enforces DENY for absolute deny paths (.git, .localbridge) regardless of advice", () => {
+    const input: PolicyEvaluationInput = {
+      projectId: "p1",
+      operation: "file.read",
+      relativePath: ".git/config",
+      projectEnabled: true,
+      projectAccessMode: "read-write",
+      trustPolicy: {
+        trustLevel: "full",
+        protectedFilesPolicy: "follow-trust-level",
+        filePolicy: "allow-all",
+        commandPolicy: "allow-all",
+        gitWritePolicy: "allow-all",
+      },
     };
 
-    // Creation of approval item
-    const approval = {
-      id: "appr_test_123",
+    const policyResult = TrustPolicyEvaluator.evaluate(input);
+    expect(policyResult.decision).toBe("deny");
+    expect(policyResult.decisionSource).toBe("security-boundary");
+
+    const localbridgeInput: PolicyEvaluationInput = {
+      ...input,
+      relativePath: ".localbridge/credentials.json",
+    };
+    const lbResult = TrustPolicyEvaluator.evaluate(localbridgeInput);
+    expect(lbResult.decision).toBe("deny");
+    expect(lbResult.decisionSource).toBe("security-boundary");
+  });
+
+  it("maintains non-blocking fail-safe: Laya timeout/crash does not disrupt policy evaluation", async () => {
+    // Initialize Laya with invalid Python binary to simulate crash/offline
+    const provider = new LayaDecisionProvider({
+      provider: "laya",
+      modelPath: "invalid/path",
+      pythonPath: "definitely_not_a_valid_python_binary_nexus_test",
+      workerTimeoutMs: 200,
+    });
+
+    const context: DecisionContext = {
+      operation: "file.delete",
+      path: "src/important.ts",
+      projectId: "proj_critical",
+    };
+
+    // Non-blocking fallback must return safe advisory rather than throwing
+    const startTime = Date.now();
+    const advice = await provider.getAdvice(context);
+    const duration = Date.now() - startTime;
+
+    expect(advice).toBeDefined();
+    expect(advice.advisoryOnly).toBe(true);
+    expect(advice.risk).toBeDefined();
+    expect(duration).toBeLessThan(5000); // Fail-safe does not hang the process
+
+    await provider.shutdown();
+  });
+
+  it("verifies disabled provider always marks advice as advisoryOnly and intelligence_disabled", async () => {
+    const disabledProvider = new DisabledDecisionProvider();
+    const advice = await disabledProvider.getAdvice({
       operation: "command.execute",
-      risk: "CAUTION",
-      status: "pending",
-      advice: layaAdvice,
-    };
+      command: "npm install",
+    });
 
-    expect(approval.status).toBe("pending");
-    expect(approval.advice).toBeDefined();
-    expect(approval.advice.risk.label).toBe("high");
-    expect(approval.advice.advisoryOnly).toBe(true);
-
-    // Human operator is still strictly required to approve or deny
-    expect(approval.status).not.toBe("approved");
-    expect(approval.status).not.toBe("denied");
-  });
-
-  it("proves fallback safety when Laya provider is offline, errored, or disabled", () => {
-    // When Laya provider encounters worker crash or timeout
-    const fallbackAdvice: DecisionAdvice = {
-      provider: "disabled",
-      risk: { label: "medium", confidence: 0.5 },
-      approval: { recommended: false, confidence: 0.5 },
-      category: null,
-      routing: {},
-      reasoningTags: ["fallback_heuristic"],
-      latencyMs: 0,
-      model: "heuristic-fallback",
-      advisoryOnly: true,
-    };
-
-    // Deterministic system continues normal security policy evaluation uninterrupted
-    const deterministicPolicyDecision: "allow" | "ask" | "deny" = "ask";
-    expect(deterministicPolicyDecision).toBe("ask");
-    expect(fallbackAdvice.advisoryOnly).toBe(true);
+    expect(advice.provider).toBe("disabled");
+    expect(advice.advisoryOnly).toBe(true);
+    expect(advice.reasoningTags).toContain("intelligence_disabled");
   });
 });

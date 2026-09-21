@@ -20,6 +20,7 @@ import type {
   DecisionAdvice,
   DecisionProviderConfig,
   IntelligenceStatusDto,
+  ModelStatusDto,
 } from "@localbridge/protocol";
 import type { McpPrincipal } from "./types.js";
 
@@ -135,6 +136,22 @@ export class McpContext {
     config: Partial<DecisionProviderConfig>
   ): Promise<IntelligenceStatusDto> {
     return this.decisionProvider.updateConfig(config);
+  }
+
+  getModelStatus(): ModelStatusDto {
+    return this.decisionProvider.getModelStatus();
+  }
+
+  startModelDownload(): Promise<ModelStatusDto> {
+    return this.decisionProvider.startModelDownload();
+  }
+
+  cancelModelDownload(): ModelStatusDto {
+    return this.decisionProvider.cancelModelDownload();
+  }
+
+  downloadAndEnableModel(): Promise<IntelligenceStatusDto> {
+    return this.decisionProvider.downloadAndEnable();
   }
 
   recordSessionEvent(event: {

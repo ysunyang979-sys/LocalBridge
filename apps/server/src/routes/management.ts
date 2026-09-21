@@ -1643,6 +1643,33 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
     return reply.status(200).send(nextStatus);
   });
 
+  fastify.get("/management/intelligence/model/status", async (_request, reply) => {
+    const status = mcpContext.getModelStatus();
+    return reply.status(200).send(status);
+  });
+
+  fastify.post("/management/intelligence/model/download", async (_request, reply) => {
+    const status = await mcpContext.startModelDownload();
+    return reply.status(200).send(status);
+  });
+
+  fastify.post("/management/intelligence/model/cancel", async (_request, reply) => {
+    const status = mcpContext.cancelModelDownload();
+    return reply.status(200).send(status);
+  });
+
+  fastify.post("/management/intelligence/model/download-and-enable", async (_request, reply) => {
+    try {
+      const status = await mcpContext.downloadAndEnableModel();
+      return reply.status(200).send(status);
+    } catch (err: any) {
+      return reply.status(500).send({
+        code: LocalBridgeErrorCode.INTERNAL_ERROR,
+        message: err.message || "Failed to download and enable model",
+      });
+    }
+  });
+
   fastify.post<{
     Body: DecisionContext;
   }>("/management/intelligence/evaluate", async (request, reply) => {

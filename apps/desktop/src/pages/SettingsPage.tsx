@@ -24,6 +24,9 @@ import {
   Zap,
   X,
   MessageSquare,
+  Brain,
+  Download,
+  DownloadCloud,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -40,17 +43,36 @@ import type {
   TunnelNetworkMode,
   IntelligenceStatusDto,
   DecisionAdvice,
+  ModelStatusDto,
+  UserExperienceMode,
 } from "../types.js";
 
 interface SettingsPageProps {
   tunnelStatus: TunnelStatusDto | null;
   onRefresh: () => void;
+  uxMode?: UserExperienceMode;
+  onChangeUxMode?: (mode: UserExperienceMode) => void;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefresh }) => {
+export type SettingsTab =
+  | "general"
+  | "appearance"
+  | "intelligence"
+  | "connections"
+  | "security"
+  | "advanced"
+  | "about"
+  | "tunnel";
+
+export const SettingsPage: React.FC<SettingsPageProps> = ({
+  tunnelStatus,
+  onRefresh,
+  uxMode = "standard",
+  onChangeUxMode,
+}) => {
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useTheme();
-  const [activeTab, setActiveTab] = useState<"tunnel" | "security" | "intelligence" | "general" | "about">("tunnel");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
   // Server URL State
   const [serverUrl, setServerUrl] = useState(bridge.getBaseUrl());
@@ -146,6 +168,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   const [intelErrorMsg, setIntelErrorMsg] = useState<string | null>(null);
   const [testAdvice, setTestAdvice] = useState<DecisionAdvice | null>(null);
 
+  // Model Download & Productization State
+  const [modelStatus, setModelStatus] = useState<ModelStatusDto | null>(null);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [showModelPrompt, setShowModelPrompt] = useState(false);
+
+  const loadModelStatus = async () => {
+    try {
+      const res = await bridge.getModelStatus();
+      setModelStatus(res);
+    } catch {
+      // Quiet
+    }
+  };
+
   useEffect(() => {
     bridge.listProjects().then((res) => {
       setProjects(res.projects);
@@ -174,6 +210,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
         if (res.pythonPath) setIntelPythonPath(res.pythonPath);
       }
     }).catch(() => {});
+
+    loadModelStatus();
+    const interval = setInterval(loadModelStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -216,6 +256,85 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       alert(err?.message || String(err));
     } finally {
       setRoutingModeBusy(false);
+    }
+  };
+
+  const handleStartDownload = async () => {
+    setDownloadBusy(true);
+    setIntelErrorMsg(null);
+    try {
+      const res = await bridge.startModelDownload();
+      setModelStatus(res);
+    } catch (err: any) {
+      setIntelErrorMsg(err?.message || "Failed to start download");
+    } finally {
+      setDownloadBusy(false);
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    setDownloadBusy(true);
+    try {
+      const res = await bridge.cancelModelDownload();
+      setModelStatus(res);
+    } catch (err: any) {
+      setIntelErrorMsg(err?.message || "Failed to cancel download");
+    } finally {
+      setDownloadBusy(false);
+    }
+  };
+
+  const handleToggleLayaDecisions = async () => {
+    const nextEnabled = intelProvider !== "laya";
+    if (nextEnabled) {
+      // Verify if model is installed
+      if (!modelStatus?.installed && modelStatus?.status !== "ready") {
+        setShowModelPrompt(true);
+        return;
+      }
+      setIntelBusy(true);
+      try {
+        const res = await bridge.updateIntelligenceConfig({ provider: "laya" });
+        setIntelProvider("laya");
+        setIntelStatus(res);
+        setIntelSuccessMsg(t.intelligence.savedSuccess);
+        setTimeout(() => setIntelSuccessMsg(null), 3000);
+      } catch (err: any) {
+        setIntelErrorMsg(err?.message || "Failed to enable Laya decisions");
+      } finally {
+        setIntelBusy(false);
+      }
+    } else {
+      setIntelBusy(true);
+      try {
+        const res = await bridge.updateIntelligenceConfig({ provider: "disabled" });
+        setIntelProvider("disabled");
+        setIntelStatus(res);
+        setIntelSuccessMsg(t.intelligence.savedSuccess);
+        setTimeout(() => setIntelSuccessMsg(null), 3000);
+      } catch (err: any) {
+        setIntelErrorMsg(err?.message || "Failed to disable Laya decisions");
+      } finally {
+        setIntelBusy(false);
+      }
+    }
+  };
+
+  const handleDownloadAndEnable = async () => {
+    setShowModelPrompt(false);
+    setDownloadBusy(true);
+    setIntelErrorMsg(null);
+    try {
+      const res = await bridge.downloadAndEnableModel();
+      setIntelProvider(res.provider);
+      setIntelStatus(res);
+      await loadModelStatus();
+      setIntelSuccessMsg(t.intelligence.savedSuccess);
+      setTimeout(() => setIntelSuccessMsg(null), 3000);
+    } catch (err: any) {
+      setIntelErrorMsg(err?.message || "Failed to download and enable Laya model");
+    } finally {
+      setDownloadBusy(false);
     }
   };
 
@@ -677,15 +796,54 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       <div className="flex items-center gap-1 bg-theme-card-muted border border-theme-subtle p-1 rounded-xl overflow-x-auto">
         <button
           type="button"
-          onClick={() => setActiveTab("tunnel")}
+          onClick={() => setActiveTab("general")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "tunnel"
+            activeTab === "general"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5 text-slate-300" />
+          <span>{t.settings.tabGeneral}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("appearance")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "appearance"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
+          }`}
+        >
+          <SunMoon className="w-3.5 h-3.5 text-amber-400" />
+          <span>{t.settings.tabAppearance}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("intelligence")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "intelligence"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
+          }`}
+        >
+          <Brain className="w-3.5 h-3.5 text-purple-400" />
+          <span>{t.settings.tabIntelligence}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("connections")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "connections" || activeTab === "tunnel"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
         >
           <Radio className="w-3.5 h-3.5 text-sky-400" />
-          <span>{t.settings.tabTunnel}</span>
+          <span>{t.settings.tabConnections || t.settings.tabTunnel}</span>
         </button>
 
         <button
@@ -703,28 +861,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
 
         <button
           type="button"
-          onClick={() => setActiveTab("intelligence")}
+          onClick={() => setActiveTab("advanced")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "intelligence"
+            activeTab === "advanced"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
         >
-          <Zap className="w-3.5 h-3.5 text-purple-400" />
-          <span>{t.settings.tabIntelligence}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("general")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            activeTab === "general"
-              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
-              : "text-theme-muted hover:text-theme-primary border border-transparent"
-          }`}
-        >
-          <Sliders className="w-3.5 h-3.5 text-slate-300" />
-          <span>{t.settings.tabGeneral}</span>
+          <Server className="w-3.5 h-3.5 text-emerald-400" />
+          <span>{t.settings.tabAdvanced}</span>
         </button>
 
         <button
@@ -736,7 +881,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
         >
-          <Info className="w-3.5 h-3.5 text-emerald-400" />
+          <Info className="w-3.5 h-3.5 text-cyan-400" />
           <span>{t.settings.tabAbout}</span>
         </button>
       </div>
@@ -1851,39 +1996,44 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
         </div>
       )}
 
-      {/* Tab 3: Decision Intelligence (Laya) */}
+      {/* Tab 3: Decision Intelligence (Laya Multilingual Productization) */}
       {activeTab === "intelligence" && (
         <div className="max-w-4xl space-y-6">
+          {/* Main Laya Product Card */}
           <div className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-                <Zap className="w-4 h-4 text-purple-400" />
-                <span>{t.intelligence.title}</span>
+                <Brain className="w-4 h-4 text-purple-400" />
+                <span>{t.intelligence.layaCardTitle || "Laya 决策模型"}</span>
               </div>
               <span
-                className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                  intelStatus?.provider === "laya" && intelStatus?.status === "ready"
+                className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border ${
+                  modelStatus?.status === "ready"
                     ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                    : intelStatus?.provider === "laya" && intelStatus?.status === "loading"
-                    ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
-                    : intelStatus?.provider === "laya" && intelStatus?.status === "error"
+                    : modelStatus?.status === "downloading"
+                    ? "bg-sky-500/15 text-sky-400 border-sky-500/30 animate-pulse"
+                    : modelStatus?.status === "verifying"
+                    ? "bg-purple-500/15 text-purple-400 border-purple-500/30 animate-pulse"
+                    : modelStatus?.status === "error"
                     ? "bg-red-500/15 text-red-400 border-red-500/30"
                     : "bg-slate-500/15 text-slate-400 border-slate-500/30"
                 }`}
               >
-                {intelStatus?.provider === "laya"
-                  ? intelStatus.status === "ready"
-                    ? t.intelligence.statusReady
-                    : intelStatus.status === "loading"
-                    ? t.intelligence.statusLoading
-                    : intelStatus.status === "error"
-                    ? t.intelligence.statusError
-                    : intelStatus.status
-                  : t.intelligence.statusDisabled}
+                {modelStatus?.status === "ready"
+                  ? (t.intelligence.modelReady || "Ready")
+                  : modelStatus?.status === "downloading"
+                  ? (t.intelligence.modelDownloading || "Downloading")
+                  : modelStatus?.status === "verifying"
+                  ? (t.intelligence.modelVerifying || "Verifying")
+                  : modelStatus?.status === "error"
+                  ? (t.intelligence.modelError || "Error")
+                  : (t.intelligence.modelNotInstalled || "Not installed")}
               </span>
             </div>
 
-            <p className="text-xs text-theme-muted">{t.intelligence.subtitle}</p>
+            <p className="text-xs text-theme-muted">
+              {t.intelligence.layaCardSubtitle || "基于本地语言模型对敏感操作提供实时风险评估与审批建议。"}
+            </p>
 
             {intelSuccessMsg && (
               <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center gap-2 text-emerald-400 text-xs font-medium">
@@ -1899,67 +2049,192 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               </div>
             )}
 
-            {/* Provider Selection */}
-            <div className="space-y-3 pt-2">
-              <label className="text-xs font-semibold text-theme-primary">
-                {t.intelligence.provider}
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label
-                  onClick={() => setIntelProvider("laya")}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
-                    intelProvider === "laya"
-                      ? "bg-purple-500/10 border-purple-500/40 text-theme-primary"
-                      : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-primary/30"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="intelProvider"
-                    checked={intelProvider === "laya"}
-                    onChange={() => setIntelProvider("laya")}
-                    className="mt-0.5 text-purple-500 focus:ring-purple-500"
-                  />
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold text-theme-primary">
-                      {t.intelligence.providerLaya}
-                    </div>
-                    <div className="text-[11px] text-theme-muted">
-                      Local mmBERT-base worker (Python stdio NDJSON, &lt;15ms warm inference)
-                    </div>
-                  </div>
-                </label>
-
-                <label
-                  onClick={() => setIntelProvider("disabled")}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
-                    intelProvider === "disabled"
-                      ? "bg-purple-500/10 border-purple-500/40 text-theme-primary"
-                      : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-primary/30"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="intelProvider"
-                    checked={intelProvider === "disabled"}
-                    onChange={() => setIntelProvider("disabled")}
-                    className="mt-0.5 text-purple-500 focus:ring-purple-500"
-                  />
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold text-theme-primary">
-                      {t.intelligence.providerNone}
-                    </div>
-                    <div className="text-[11px] text-theme-muted">
-                      Disable advisory evaluation. Nexus deterministic security policies continue operating.
-                    </div>
-                  </div>
-                </label>
+            {/* Model Metadata Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs space-y-0.5">
+                <div className="text-[10px] text-theme-muted uppercase tracking-wider font-mono">
+                  {t.intelligence.modelNameLabel || "Model Repository"}
+                </div>
+                <div className="font-mono text-theme-primary font-medium truncate">
+                  convaiinnovations/laya-multilingual
+                </div>
+              </div>
+              <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs space-y-0.5">
+                <div className="text-[10px] text-theme-muted uppercase tracking-wider font-mono">
+                  {t.intelligence.executionLabel || "Execution"}
+                </div>
+                <div className="font-mono text-emerald-500 dark:text-emerald-400 font-medium">
+                  {t.intelligence.executionLocal || "Local · Private"}
+                </div>
+              </div>
+              <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs space-y-0.5">
+                <div className="text-[10px] text-theme-muted uppercase tracking-wider font-mono">
+                  {t.intelligence.modelStatusLabel || "Status"}
+                </div>
+                <div className="font-mono text-theme-secondary font-medium">
+                  {modelStatus?.installed || modelStatus?.status === "ready" ? "Installed" : "Needs Download"}
+                </div>
               </div>
             </div>
 
-            {/* Model & Python Paths */}
-            {intelProvider === "laya" && (
-              <div className="space-y-4 pt-2 border-t border-theme-subtle">
+            {/* Model Downloader & Progress Section */}
+            <div className="p-4 bg-theme-card-muted rounded-xl border border-theme-subtle space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-semibold text-theme-primary flex items-center gap-2">
+                    <Download className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Laya Multilingual Model Files</span>
+                  </div>
+                  <div className="text-[11px] text-theme-muted">
+                    {modelStatus?.modelPath ? modelStatus.modelPath : "%LOCALAPPDATA%\\LocalBridge\\models\\laya-multilingual"}
+                  </div>
+                </div>
+
+                {/* Download Actions */}
+                {modelStatus?.status === "downloading" ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelDownload}
+                    disabled={downloadBusy}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition disabled:opacity-50"
+                  >
+                    {t.intelligence.cancelDownload || "Cancel Download"}
+                  </button>
+                ) : modelStatus?.installed || modelStatus?.status === "ready" ? (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-500 dark:text-emerald-400 font-mono font-medium">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{t.intelligence.modelReady || "Ready"}</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartDownload}
+                    disabled={downloadBusy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50"
+                  >
+                    {downloadBusy ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <DownloadCloud className="w-3.5 h-3.5" />
+                    )}
+                    <span>{t.intelligence.downloadModelBtn || "Download Model"}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Progress Bar (Visible while downloading) */}
+              {modelStatus?.status === "downloading" && modelStatus.progress && (
+                <div className="space-y-2 pt-2 border-t border-theme-subtle">
+                  <div className="w-full bg-theme-input rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-purple-500 h-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, Math.max(0, modelStatus.progress.percent))}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-mono text-theme-muted">
+                    <span>
+                      {Math.round(modelStatus.progress.percent)}% &bull;{" "}
+                      {((modelStatus.progress.downloadedBytes || 0) / 1024 / 1024).toFixed(1)} MB /{" "}
+                      {((modelStatus.progress.totalBytes || 0) / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                    <span>
+                      {((modelStatus.progress.speedBytesPerSec || 0) / 1024 / 1024).toFixed(2)} MB/s &bull;{" "}
+                      {modelStatus.progress.currentFile}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Verifying indicator */}
+              {modelStatus?.status === "verifying" && (
+                <div className="flex items-center gap-2 pt-2 text-xs text-purple-400 font-mono">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>{t.intelligence.verifyingModel || "Verifying model file integrity..."}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Independent Laya Decisions Toggle Switch */}
+            <div className="p-4 rounded-xl border border-theme-subtle bg-theme-card flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <div className="text-xs font-semibold text-theme-primary">
+                  {t.intelligence.layaDecisionsToggle || "启用 Laya 建议 (Enable Laya Decisions)"}
+                </div>
+                <div className="text-[11px] text-theme-muted leading-relaxed">
+                  {t.intelligence.layaDecisionsToggleDesc || "在审批卡片和活动日志中显示 Laya 的智能风险建议与置信度。"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleToggleLayaDecisions}
+                disabled={intelBusy}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  intelProvider === "laya" ? "bg-purple-600" : "bg-theme-card-muted border-theme-subtle"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    intelProvider === "laya" ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Uninstalled Prompt Banner */}
+            {showModelPrompt && (
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-theme-primary">
+                      {t.intelligence.modelRequiredPrompt || "Laya Multilingual is required to enable decision intelligence."}
+                    </div>
+                    <div className="text-[11px] text-theme-muted">
+                      Download the model to your local machine to provide non-blocking risk assessment.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleDownloadAndEnable}
+                    disabled={downloadBusy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{t.intelligence.downloadAndEnableBtn || "Download & Enable"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowModelPrompt(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-theme-muted hover:text-theme-primary transition"
+                  >
+                    {t.common?.cancel || "Cancel"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Advisory Authority Disclaimer Callout */}
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/25 rounded-xl flex items-start gap-2.5 text-xs">
+              <ShieldCheck className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <strong className="text-amber-500 font-medium">{t.intelligence.advisoryNotice || "Advisory Notice"}: </strong>
+                <span className="text-theme-secondary leading-relaxed">
+                  {t.intelligence.layaAdvisoryDisclaimer || "Use the local Laya model to provide risk and approval advice. Laya is advisory only and cannot override Nexus security policies."}
+                </span>
+              </div>
+            </div>
+
+            {/* Advanced Developer Telemetry & Testing (Advanced Mode Only) */}
+            {uxMode === "advanced" && (
+              <div className="space-y-4 pt-4 border-t border-theme-subtle">
+                <div className="text-xs font-semibold text-theme-primary uppercase tracking-wider font-mono">
+                  Advanced Telemetry & Controls
+                </div>
+
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-theme-secondary">
                     {t.intelligence.modelPath}
@@ -1972,7 +2247,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                     className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
                   />
                   <p className="text-[11px] text-theme-muted">
-                    Defaults to <code className="font-mono text-purple-400">E:\workspace\models\laya-multilingual</code> or <code className="font-mono text-purple-400">LAYA_MODEL_PATH</code>.
+                    Custom model directory path.
                   </p>
                 </div>
 
@@ -1988,7 +2263,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                     className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
                   />
                   <p className="text-[11px] text-theme-muted">
-                    Python interpreter with PyTorch/Transformers. Defaults to active virtualenv or <code className="font-mono text-purple-400">nexus-laya</code>.
+                    Python interpreter with PyTorch/Transformers.
                   </p>
                 </div>
 
@@ -2005,9 +2280,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                     step={500}
                     className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
                   />
-                  <p className="text-[11px] text-theme-muted">
-                    Subprocess execution timeout before returning fallback advisory assessment. Default: 5000 ms.
-                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
@@ -2030,112 +2302,171 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                     </div>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-3 pt-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSaveIntelligence}
+                    disabled={intelBusy}
+                    className="px-4 py-2 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {intelBusy ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>{intelBusy ? t.intelligence.saving : t.intelligence.saveAndRestart}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleTestBenchmark}
+                    disabled={intelTesting}
+                    className="px-4 py-2 rounded-lg text-xs font-medium bg-theme-card-muted hover:bg-theme-card text-theme-secondary border border-theme-subtle transition disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {intelTesting ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5 text-sky-400" />
+                    )}
+                    <span>{intelTesting ? t.intelligence.testing : t.intelligence.testInference}</span>
+                  </button>
+                </div>
+
+                {/* Benchmark Result Card */}
+                {testAdvice && (() => {
+                  const testRisk = typeof testAdvice.risk === "object" ? testAdvice.risk?.label : (testAdvice as any).risk;
+                  const testRiskKey = String(testRisk || "").toUpperCase();
+                  const testConf = typeof testAdvice.risk === "object" ? testAdvice.risk?.confidence : (testAdvice as any).confidence;
+                  const testConfPercent = Math.round(Number(testConf ?? 0.85) * 100);
+                  const testRec = (testAdvice as any).recommendation || (testAdvice.approval?.recommended ? "APPROVE" : "ASK / REVIEW");
+                  const testCat = testAdvice.category || "General";
+                  const testRationale = (testAdvice as any).rationale || (testAdvice.reasoningTags && testAdvice.reasoningTags.length > 0 ? testAdvice.reasoningTags.join(", ") : null);
+
+                  return (
+                    <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-3 pt-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-purple-400 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>{t.intelligence.testSuccess}</span>
+                        </span>
+                        <span className="font-mono text-[11px] text-purple-300">
+                          {testAdvice.latencyMs} ms
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">{t.intelligence.riskEvaluation}</div>
+                          <div className="text-amber-400 font-bold mt-0.5 uppercase">{testRiskKey}</div>
+                        </div>
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">{t.intelligence.recommendedAction}</div>
+                          <div className="text-theme-secondary font-bold mt-0.5 uppercase">
+                            {testRec}
+                          </div>
+                        </div>
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">Confidence</div>
+                          <div className="text-emerald-400 font-bold mt-0.5">
+                            {testConfPercent}%
+                          </div>
+                        </div>
+                        <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                          <div className="text-[10px] text-theme-muted">Category</div>
+                          <div className="text-theme-secondary mt-0.5 truncate">{testCat}</div>
+                        </div>
+                      </div>
+                      {testRationale && (
+                        <div className="text-[11px] text-theme-secondary font-mono bg-theme-card p-2.5 rounded border border-theme-subtle">
+                          <span className="text-theme-muted">{t.intelligence.rationale}: </span>
+                          {testRationale}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
-
-            {/* Buttons */}
-            <div className="flex items-center gap-3 pt-3 flex-wrap">
-              <button
-                type="button"
-                onClick={handleSaveIntelligence}
-                disabled={intelBusy}
-                className="px-4 py-2 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {intelBusy ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5" />
-                )}
-                <span>{intelBusy ? t.intelligence.saving : t.intelligence.saveAndRestart}</span>
-              </button>
-
-              {intelProvider === "laya" && (
-                <button
-                  type="button"
-                  onClick={handleTestBenchmark}
-                  disabled={intelTesting}
-                  className="px-4 py-2 rounded-lg text-xs font-medium bg-theme-card-muted hover:bg-theme-card text-theme-secondary border border-theme-subtle transition disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {intelTesting ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Play className="w-3.5 h-3.5 text-sky-400" />
-                  )}
-                  <span>{intelTesting ? t.intelligence.testing : t.intelligence.testInference}</span>
-                </button>
-              )}
-            </div>
-
-            {/* Benchmark Result Card */}
-            {testAdvice && (() => {
-              const testRisk = typeof testAdvice.risk === "object" ? testAdvice.risk?.label : (testAdvice as any).risk;
-              const testRiskKey = String(testRisk || "").toUpperCase();
-              const testConf = typeof testAdvice.risk === "object" ? testAdvice.risk?.confidence : (testAdvice as any).confidence;
-              const testConfPercent = Math.round(Number(testConf ?? 0.85) * 100);
-              const testRec = (testAdvice as any).recommendation || (testAdvice.approval?.recommended ? "APPROVE" : "ASK / REVIEW");
-              const testCat = testAdvice.category || "General";
-              const testRationale = (testAdvice as any).rationale || (testAdvice.reasoningTags && testAdvice.reasoningTags.length > 0 ? testAdvice.reasoningTags.join(", ") : null);
-
-              return (
-                <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-3 pt-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-purple-400 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>{t.intelligence.testSuccess}</span>
-                    </span>
-                    <span className="font-mono text-[11px] text-purple-300">
-                      {testAdvice.latencyMs} ms
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                      <div className="text-[10px] text-theme-muted">{t.intelligence.riskEvaluation}</div>
-                      <div className="text-amber-400 font-bold mt-0.5 uppercase">{testRiskKey}</div>
-                    </div>
-                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                      <div className="text-[10px] text-theme-muted">{t.intelligence.recommendedAction}</div>
-                      <div className="text-theme-secondary font-bold mt-0.5 uppercase">
-                        {testRec}
-                      </div>
-                    </div>
-                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                      <div className="text-[10px] text-theme-muted">Confidence</div>
-                      <div className="text-emerald-400 font-bold mt-0.5">
-                        {testConfPercent}%
-                      </div>
-                    </div>
-                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
-                      <div className="text-[10px] text-theme-muted">Category</div>
-                      <div className="text-theme-secondary mt-0.5 truncate">{testCat}</div>
-                    </div>
-                  </div>
-                  {testRationale && (
-                    <div className="text-[11px] text-theme-secondary font-mono bg-theme-card p-2.5 rounded border border-theme-subtle">
-                      <span className="text-theme-muted">{t.intelligence.rationale}: </span>
-                      {testRationale}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Advisory Authority Callout */}
-            <div className="p-3.5 bg-theme-card-muted border border-theme-subtle rounded-xl flex items-start gap-2.5 text-xs">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <strong className="text-theme-primary font-medium">{t.intelligence.advisoryNotice}: </strong>
-                <span className="text-theme-muted leading-relaxed">{t.intelligence.advisoryNoticeDesc}</span>
-              </div>
-            </div>
           </div>
         </div>
       )}
 
-      {/* Tab 4: General & Core Server */}
+      {/* Tab 4: General (Language & Experience Mode) */}
       {activeTab === "general" && (
         <div className="max-w-4xl space-y-6">
+          {/* Experience: Standard vs Advanced Mode */}
+          <div className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-4 shadow-sm">
+            <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+              <Sliders className="w-4 h-4 text-sky-500" />
+              <span>{t.settings.experienceGroup || "使用体验 (Experience)"}</span>
+            </div>
+            <p className="text-xs text-theme-muted">
+              {t.settings.experienceDesc || "选择适合您的界面复杂度模式。"}
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* Standard Mode Card */}
+              <label
+                onClick={() => onChangeUxMode?.("standard")}
+                className={`p-4 rounded-xl border cursor-pointer transition flex items-start gap-3.5 ${
+                  uxMode === "standard"
+                    ? "bg-sky-500/10 border-sky-500/40 text-theme-primary shadow-sm"
+                    : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-primary/30"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="uxModeSelector"
+                  checked={uxMode === "standard"}
+                  onChange={() => onChangeUxMode?.("standard")}
+                  className="mt-1 text-sky-500 focus:ring-sky-500"
+                />
+                <div className="space-y-1">
+                  <div className="text-sm font-semibold text-theme-primary flex items-center gap-2">
+                    <span>{t.settings.standardMode || "普通模式"}</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                      Default
+                    </span>
+                  </div>
+                  <div className="text-xs text-theme-muted leading-relaxed">
+                    {t.settings.standardModeDesc || "简洁界面，隐藏大部分开发者级控制项"}
+                  </div>
+                </div>
+              </label>
+
+              {/* Advanced Mode Card */}
+              <label
+                onClick={() => onChangeUxMode?.("advanced")}
+                className={`p-4 rounded-xl border cursor-pointer transition flex items-start gap-3.5 ${
+                  uxMode === "advanced"
+                    ? "bg-purple-500/10 border-purple-500/40 text-theme-primary shadow-sm"
+                    : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-primary/30"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="uxModeSelector"
+                  checked={uxMode === "advanced"}
+                  onChange={() => onChangeUxMode?.("advanced")}
+                  className="mt-1 text-purple-500 focus:ring-purple-500"
+                />
+                <div className="space-y-1">
+                  <div className="text-sm font-semibold text-theme-primary flex items-center gap-2">
+                    <span>{t.settings.advancedMode || "高级模式"}</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                      Cockpit
+                    </span>
+                  </div>
+                  <div className="text-xs text-theme-muted leading-relaxed">
+                    {t.settings.advancedModeDesc || "显示运行时、工作树、代码智能和高级安全控制"}
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
           {/* General: Language */}
-          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
+          <div className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-4 shadow-sm">
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
               <Globe className="w-4 h-4 text-sky-500" />
               <span>{t.settings.generalGroup}</span>
@@ -2152,7 +2483,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   className={`p-3 rounded-lg border text-xs font-medium transition text-left ${
                     language === "zh-CN"
                       ? "bg-sky-600 text-white border-sky-600 shadow-sm"
-                      : "bg-theme-input border-theme-input text-theme-secondary hover:border-sky-500"
+                      : "bg-theme-input-bg border-theme-input-border text-theme-secondary hover:border-sky-500"
                   }`}
                 >
                   <div className="font-semibold">{t.settings.languageZh}</div>
@@ -2165,7 +2496,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   className={`p-3 rounded-lg border text-xs font-medium transition text-left ${
                     language === "en-US"
                       ? "bg-sky-600 text-white border-sky-600 shadow-sm"
-                      : "bg-theme-input border-theme-input text-theme-secondary hover:border-sky-500"
+                      : "bg-theme-input-bg border-theme-input-border text-theme-secondary hover:border-sky-500"
                   }`}
                 >
                   <div className="font-semibold">{t.settings.languageEn}</div>
@@ -2174,9 +2505,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               </div>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Appearance: Theme */}
-          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
+      {/* Tab 5: Appearance */}
+      {activeTab === "appearance" && (
+        <div className="max-w-4xl space-y-6">
+          <div className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-4 shadow-sm">
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
               <SunMoon className="w-4 h-4 text-sky-500" />
               <span>{t.settings.appearanceGroup}</span>
@@ -2203,7 +2538,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                       className={`p-3 rounded-lg border text-xs font-medium transition text-center ${
                         active
                           ? "bg-sky-600 text-white border-sky-600 shadow-sm"
-                          : "bg-theme-input border-theme-input text-theme-secondary hover:border-sky-500"
+                          : "bg-theme-input-bg border-theme-input-border text-theme-secondary hover:border-sky-500"
                       }`}
                     >
                       {label}
@@ -2213,11 +2548,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               </div>
             </div>
           </div>
+        </div>
+      )}
 
+      {/* Tab 6: Advanced & Control Plane */}
+      {activeTab === "advanced" && (
+        <div className="max-w-4xl space-y-6">
           {/* Server Connection */}
           <form
             onSubmit={handleSaveServer}
-            className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm"
+            className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-4 shadow-sm"
           >
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
               <Server className="w-4 h-4 text-sky-500" />
@@ -2232,7 +2572,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                 type="text"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-mono text-theme-primary focus:outline-none focus:border-sky-500"
+                className="w-full bg-theme-input-bg border border-theme-input-border rounded-lg px-3 py-2 text-xs font-mono text-theme-primary focus:outline-none focus:border-sky-500"
               />
               <p className="text-[11px] text-theme-muted mt-1">{t.settings.serverUrlHelp}</p>
             </div>
@@ -2266,7 +2606,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
           {/* Local Operator Settings */}
           <form
             onSubmit={handleSaveOperator}
-            className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm"
+            className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-4 shadow-sm"
           >
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
               <User className="w-4 h-4 text-sky-500" />
@@ -2284,7 +2624,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   value={operatorDisplayName}
                   onChange={(e) => setOperatorDisplayName(e.target.value)}
                   placeholder="本机用户"
-                  className="flex-1 bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-medium text-theme-primary focus:outline-none focus:border-sky-500"
+                  className="flex-1 bg-theme-input-bg border border-theme-input-border rounded-lg px-3 py-2 text-xs font-medium text-theme-primary focus:outline-none focus:border-sky-500"
                 />
                 <button
                   type="submit"

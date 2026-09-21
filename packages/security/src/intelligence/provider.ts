@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import type {
@@ -7,17 +8,58 @@ import type {
   DecisionProviderConfig,
   IntelligenceStatusDto,
   IntelligenceWorkerStatus,
+  ModelStatusDto,
 } from "@localbridge/protocol";
 import { sanitizeDecisionContext } from "./redaction.js";
+import {
+  ModelDownloadManager,
+  getDefaultModelDir,
+} from "./downloader.js";
+
+export function resolveDefaultPythonPath(): string {
+  if (
+    process.env.LOCALBRIDGE_LAYA_PYTHON_PATH &&
+    fs.existsSync(process.env.LOCALBRIDGE_LAYA_PYTHON_PATH)
+  ) {
+    return process.env.LOCALBRIDGE_LAYA_PYTHON_PATH;
+  }
+  const devConda = path.resolve("E:/Tools/Anado/Anaa/envs/nexus-laya/python.exe");
+  if (fs.existsSync(devConda)) {
+    return devConda;
+  }
+  return "python";
+}
+
+export function resolveDefaultModelPath(): string {
+  const prodModel = getDefaultModelDir();
+  if (fs.existsSync(prodModel)) {
+    return prodModel;
+  }
+  const devModel = path.resolve("E:/workspace/models/laya-multilingual");
+  if (fs.existsSync(devModel)) {
+    return devModel;
+  }
+  return prodModel;
+}
 
 export interface DecisionProvider {
   getAdvice(context: DecisionContext): Promise<DecisionAdvice>;
   getStatus(): IntelligenceStatusDto;
+  getModelStatus(): ModelStatusDto;
+  startModelDownload(): Promise<ModelStatusDto>;
+  cancelModelDownload(): ModelStatusDto;
+  downloadAndEnable(): Promise<IntelligenceStatusDto>;
   updateConfig(config: Partial<DecisionProviderConfig>): Promise<IntelligenceStatusDto>;
   shutdown(): Promise<void>;
 }
 
 export class DisabledDecisionProvider implements DecisionProvider {
+  private downloadManager: ModelDownloadManager;
+
+  constructor(downloadManager?: ModelDownloadManager) {
+    this.downloadManager = downloadManager || new ModelDownloadManager();
+  }
+
   getAdvice(_context: DecisionContext): Promise<DecisionAdvice> {
     return Promise.resolve({
       provider: "disabled",
@@ -45,10 +87,26 @@ export class DisabledDecisionProvider implements DecisionProvider {
       model: "Disabled",
       execution: "local",
       language: "Multilingual (100+ languages)",
-      modelPath: "",
-      pythonPath: "",
+      modelPath: this.downloadManager.getTargetDir(),
+      pythonPath: resolveDefaultPythonPath(),
       lastError: null,
     };
+  }
+
+  getModelStatus(): ModelStatusDto {
+    return this.downloadManager.getStatus();
+  }
+
+  startModelDownload(): Promise<ModelStatusDto> {
+    return this.downloadManager.startDownload();
+  }
+
+  cancelModelDownload(): ModelStatusDto {
+    return this.downloadManager.cancelDownload();
+  }
+
+  downloadAndEnable(): Promise<IntelligenceStatusDto> {
+    return Promise.resolve(this.getStatus());
   }
 
   updateConfig(_config: Partial<DecisionProviderConfig>): Promise<IntelligenceStatusDto> {
@@ -75,18 +133,62 @@ export class LayaDecisionProvider implements DecisionProvider {
   private reqCounter = 0;
   private pendingRequests = new Map<string, PendingRequest>();
   private isShuttingDown = false;
+  private downloadManager: ModelDownloadManager;
 
-  constructor(config: Partial<DecisionProviderConfig> = {}) {
+  constructor(
+    config: Partial<DecisionProviderConfig> = {},
+    downloadManager?: ModelDownloadManager
+  ) {
+    const defaultModel = resolveDefaultModelPath();
+    const defaultPython = resolveDefaultPythonPath();
+
     this.config = {
       provider: config.provider || "laya",
-      modelPath: config.modelPath || "",
-      pythonPath: config.pythonPath || "python",
+      modelPath: config.modelPath || defaultModel,
+      pythonPath: config.pythonPath || defaultPython,
       workerTimeoutMs: config.workerTimeoutMs || 5000,
     };
+
+    this.downloadManager = downloadManager || new ModelDownloadManager(this.config.modelPath);
 
     if (this.config.provider === "laya") {
       this.initWorker();
     }
+  }
+
+  getModelStatus(): ModelStatusDto {
+    return this.downloadManager.getStatus();
+  }
+
+  startModelDownload(): Promise<ModelStatusDto> {
+    return this.downloadManager.startDownload();
+  }
+
+  cancelModelDownload(): ModelStatusDto {
+    return this.downloadManager.cancelDownload();
+  }
+
+  async downloadAndEnable(): Promise<IntelligenceStatusDto> {
+    // 1. Download model if needed
+    const modelStatus = this.downloadManager.getStatus();
+    if (!modelStatus.installed) {
+      await this.downloadManager.startDownload();
+      // Wait for download to finish (or error)
+      for (let i = 0; i < 600; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        const curr = this.downloadManager.getStatus();
+        if (curr.installed) break;
+        if (curr.status === "error") {
+          throw new Error(curr.error || "Model download failed");
+        }
+      }
+    }
+
+    // 2. Enable provider and boot worker
+    return this.updateConfig({
+      provider: "laya",
+      modelPath: this.downloadManager.getTargetDir(),
+    });
   }
 
   private initWorker(): void {
@@ -223,7 +325,7 @@ export class LayaDecisionProvider implements DecisionProvider {
 
   async getAdvice(context: DecisionContext): Promise<DecisionAdvice> {
     if (this.config.provider === "disabled") {
-      return new DisabledDecisionProvider().getAdvice(context);
+      return new DisabledDecisionProvider(this.downloadManager).getAdvice(context);
     }
 
     if (this.status !== "ready" && this.status !== "loading") {
@@ -282,6 +384,7 @@ export class LayaDecisionProvider implements DecisionProvider {
     }
     if (config.modelPath !== undefined) {
       this.config.modelPath = config.modelPath;
+      this.downloadManager.setTargetDir(config.modelPath);
     }
     if (config.pythonPath !== undefined) {
       this.config.pythonPath = config.pythonPath;

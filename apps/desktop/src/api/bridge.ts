@@ -23,6 +23,7 @@ import type {
   DecisionAdvice,
   DecisionProviderConfig,
   IntelligenceStatusDto,
+  ModelStatusDto,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -952,6 +953,28 @@ class ApiBridge {
     return this.fetchJson<DecisionAdvice>("/api/management/intelligence/evaluate", {
       method: "POST",
       body: JSON.stringify(context),
+    });
+  }
+
+  async getModelStatus(): Promise<ModelStatusDto> {
+    return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/status");
+  }
+
+  async startModelDownload(): Promise<ModelStatusDto> {
+    return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/download", {
+      method: "POST",
+    });
+  }
+
+  async cancelModelDownload(): Promise<ModelStatusDto> {
+    return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/cancel", {
+      method: "POST",
+    });
+  }
+
+  async downloadAndEnableModel(): Promise<IntelligenceStatusDto> {
+    return this.fetchJson<IntelligenceStatusDto>("/api/management/intelligence/model/download-and-enable", {
+      method: "POST",
     });
   }
 }
