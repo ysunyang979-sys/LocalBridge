@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Sparkles,
   Zap,
@@ -13,8 +13,11 @@ import {
   RefreshCw,
   Settings,
   ExternalLink,
+  Copy,
+  Check,
 } from "lucide-react";
-import type { AIConnectionDto } from "../../types.js";
+import type { AIConnectionDto, TunnelStatusDto } from "../../types.js";
+import { RemoteMcpEndpointResolver } from "../../types.js";
 import { useTranslation } from "../../i18n/useTranslation.js";
 
 interface AIConnectionCardProps {
@@ -26,7 +29,8 @@ interface AIConnectionCardProps {
   onOpenDetails: (conn: AIConnectionDto) => void;
   onApplyConfig?: (conn: AIConnectionDto) => void;
   onOpenTunnel?: () => void;
-  onOpenKimiPlugin?: (conn: AIConnectionDto) => void;
+  onOpenKimiPlugin?: (conn: AIConnectionDto, initialTab?: "guide" | "token" | "manifest") => void;
+  tunnelStatus?: TunnelStatusDto | null;
   isTesting?: boolean;
   isApplying?: boolean;
 }
@@ -41,11 +45,15 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
   onApplyConfig,
   onOpenTunnel,
   onOpenKimiPlugin,
+  tunnelStatus,
   isTesting,
   isApplying,
 }) => {
   const { t, language } = useTranslation();
   const isZh = language === "zh-CN";
+
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   const getClientIcon = (clientType: string) => {
     switch (clientType) {
@@ -116,6 +124,23 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
   const isConnected = connection.status === "connected";
   const isChatGPT = connection.clientType === "chatgpt";
   const isKimiWeb = connection.clientType === "kimi-web";
+
+  const tunnelRes = RemoteMcpEndpointResolver.resolve(tunnelStatus);
+
+  const handleCopyEndpoint = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedEndpoint(true);
+    setTimeout(() => setCopiedEndpoint(false), 2000);
+  };
+
+  const handleCopyPrompt = () => {
+    const prompt = RemoteMcpEndpointResolver.generatePluginBuilderPrompt(tunnelStatus);
+    if (prompt) {
+      navigator.clipboard.writeText(prompt);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    }
+  };
 
   // Built-in descriptions
   const getDefaultDescription = () => {
@@ -220,6 +245,49 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
           {getDefaultDescription()}
         </p>
 
+        {/* Kimi Web Real Endpoint / Offline Banner */}
+        {isKimiWeb && (
+          <div className="my-2.5">
+            {tunnelRes.isAvailable && tunnelRes.endpoint ? (
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs flex items-center justify-between gap-2">
+                <div className="min-w-0 flex items-center gap-1.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                  <span className="text-theme-muted shrink-0">{t.aiConnections?.remoteMcpEndpoint || "公网 MCP"}:</span>
+                  <span className="truncate font-semibold" title={tunnelRes.endpoint}>
+                    {tunnelRes.endpoint}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyEndpoint(tunnelRes.endpoint!)}
+                  className="text-[11px] px-2 py-1 rounded bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary shrink-0 transition flex items-center gap-1"
+                  title={t.aiConnections?.copyEndpoint || "复制地址"}
+                >
+                  {copiedEndpoint ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedEndpoint ? (t.common.copied || "已复制") : (t.aiConnections?.copyEndpoint || "复制地址")}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t.aiConnections?.secureTunnelOffline || "安全隧道未连接"}</span>
+                </div>
+                {onOpenTunnel && (
+                  <button
+                    type="button"
+                    onClick={onOpenTunnel}
+                    className="text-[11px] px-2 py-1 rounded font-semibold bg-amber-600 hover:bg-amber-500 text-white shadow-xs shrink-0 transition flex items-center gap-1"
+                  >
+                    <Radio className="w-3 h-3" />
+                    <span>{isZh ? "启用隧道" : "Open Tunnel"}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Advanced Technical Details */}
         {mode === "advanced" && (
           <div className="space-y-1.5 my-2.5 pt-2 border-t border-theme-subtle text-xs">
@@ -243,7 +311,7 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
               </div>
             )}
 
-            {connection.endpoint && (
+            {connection.endpoint && !isKimiWeb && (
               <div className="text-[11px] text-theme-muted font-mono truncate">
                 <span>Endpoint: </span>
                 <span className="text-theme-secondary">{connection.endpoint}</span>
@@ -301,19 +369,32 @@ export const AIConnectionCard: React.FC<AIConnectionCardProps> = ({
             </button>
           )}
 
-          {/* Quick Kimi Web Plugin Action */}
-          {isKimiWeb && onOpenKimiPlugin && (
-            <button
-              onClick={() => onOpenKimiPlugin(connection)}
-              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 transition flex items-center gap-1"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>
-                {connection.status === "connected" || connection.status === "configured"
-                  ? (t.aiConnections?.viewInstallGuide || "安装与配置")
-                  : (t.aiConnections?.connectKimi || "连接 Kimi")}
-              </span>
-            </button>
+          {/* Quick Kimi Web Plugin Actions */}
+          {isKimiWeb && (
+            <>
+              {tunnelRes.isAvailable && (
+                <button
+                  type="button"
+                  onClick={handleCopyPrompt}
+                  className="px-2 py-1 text-xs font-medium rounded-lg bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle transition flex items-center gap-1"
+                  title={t.aiConnections?.copyPluginBuilderPrompt || "复制 Plugin Builder 提示词"}
+                >
+                  {copiedPrompt ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedPrompt ? (t.common.copied || "已复制") : (t.aiConnections?.copyPluginBuilderPrompt || "复制提示词")}</span>
+                </button>
+              )}
+
+              {onOpenKimiPlugin && (
+                <button
+                  type="button"
+                  onClick={() => onOpenKimiPlugin(connection, "guide")}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 transition flex items-center gap-1"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{t.aiConnections?.installationGuide || "安装步骤"}</span>
+                </button>
+              )}
+            </>
           )}
 
           {/* Quick Apply Config Button for Native MCP (excluding ChatGPT & Kimi Web) */}

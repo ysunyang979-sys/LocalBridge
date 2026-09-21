@@ -1,4 +1,5 @@
 import type { AIConnectionDto } from "../../types.js";
+import { RemoteMcpEndpointResolver } from "../../types.js";
 
 export interface BuiltinCatalogEntry extends AIConnectionDto {
   descriptionZh: string;
@@ -8,19 +9,9 @@ export interface BuiltinCatalogEntry extends AIConnectionDto {
 }
 
 export function resolveTunnelEndpoint(
-  tunnelStatus: { status?: string; tunnel_id?: string | null } | null
-): string {
-  if (tunnelStatus && tunnelStatus.status === "Connected" && tunnelStatus.tunnel_id) {
-    const tid = tunnelStatus.tunnel_id.trim();
-    if (tid.startsWith("https://") || tid.startsWith("http://")) {
-      return `${tid.replace(/\/+$/, "")}/mcp`;
-    }
-    if (tid.includes(".")) {
-      return `https://${tid.replace(/\/+$/, "")}/mcp`;
-    }
-    return `https://${tid}.nexus.localbridge.dev/mcp`;
-  }
-  return "https://<nexus-tunnel-host>/mcp";
+  tunnelStatus: { status?: string; tunnel_id?: string | null; configured?: boolean } | null
+): string | null {
+  return RemoteMcpEndpointResolver.resolve(tunnelStatus).endpoint;
 }
 
 export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
@@ -48,7 +39,7 @@ export const BUILTIN_CLIENT_CATALOG: BuiltinCatalogEntry[] = [
     category: "native-mcp",
     status: "not_configured",
     transport: "tunnel",
-    endpoint: "https://<nexus-tunnel-host>/mcp",
+    endpoint: "",
     scopes: ["read", "write"],
     toolCount: 55,
     isPrimary: false,
@@ -197,15 +188,19 @@ export function mergeCatalogWithSavedConnections(
       }
     }
 
-    // Special Kimi Web rule: must use public HTTPS tunnel endpoint, never 127.0.0.1
+    // Special Kimi Web rule: must use public HTTPS tunnel endpoint, never 127.0.0.1 or placeholders
     if (item.clientType === "kimi-web") {
       const publicEndpoint = resolveTunnelEndpoint(tunnelStatus);
-      endpoint = publicEndpoint;
-      if (tunnelStatus?.status === "Connected") {
+      endpoint = publicEndpoint || "";
+      if (tunnelStatus?.status === "Connected" && publicEndpoint) {
         if (saved?.status === "connected" || (saved?.tokenId && saved?.status === "configured")) {
           resolvedStatus = saved.status;
         } else if (saved?.tokenId) {
           resolvedStatus = "configured";
+        }
+      } else {
+        if (resolvedStatus === "connected") {
+          resolvedStatus = "offline";
         }
       }
     }

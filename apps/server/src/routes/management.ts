@@ -1876,9 +1876,18 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       if (!adapter || typeof adapter.generatePluginManifest !== "function") {
         return reply.status(404).send({ error: "Kimi Web adapter not available" });
       }
-      const tunnelEndpoint = request.query?.tunnelEndpoint || "https://<nexus-tunnel-host>/mcp";
-      const manifest = adapter.generatePluginManifest(tunnelEndpoint);
-      return reply.status(200).send({ manifest });
+      const tunnelEndpoint = request.query?.tunnelEndpoint;
+      if (!tunnelEndpoint) {
+        return reply.status(400).send({
+          error: "Missing tunnelEndpoint. Secure Tunnel must be connected.",
+        });
+      }
+      try {
+        const manifest = adapter.generatePluginManifest(tunnelEndpoint);
+        return reply.status(200).send({ manifest });
+      } catch (err: any) {
+        return reply.status(400).send({ error: err?.message || String(err) });
+      }
     }
   );
 
@@ -1892,14 +1901,20 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       if (!adapter || typeof adapter.exportPluginPackage !== "function") {
         return reply.status(404).send({ error: "Kimi Web adapter not available" });
       }
+      const tunnelEndpoint = request.body?.tunnelEndpoint;
+      if (!tunnelEndpoint) {
+        return reply.status(400).send({
+          error: "Missing tunnelEndpoint. Secure Tunnel must be connected.",
+        });
+      }
       try {
         const result = adapter.exportPluginPackage(
           request.body?.targetDir,
-          request.body?.tunnelEndpoint
+          tunnelEndpoint
         );
         return reply.status(200).send(result);
       } catch (err: any) {
-        return reply.status(500).send({ error: err?.message || String(err) });
+        return reply.status(400).send({ error: err?.message || String(err) });
       }
     }
   );

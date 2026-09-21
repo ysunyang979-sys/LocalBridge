@@ -379,6 +379,16 @@ export interface I18nDictionary {
     createKimiPlugin: string;
     viewInstallGuide: string;
     connectKimi: string;
+    connectKimiWeb: string;
+    remoteMcpEndpoint: string;
+    copyEndpoint: string;
+    exportKimiPlugin: string;
+    copyPluginBuilderPrompt: string;
+    pluginBuilderPromptCopied: string;
+    installationGuide: string;
+    endpointReachableAuthRequired: string;
+    secureTunnelOffline: string;
+    endpointCopied: string;
   };
   tokens: {
     title: string;

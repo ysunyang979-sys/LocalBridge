@@ -24,7 +24,7 @@ describe("Built-in Connection Catalog Definition Suite", () => {
     expect(kimiWeb!.transport).toBe("tunnel");
     expect(kimiWeb!.quickActionType).toBe("kimi-plugin");
     expect(kimiWeb!.isAdvancedOnly).toBe(false);
-    expect(kimiWeb!.endpoint).toContain("mcp");
+    expect(kimiWeb!.endpoint).not.toContain("<nexus-tunnel-host>");
 
     const kimiCode = BUILTIN_CLIENT_CATALOG.find((c) => c.clientType === "kimi");
     expect(kimiCode).toBeDefined();

@@ -10,8 +10,10 @@ import {
   KeyRound,
   AlertCircle,
   CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
-import type { AIConnectionDto, AIConnectionConfig, TestConnectionResult } from "../../types.js";
+import type { AIConnectionDto, AIConnectionConfig, TestConnectionResult, TunnelStatusDto } from "../../types.js";
+import { RemoteMcpEndpointResolver } from "../../types.js";
 import { useTranslation } from "../../i18n/useTranslation.js";
 
 interface ConnectionDetailDrawerProps {
@@ -19,6 +21,8 @@ interface ConnectionDetailDrawerProps {
   onClose: () => void;
   connection: AIConnectionDto | null;
   isPrimary: boolean;
+  tunnelStatus?: TunnelStatusDto | null;
+  onOpenTunnel?: () => void;
   onSetPrimary: (id: string) => Promise<void>;
   onRotateToken: (id: string, scopes?: string[]) => Promise<void>;
   onTestConnection: (id: string) => Promise<TestConnectionResult>;
@@ -32,6 +36,8 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
   onClose,
   connection,
   isPrimary,
+  tunnelStatus,
+  onOpenTunnel,
   onSetPrimary,
   onRotateToken,
   onTestConnection,
@@ -39,7 +45,8 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
   onDeleteConnection,
   onPreviewConfig,
 }) => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const isZh = language === "zh-CN";
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
@@ -130,28 +137,54 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
     }
   };
 
-  const mcpConfigSnippet = JSON.stringify(
-    {
-      mcpServers: {
-        nexus: {
-          url:
-            connection.clientType === "kimi-web" || connection.transport === "tunnel"
-              ? connection.endpoint || "https://<nexus-tunnel-host>/mcp"
-              : "http://127.0.0.1:18080/mcp",
-          headers: {
-            Authorization: `Bearer ${connection.tokenMasked || "YOUR_NEXUS_TOKEN"}`,
+  const isTunnelClient = connection?.clientType === "kimi-web" || connection?.transport === "tunnel";
+  const isKimiWeb = connection?.clientType === "kimi-web";
+  const tunnelRes = RemoteMcpEndpointResolver.resolve(tunnelStatus);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+
+  const resolvedEndpoint = isTunnelClient
+    ? tunnelRes.endpoint
+    : connection?.endpoint || "http://127.0.0.1:18080/mcp";
+
+  const mcpConfigSnippet = resolvedEndpoint
+    ? JSON.stringify(
+        {
+          mcpServers: {
+            nexus: {
+              url: resolvedEndpoint,
+              headers: {
+                Authorization: `Bearer ${connection?.tokenMasked || "YOUR_NEXUS_TOKEN"}`,
+              },
+            },
           },
         },
-      },
-    },
-    null,
-    2
-  );
+        null,
+        2
+      )
+    : "";
 
   const handleCopySnippet = () => {
-    navigator.clipboard.writeText(mcpConfigSnippet);
-    setCopiedSnippet(true);
-    setTimeout(() => setCopiedSnippet(false), 2000);
+    if (mcpConfigSnippet) {
+      navigator.clipboard.writeText(mcpConfigSnippet);
+      setCopiedSnippet(true);
+      setTimeout(() => setCopiedSnippet(false), 2000);
+    }
+  };
+
+  const handleCopyPrompt = () => {
+    const prompt = RemoteMcpEndpointResolver.generatePluginBuilderPrompt(tunnelStatus);
+    if (prompt) {
+      navigator.clipboard.writeText(prompt);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    }
+  };
+
+  const handleCopyEndpoint = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedEndpoint(true);
+    setTimeout(() => setCopiedEndpoint(false), 2000);
   };
 
   return (
@@ -204,6 +237,72 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
               Enforced Gates: Project Trust &bull; User Approvals &bull; Protected Files &bull; Emergency Stop
             </p>
           </div>
+
+          {/* Tunnel / Remote MCP Endpoint Section */}
+          {isTunnelClient && (
+            <div className="space-y-2">
+              <label className="font-semibold text-theme-primary text-xs">
+                {t.aiConnections?.remoteMcpEndpoint || "Remote MCP Endpoint"}
+              </label>
+              {tunnelRes.isAvailable && tunnelRes.endpoint ? (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex items-center gap-1.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                    <span className="truncate font-semibold">{tunnelRes.endpoint}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyEndpoint(tunnelRes.endpoint!)}
+                    className="text-[11px] px-2 py-1 rounded bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary shrink-0 transition flex items-center gap-1"
+                  >
+                    {copiedEndpoint ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedEndpoint ? (t.common.copied || "已复制") : (t.aiConnections?.copyEndpoint || "复制地址")}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs flex items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{t.aiConnections?.secureTunnelOffline || "安全隧道未连接"}</span>
+                  </div>
+                  {onOpenTunnel && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenTunnel();
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition flex items-center gap-1 shrink-0"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>{isZh ? "启用隧道" : "Open Tunnel"}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Kimi Work Plugin Builder Prompt Box */}
+          {isKimiWeb && (
+            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs flex items-center justify-between gap-2">
+              <div className="text-theme-secondary">
+                <span className="font-semibold text-theme-primary">Kimi Work Plugin Builder</span>
+                <p className="text-[11px] text-theme-muted mt-0.5">
+                  {isZh ? "复制提示词在 Kimi Work 中快速创建插件" : "Copy prompt to configure plugin in Kimi Work"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyPrompt}
+                disabled={!tunnelRes.isAvailable}
+                className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs transition flex items-center gap-1 shrink-0 disabled:opacity-50"
+              >
+                {copiedPrompt ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedPrompt ? (t.common.copied || "已复制") : (t.aiConnections?.copyPluginBuilderPrompt || "复制提示词")}</span>
+              </button>
+            </div>
+          )}
 
           {/* Token & Authentication */}
           <div className="space-y-2">
@@ -322,17 +421,41 @@ export const ConnectionDetailDrawer: React.FC<ConnectionDetailDrawerProps> = ({
                 <label className="font-semibold text-theme-primary text-xs">
                   MCP Client Snippet
                 </label>
-                <button
-                  onClick={handleCopySnippet}
-                  className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
-                >
-                  {copiedSnippet ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedSnippet ? t.common.copied : t.common.copy}</span>
-                </button>
+                {mcpConfigSnippet && (
+                  <button
+                    onClick={handleCopySnippet}
+                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
+                  >
+                    {copiedSnippet ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedSnippet ? t.common.copied : t.common.copy}</span>
+                  </button>
+                )}
               </div>
-              <div className="p-3 rounded-lg bg-zinc-950 text-zinc-100 border border-zinc-800 text-[11px] font-mono overflow-x-auto">
-                <pre>{mcpConfigSnippet}</pre>
-              </div>
+              {mcpConfigSnippet ? (
+                <div className="p-3 rounded-lg bg-zinc-950 text-zinc-100 border border-zinc-800 text-[11px] font-mono overflow-x-auto">
+                  <pre>{mcpConfigSnippet}</pre>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs flex items-center justify-between gap-3 text-amber-700 dark:text-amber-300">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{t.aiConnections?.secureTunnelOffline || "安全隧道未连接"}</span>
+                  </div>
+                  {onOpenTunnel && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenTunnel();
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition flex items-center gap-1 shrink-0"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>{isZh ? "启用隧道" : "Open Tunnel"}</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

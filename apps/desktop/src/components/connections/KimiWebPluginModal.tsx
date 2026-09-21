@@ -20,15 +20,16 @@ import type {
   TestConnectionResult,
   KimiPluginManifest,
 } from "../../types.js";
+import { RemoteMcpEndpointResolver } from "../../types.js";
 import { bridge } from "../../api/bridge.js";
 import { useTranslation } from "../../i18n/useTranslation.js";
-import { resolveTunnelEndpoint } from "./catalog.js";
 
 interface KimiWebPluginModalProps {
   isOpen: boolean;
   onClose: () => void;
   tunnelStatus: TunnelStatusDto | null;
   connection: AIConnectionDto | null;
+  initialTab?: "guide" | "token" | "manifest";
   onNavigateToTunnel?: () => void;
   onRefreshConnections: () => Promise<void>;
   onTestConnection: (id: string) => Promise<TestConnectionResult>;
@@ -39,18 +40,20 @@ export const KimiWebPluginModal: React.FC<KimiWebPluginModalProps> = ({
   onClose,
   tunnelStatus,
   connection,
+  initialTab = "guide",
   onNavigateToTunnel,
   onRefreshConnections,
   onTestConnection,
 }) => {
-  const { language } = useTranslation();
+  const { t, language } = useTranslation();
   const isZh = language === "zh-CN";
 
-  const [activeTab, setActiveTab] = useState<"guide" | "token" | "manifest">("guide");
+  const [activeTab, setActiveTab] = useState<"guide" | "token" | "manifest">(initialTab);
   const [scopes, setScopes] = useState<string[]>(["read", "write"]);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedManifest, setCopiedManifest] = useState(false);
   const [isGeneratingToken, setIsGeneratingToken] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -59,21 +62,43 @@ export const KimiWebPluginModal: React.FC<KimiWebPluginModalProps> = ({
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
   const [manifestData, setManifestData] = useState<KimiPluginManifest | null>(null);
 
-  const isTunnelConnected = tunnelStatus?.status === "Connected";
-  const publicTunnelEndpoint = resolveTunnelEndpoint(tunnelStatus);
+  const tunnelRes = RemoteMcpEndpointResolver.resolve(tunnelStatus);
+  const isTunnelConnected = tunnelRes.isAvailable;
+  const publicTunnelEndpoint = tunnelRes.endpoint;
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  useEffect(() => {
+    if (isOpen && publicTunnelEndpoint) {
       bridge
         .getKimiPluginManifest(publicTunnelEndpoint)
         .then((res) => setManifestData(res.manifest))
         .catch(() => {});
+    } else {
+      setManifestData(null);
     }
   }, [isOpen, publicTunnelEndpoint]);
 
   if (!isOpen) return null;
 
+  const handleCopyPrompt = () => {
+    const prompt = RemoteMcpEndpointResolver.generatePluginBuilderPrompt(tunnelStatus);
+    if (prompt) {
+      navigator.clipboard.writeText(prompt);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    }
+  };
+
   const handleGenerateOrRotateToken = async () => {
+    if (!publicTunnelEndpoint) {
+      alert(isZh ? "安全隧道未连接，请先启用 Secure Tunnel 获取公网端点" : "Secure Tunnel is offline");
+      return;
+    }
     setIsGeneratingToken(true);
     try {
       // 1. Ensure connection exists in database
@@ -100,6 +125,10 @@ export const KimiWebPluginModal: React.FC<KimiWebPluginModalProps> = ({
   };
 
   const handleExportPlugin = async () => {
+    if (!publicTunnelEndpoint) {
+      alert(isZh ? "安全隧道未连接，无法导出包含有效公网端点的插件包" : "Secure Tunnel is offline");
+      return;
+    }
     setIsExporting(true);
     setExportSuccessPath(null);
     try {
@@ -216,7 +245,7 @@ export const KimiWebPluginModal: React.FC<KimiWebPluginModalProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => handleCopy(publicTunnelEndpoint, "url")}
+                onClick={() => handleCopy(publicTunnelEndpoint || "", "url")}
                 className="text-[11px] px-2 py-1 rounded bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary shrink-0 transition flex items-center gap-1"
               >
                 {copiedUrl ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
@@ -269,12 +298,26 @@ export const KimiWebPluginModal: React.FC<KimiWebPluginModalProps> = ({
           {activeTab === "guide" && (
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-theme-card-muted border border-theme-subtle space-y-3">
-                <div className="font-bold text-theme-primary text-sm">
-                  {isZh ? "在 Kimi 网页版（kimi.com）中使用步骤" : "Steps to use on kimi.com"}
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-theme-primary text-sm">
+                    {isZh ? "Kimi 网页版 9 步安装与使用流程" : "9-Step Installation & Usage on kimi.com"}
+                  </div>
+                  {tunnelRes.isAvailable && (
+                    <button
+                      type="button"
+                      onClick={handleCopyPrompt}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-700 dark:text-indigo-300 text-xs font-medium border border-indigo-500/30 transition flex items-center gap-1"
+                      title={t.aiConnections?.copyPluginBuilderPrompt || "复制 Plugin Builder 提示词"}
+                    >
+                      {copiedPrompt ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedPrompt ? (t.common.copied || "已复制") : (t.aiConnections?.copyPluginBuilderPrompt || "复制提示词")}</span>
+                    </button>
+                  )}
                 </div>
-                <ol className="space-y-2 text-theme-secondary list-decimal list-inside leading-relaxed">
+                <ol className="space-y-2 text-theme-secondary list-decimal list-inside leading-relaxed text-xs">
                   <li>
-                    {isZh ? "打开浏览器访问 " : "Open "}
+                    <strong>{isZh ? "打开 Kimi Work" : "Open Kimi Work"}</strong>：
+                    {isZh ? "访问 " : "Visit "}
                     <a
                       href="https://kimi.com"
                       target="_blank"
@@ -283,37 +326,44 @@ export const KimiWebPluginModal: React.FC<KimiWebPluginModalProps> = ({
                     >
                       kimi.com <ExternalLink className="w-3 h-3 inline" />
                     </a>
-                    {isZh ? " 并登录账号。" : " in your browser and sign in."}
+                    {isZh ? " 并登录账号。" : " and sign in."}
                   </li>
                   <li>
-                    {isZh
-                      ? "切换至支持插件的模型版本（如 K3 或 K3 Swarm）。"
-                      : "Switch to a model mode that supports plugins (such as K3 or K3 Swarm)."}
+                    <strong>{isZh ? "进入 Work" : "Navigate to Work"}</strong>：
+                    {isZh ? "切换到支持插件与 Agent 的工作区。" : "Switch to a workspace supporting plugins and agents."}
                   </li>
                   <li>
-                    {isZh
-                      ? "在对话输入框旁点击 “+” 按钮或键盘输入 “/”。"
-                      : "Click '+' next to the chat prompt or type '/'."}
+                    <strong>{isZh ? "打开 插件" : "Open Plugins"}</strong>：
+                    {isZh ? "在对话栏点击 “+” 或工具栏展开插件列表。" : "Click '+' in the chat bar or expand the plugin list."}
                   </li>
                   <li>
-                    {isZh
-                      ? "点击打开「插件」菜单（或使用 Kimi Work Plugin Builder）。"
-                      : "Open the 'Plugins' menu (or Kimi Work Plugin Builder)."}
+                    <strong>{isZh ? "点击 自定义插件" : "Select Custom Plugins"}</strong>：
+                    {isZh ? "进入插件管理中心。" : "Open plugin management center."}
                   </li>
                   <li>
-                    {isZh
-                      ? "安装/导入 Nexus 插件（可导入由 Nexus 导出的 kimi.plugin.json 清单）。"
-                      : "Install/import Nexus plugin using the exported kimi.plugin.json."}
+                    <strong>{isZh ? "创建 Nexus 插件" : "Create Nexus Plugin"}</strong>：
+                    {isZh ? "选择导入本地 kimi.plugin.json 配置文件（可从标签 3 导出）。" : "Import local kimi.plugin.json configuration file."}
                   </li>
                   <li>
-                    {isZh
-                      ? "完成授权：输入下方标签页中生成的 Kimi Web 专属 Token。"
-                      : "Authorize: Enter the dedicated Kimi Web Token generated in tab 2."}
+                    <strong>{isZh ? "使用 Nexus 生成的 MCP Endpoint" : "Use Nexus MCP Endpoint"}</strong>：
+                    {isZh ? "确认服务端点为 " : "Confirm endpoint is "}
+                    <span className="font-mono text-sky-500 font-semibold">
+                      {publicTunnelEndpoint || (isZh ? "安全隧道未连接" : "Secure Tunnel Offline")}
+                    </span>。
                   </li>
                   <li>
+                    <strong>{isZh ? "完成插件安装" : "Complete Plugin Installation"}</strong>：
+                    {isZh ? "填入 Nexus 生成的专属 Kimi Web 访问令牌（Bearer Token）。" : "Enter the dedicated Kimi Web Bearer Token."}
+                  </li>
+                  <li>
+                    <strong>{isZh ? "在 Kimi 会话中选择 Nexus" : "Select Nexus in Chat"}</strong>：
+                    {isZh ? "在会话工具栏勾选 Nexus 插件。" : "Check and enable Nexus plugin in session toolbar."}
+                  </li>
+                  <li>
+                    <strong>{isZh ? "测试授权项目读取" : "Verify Project Access"}</strong>：
                     {isZh
-                      ? "在当前会话工具栏中选中启用 Nexus 插件。"
-                      : "Select and enable Nexus plugin in your active chat session."}
+                      ? "在对话中发送「请使用 Nexus 列出当前授权项目」完成端到端闭环验证。"
+                      : "Send 'List authorized projects with Nexus' to verify end-to-end access."}
                   </li>
                 </ol>
               </div>
@@ -513,7 +563,9 @@ export const KimiWebPluginModal: React.FC<KimiWebPluginModalProps> = ({
               <pre className="p-4 rounded-xl bg-black/5 dark:bg-black/30 border border-theme-subtle font-mono text-[11px] text-theme-secondary overflow-x-auto max-h-60">
                 {manifestData
                   ? JSON.stringify(manifestData, null, 2)
-                  : `{\n  "schema_version": "v1",\n  "name_for_human": "Nexus",\n  "api": { "url": "${publicTunnelEndpoint}" }\n}`}
+                  : publicTunnelEndpoint
+                  ? `{\n  "schema_version": "v1",\n  "name_for_human": "Nexus",\n  "api": { "url": "${publicTunnelEndpoint}" }\n}`
+                  : `{\n  "error": "${isZh ? "安全隧道未连接，请先启用 Secure Tunnel" : "Secure Tunnel is offline"}"\n}`}
               </pre>
             </div>
           )}

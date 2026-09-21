@@ -57,12 +57,14 @@ describe("Kimi Web Plugin & Isolation Test Suite", () => {
       expect(manifestJson).not.toContain("lb_"); // No plaintext credentials in manifest template
     });
 
-    it("falls back safely if no active tunnel endpoint is provided", () => {
-      const manifest = adapter.generatePluginManifest();
-      expect(manifest.mcpServers.nexus.url).toBe("https://<nexus-tunnel-host>/mcp");
+    it("rejects placeholder, missing endpoint, or localhost, requiring a valid HTTPS public endpoint", () => {
+      expect(() => (adapter as any).generatePluginManifest()).toThrow(/Secure Tunnel is offline/);
+      expect(() => adapter.generatePluginManifest("https://<nexus-tunnel-host>/mcp")).toThrow(/Invalid tunnel endpoint/);
+      expect(() => adapter.generatePluginManifest("http://127.0.0.1:18080/mcp")).toThrow(/Invalid tunnel endpoint/);
+      expect(() => adapter.generatePluginManifest("http://localhost:18080/mcp")).toThrow(/Invalid tunnel endpoint/);
     });
 
-    it("generates markdown README with 7-step kimi.com setup instructions", () => {
+    it("generates markdown README with 9-step kimi.com setup instructions", () => {
       const tunnelEndpoint = "https://live-tunnel.nexus.dev/mcp";
       const readme = adapter.generateReadme(tunnelEndpoint);
 
@@ -70,14 +72,10 @@ describe("Kimi Web Plugin & Isolation Test Suite", () => {
       expect(readme).toContain("kimi.plugin.json");
       expect(readme).toContain("https://kimi.com");
       expect(readme).toContain(tunnelEndpoint);
-      // Verify step indicators
-      expect(readme).toMatch(/1\.\s+/);
-      expect(readme).toMatch(/2\.\s+/);
-      expect(readme).toMatch(/3\.\s+/);
-      expect(readme).toMatch(/4\.\s+/);
-      expect(readme).toMatch(/5\.\s+/);
-      expect(readme).toMatch(/6\.\s+/);
-      expect(readme).toMatch(/7\.\s+/);
+      // Verify all 9 step indicators
+      for (let i = 1; i <= 9; i++) {
+        expect(readme).toMatch(new RegExp(`${i}\\.\\s+`));
+      }
     });
 
     it("exports plugin package into directory without leaking plaintext tokens", async () => {
@@ -94,10 +92,12 @@ describe("Kimi Web Plugin & Isolation Test Suite", () => {
       const parsedManifest = JSON.parse(manifestContent);
       expect(parsedManifest.mcpServers.nexus.url).toBe(tunnelUrl);
       expect(manifestContent).not.toContain("lb_");
+      expect(manifestContent).not.toContain("<nexus-tunnel-host>");
 
       const readmeContent = fs.readFileSync(result.readmePath, "utf-8");
       expect(readmeContent).toContain(tunnelUrl);
       expect(readmeContent).not.toContain("lb_");
+      expect(readmeContent).not.toContain("<nexus-tunnel-host>");
     });
   });
 

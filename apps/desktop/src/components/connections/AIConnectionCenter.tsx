@@ -77,9 +77,14 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
   // Kimi Web Plugin Modal State
   const [isKimiModalOpen, setIsKimiModalOpen] = useState(false);
   const [kimiModalConn, setKimiModalConn] = useState<AIConnectionDto | null>(null);
+  const [kimiModalInitialTab, setKimiModalInitialTab] = useState<"guide" | "token" | "manifest">("guide");
 
-  const handleOpenKimiPlugin = (conn: AIConnectionDto) => {
+  const handleOpenKimiPlugin = (
+    conn: AIConnectionDto,
+    initialTab: "guide" | "token" | "manifest" = "guide"
+  ) => {
     setKimiModalConn(conn);
+    setKimiModalInitialTab(initialTab);
     setIsKimiModalOpen(true);
   };
 
@@ -512,6 +517,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
                 connection={conn}
                 mode={viewMode}
                 isPrimary={Boolean(conn.isPrimary)}
+                tunnelStatus={tunnelStatus}
                 onSetPrimary={handleSetPrimary}
                 onTest={handleTestConnection}
                 onOpenDetails={(c) => {
@@ -553,6 +559,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
               connection={conn}
               mode={viewMode}
               isPrimary={Boolean(conn.isPrimary)}
+              tunnelStatus={tunnelStatus}
               onSetPrimary={handleSetPrimary}
               onTest={handleTestConnection}
               onOpenDetails={(c) => {
@@ -593,6 +600,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
               connection={conn}
               mode={viewMode}
               isPrimary={Boolean(conn.isPrimary)}
+              tunnelStatus={tunnelStatus}
               onSetPrimary={handleSetPrimary}
               onTest={handleTestConnection}
               onOpenDetails={(c) => {
@@ -675,6 +683,8 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
         }}
         connection={selectedConnection}
         isPrimary={selectedConnection?.id === primaryConnection?.id}
+        tunnelStatus={tunnelStatus}
+        onOpenTunnel={onNavigateToTunnel}
         onSetPrimary={handleSetPrimary}
         onRotateToken={handleRotateToken}
         onTestConnection={handleTestConnection}
@@ -708,6 +718,7 @@ export const AIConnectionCenter: React.FC<AIConnectionCenterProps> = ({
       {/* Kimi Web Plugin Setup Wizard Modal */}
       <KimiWebPluginModal
         isOpen={isKimiModalOpen}
+        initialTab={kimiModalInitialTab}
         onClose={() => {
           setIsKimiModalOpen(false);
           setKimiModalConn(null);

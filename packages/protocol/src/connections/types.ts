@@ -112,6 +112,9 @@ export interface TestConnectionResult {
   toolCount: number;
   message: string;
   error?: string;
+  endpointReachable?: boolean;
+  authValid?: boolean;
+  details?: Record<string, unknown>;
 }
 
 export interface ClientAuditSource {
