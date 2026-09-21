@@ -320,7 +320,7 @@ export class ConnectionService {
       tokenId: row.token_id,
       tokenMasked,
       scopes,
-      toolCount: 59, // 59 core MCP tools
+      toolCount: 62, // 62 core MCP tools
       lastSeenAt: row.last_seen_at,
       lastConnectedAt: row.last_connected_at,
       latencyMs: row.status === "connected" ? 8 : null,

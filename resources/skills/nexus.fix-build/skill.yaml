@@ -1,0 +1,37 @@
+id: nexus.fix-build
+version: 1.0.0
+name:
+  zh-CN: 修复构建错误
+  en-US: Fix Build Failures
+description:
+  zh-CN: 安全复现构建失败、准确定位代码根因、执行最小范围修改并验证构建通过
+  en-US: Diagnose and safely fix project build errors with minimal code edits and verification
+category: debugging
+risk: medium
+triggers:
+  - 构建失败
+  - build failed
+  - 编译失败
+  - cannot build
+  - fix build
+  - build error
+  - 打包报错
+tools:
+  - localbridge_project_list
+  - localbridge_build_start
+  - localbridge_command_run
+  - localbridge_code_diagnostics
+  - localbridge_code_definition
+  - localbridge_code_references
+  - localbridge_file_read
+  - localbridge_file_patch
+  - localbridge_file_write
+workflow:
+  - confirm_project
+  - reproduce_build_failure
+  - collect_error_diagnostics
+  - pinpoint_root_cause
+  - apply_minimal_patch
+  - verify_build_passes
+  - summarize_resolution
+enabled: true

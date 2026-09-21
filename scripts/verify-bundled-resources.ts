@@ -75,6 +75,11 @@ async function verifyBundledServerMcpSchema() {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+  let serverStderr = "";
+  let serverStdout = "";
+  serverProc.stderr?.on("data", (d) => { serverStderr += d.toString(); });
+  serverProc.stdout?.on("data", (d) => { serverStdout += d.toString(); });
+
   try {
     // Wait for server ready
     let ready = false;
@@ -91,7 +96,7 @@ async function verifyBundledServerMcpSchema() {
       await new Promise((r) => setTimeout(r, 200));
     }
     if (!ready) {
-      throw new Error("Bundled server failed to start within timeout during resource verification.");
+      throw new Error(`Bundled server failed to start within timeout during resource verification.\nStdout: ${serverStdout}\nStderr: ${serverStderr}`);
     }
 
     // Create an MCP token

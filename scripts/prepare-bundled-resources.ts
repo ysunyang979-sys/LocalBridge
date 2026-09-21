@@ -20,6 +20,8 @@ const serverDir = path.join(resourcesDir, "server");
 const runnerDir = path.join(resourcesDir, "runner");
 const tunnelDir = path.join(resourcesDir, "tunnel");
 const lspDir = path.join(resourcesDir, "lsp");
+const skillsDir = path.join(resourcesDir, "skills");
+const rootSkillsDir = path.resolve(rootDir, "resources/skills");
 
 function findPnpmPackage(packageName: string, preferredVersion?: string): string {
   const pnpmDir = path.resolve(rootDir, "node_modules/.pnpm");
@@ -60,7 +62,7 @@ async function main() {
 
   // 1. Clean only the controlled build outputs. This makes preparation
   // deterministic and prevents stale runtime or database files being shipped.
-  for (const controlledDir of [runtimeDir, serverDir, runnerDir, lspDir]) {
+  for (const controlledDir of [runtimeDir, serverDir, runnerDir, lspDir, skillsDir]) {
     const relative = path.relative(resourcesDir, controlledDir);
     if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(`Refusing to clean uncontrolled resource path: ${controlledDir}`);
@@ -230,6 +232,13 @@ async function main() {
     JSON.stringify({ name: "@localbridge/lsp-runtime", type: "module", private: true }, null, 2),
     "utf-8"
   );
+
+  // 4d. Prepare Bundled Built-in Skills
+  console.log("\nBundling production Built-in Skills...");
+  if (fs.existsSync(rootSkillsDir)) {
+    fs.cpSync(rootSkillsDir, skillsDir, { recursive: true });
+    console.log(`-> Copied built-in skills to ${skillsDir}`);
+  }
 
   // 5. Verification Test
   console.log("\nVerifying bundled runtime integrity using bundled node.exe...");

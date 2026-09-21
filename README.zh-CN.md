@@ -14,7 +14,8 @@ ChatGPT
 Nexus (Local AI Control Plane)
    │
    ├── 本地已授权项目 (Local Projects / 沙箱与规范路径校验)
-   ├── 59 个原生 MCP 工具 (Model Context Protocol)
+   ├── 62 个原生 MCP 工具 (Model Context Protocol)
+   ├── Nexus Skills v1 (声明式确定性任务工作流)
    ├── Git CLI 与托管工作树 (Managed Worktrees)
    ├── 常驻运行时 (Persistent Runtime) 与后台任务 (Jobs)
    ├── 代码智能分析 (Code Intelligence / LSP)

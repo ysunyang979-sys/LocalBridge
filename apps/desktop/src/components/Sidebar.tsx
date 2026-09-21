@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import type { ServerStatus, McpStatus, TunnelStatusDto, UserExperienceMode } from "../types.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -18,6 +19,7 @@ import nexusLogo from "../assets/nexus.png";
 export type NavPage =
   | "overview"
   | "projects"
+  | "skills"
   | "activity"
   | "settings"
   | "approvals"
@@ -74,12 +76,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortcut: "2",
     },
     {
+      id: "skills" as NavPage,
+      label: t.nav.skills || "Skills",
+      icon: Sparkles,
+      shortcut: "3",
+    },
+    {
       id: "activity" as NavPage,
       label: t.nav.activity || "Activity",
       icon: FileText,
       badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
       badgeColor: "bg-amber-500",
-      shortcut: "3",
+      shortcut: "4",
     },
   ];
 

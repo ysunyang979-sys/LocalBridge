@@ -1,0 +1,36 @@
+id: nexus.run-tests
+version: 1.0.0
+name:
+  zh-CN: 智能自动化测试与故障排查
+  en-US: Automated Test Runner & Failure Diagnosis
+description:
+  zh-CN: 发现测试命令、执行测试套件、分析失败堆栈、协同修复并进行回归验证
+  en-US: Discover test commands, run test suites, analyze failure stacks, repair, and verify regression
+category: testing
+risk: medium
+triggers:
+  - 跑一下测试
+  - 运行测试
+  - 跑单测
+  - run tests
+  - execute test
+  - test suite
+  - 单元测试
+  - test failed
+tools:
+  - localbridge_project_info
+  - localbridge_file_read
+  - localbridge_test_start
+  - localbridge_job_status
+  - localbridge_job_logs
+  - localbridge_code_diagnostics
+  - localbridge_file_patch
+workflow:
+  - check_project_authorization
+  - detect_test_configuration
+  - trigger_test_job
+  - monitor_test_status
+  - analyze_test_failures
+  - repair_failures
+  - rerun_verification
+enabled: true

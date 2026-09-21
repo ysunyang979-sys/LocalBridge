@@ -1,0 +1,34 @@
+id: nexus.project-inspect
+version: 1.0.0
+name:
+  zh-CN: 项目架构与上下文分析
+  en-US: Project Architecture & Context Inspection
+description:
+  zh-CN: 安全分析项目目录结构、技术栈、核心依赖与关键入口代码
+  en-US: Inspect project directory structure, dependencies, entrypoints, and architecture
+category: inspection
+risk: low
+triggers:
+  - 看下项目
+  - 项目是做什么的
+  - 项目结构
+  - inspect project
+  - project overview
+  - what does this project do
+  - 理解代码
+tools:
+  - localbridge_project_list
+  - localbridge_project_info
+  - localbridge_directory_list
+  - localbridge_file_stat
+  - localbridge_file_read
+  - localbridge_code_workspace_symbols
+  - localbridge_code_diagnostics
+workflow:
+  - verify_project_authorization
+  - list_root_directory
+  - read_manifests
+  - locate_entrypoints
+  - inspect_diagnostics
+  - synthesize_architecture_summary
+enabled: true

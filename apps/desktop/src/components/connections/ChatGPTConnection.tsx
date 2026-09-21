@@ -81,7 +81,7 @@ export const ChatGPTConnection: React.FC<ChatGPTConnectionProps> = ({
         success: false,
         stage: "endpoint",
         latencyMs: 0,
-        toolCount: 59,
+        toolCount: 62,
         message: err?.message || String(err),
       });
     } finally {
@@ -175,7 +175,7 @@ export const ChatGPTConnection: React.FC<ChatGPTConnectionProps> = ({
               {isZh ? "可用工具" : "MCP Tools"}
             </div>
             <div className="text-sm font-bold font-mono text-theme-primary">
-              59
+              62
             </div>
           </div>
 

@@ -69,4 +69,9 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   localbridge_runtime_start: { readOnlyHint: false, openWorldHint: true },
   localbridge_runtime_restart: { readOnlyHint: false, openWorldHint: true },
   localbridge_runtime_stop: { readOnlyHint: false, destructiveHint: true },
+
+  // Skills tools
+  localbridge_skill_list: { readOnlyHint: true },
+  localbridge_skill_get: { readOnlyHint: true },
+  localbridge_skill_match: { readOnlyHint: true },
 };

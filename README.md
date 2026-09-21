@@ -12,7 +12,8 @@ ChatGPT
 Nexus (Local AI Control Plane)
    │
    ├── Local Projects (Sandboxed, Canonical Path verification)
-   ├── 59 Model Context Protocol (MCP) Tools
+   ├── 62 Model Context Protocol (MCP) Tools
+   ├── Nexus Skills v1 (Declarative Deterministic Workflows)
    ├── Git CLI & Managed Worktrees
    ├── Persistent Runtimes & Background Jobs
    ├── Code Intelligence (LSP)

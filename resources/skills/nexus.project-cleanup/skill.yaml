@@ -1,0 +1,34 @@
+id: nexus.project-cleanup
+version: 1.0.0
+name:
+  zh-CN: 项目构建产物与冗余清理
+  en-US: Project Build Artifacts & Workspace Cleanup
+description:
+  zh-CN: 智能识别构建产物、dist 产出、测试覆盖率目录与缓存垃圾，生成确认方案后执行受控清理（受 Full Control 管控）
+  en-US: Identify build outputs, dist directories, coverage, and caches, generating a cleanup plan before structured deletion under Full Control policy
+category: maintenance
+risk: high
+triggers:
+  - 清理项目
+  - 清理缓存
+  - clean project
+  - cleanup build
+  - 删除构建产物
+  - 清理垃圾
+  - clean workspace
+  - 清理dist
+tools:
+  - localbridge_project_info
+  - localbridge_directory_list
+  - localbridge_file_stat
+  - localbridge_fs_delete
+  - localbridge_file_delete
+workflow:
+  - check_project_authorization
+  - scan_target_directories
+  - identify_cleanable_artifacts
+  - generate_cleanup_plan
+  - verify_full_control_policy
+  - execute_structured_deletion
+  - verify_disk_reclamation
+enabled: true

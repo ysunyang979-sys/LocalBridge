@@ -26,6 +26,8 @@ import type {
 } from "@localbridge/protocol";
 import type { McpPrincipal } from "./types.js";
 import { FullControlService } from "../auth/full-control-service.js";
+import { SkillRegistry, SkillLoader, SkillValidator } from "../skills/index.js";
+import { MCP_TOOL_SCOPE } from "./scope-policy.js";
 
 export interface McpContextDeps {
   projectService: ServerProjectService;
@@ -37,6 +39,7 @@ export interface McpContextDeps {
   worktreeManager?: ManagedWorktreeManager;
   persistentRuntimeManager?: ServerPersistentRuntimeManager;
   decisionProvider?: DecisionProvider;
+  skillRegistry?: SkillRegistry;
 }
 
 export interface SafeAuditMetadata {
@@ -73,6 +76,7 @@ export class McpContext {
   public readonly persistentRuntimeManager?: ServerPersistentRuntimeManager;
   public readonly decisionProvider: DecisionProvider;
   public readonly fullControlService: FullControlService;
+  public readonly skillRegistry: SkillRegistry;
 
   // In-memory mapping from jobId to runnerId for background jobs
   private readonly jobToRunnerMap = new Map<string, string>();
@@ -144,6 +148,14 @@ export class McpContext {
 
     this.decisionProvider =
       deps.decisionProvider ?? new ManagedDecisionProvider(initialConfig);
+
+    if (deps.skillRegistry) {
+      this.skillRegistry = deps.skillRegistry;
+    } else {
+      const validator = new SkillValidator(new Set(Object.keys(MCP_TOOL_SCOPE)));
+      const loader = new SkillLoader(validator);
+      this.skillRegistry = new SkillRegistry(loader);
+    }
   }
 
   async getDecisionAdvice(context: DecisionContext): Promise<DecisionAdvice> {

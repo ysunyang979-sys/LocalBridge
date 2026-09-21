@@ -3393,7 +3393,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                     : "Local AI Control Plane for ChatGPT · Securely connect ChatGPT to your authorized local environment."}
                 </div>
                 <div className="text-[10px] font-mono text-theme-muted">
-                  59 MCP Tools &bull; Secure MCP Tunnel &bull; Full Control &bull; Laya Decision Intelligence &bull; Code Intelligence &bull; Persistent Runtime
+                  62 MCP Tools &bull; Nexus Skills v1 &bull; Secure MCP Tunnel &bull; Full Control &bull; Laya Decision Intelligence &bull; Code Intelligence &bull; Persistent Runtime
                 </div>
               </div>
             </div>

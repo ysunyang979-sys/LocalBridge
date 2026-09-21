@@ -32,6 +32,10 @@ import type {
   FullControlStatusDto,
   StartFullControlParams,
   FullControlSession,
+  SkillMetadata,
+  SkillDefinition,
+  SkillMatchResult,
+  SkillSource,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -726,6 +730,61 @@ class ApiBridge {
       }
     }
     return null;
+  }
+
+  // Skills Management
+  async listSkills(params?: {
+    projectId?: string;
+    category?: string;
+    source?: SkillSource;
+    enabledOnly?: boolean;
+  }): Promise<{ count: number; skills: SkillMetadata[] }> {
+    const query = new URLSearchParams();
+    if (params?.projectId) query.set("projectId", params.projectId);
+    if (params?.category) query.set("category", params.category);
+    if (params?.source) query.set("source", params.source);
+    if (params?.enabledOnly !== undefined) query.set("enabledOnly", String(params.enabledOnly));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return this.fetchJson<{ count: number; skills: SkillMetadata[] }>(`/api/skills${qs}`);
+  }
+
+  async getSkill(skillId: string, projectId?: string): Promise<SkillDefinition> {
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return this.fetchJson<SkillDefinition>(`/api/skills/${encodeURIComponent(skillId)}${qs}`);
+  }
+
+  async reloadSkills(projectDirs?: Array<{ projectId: string; rootPath: string }>): Promise<{
+    reloaded: boolean;
+    count: number;
+    skills: SkillMetadata[];
+  }> {
+    return this.fetchJson<{ reloaded: boolean; count: number; skills: SkillMetadata[] }>(
+      "/api/skills/reload",
+      {
+        method: "POST",
+        body: JSON.stringify({ projectDirs: projectDirs || [] }),
+      }
+    );
+  }
+
+  async toggleSkill(
+    skillId: string,
+    enabled: boolean
+  ): Promise<{ success: boolean; skill: SkillDefinition }> {
+    return this.fetchJson<{ success: boolean; skill: SkillDefinition }>(
+      `/api/skills/${encodeURIComponent(skillId)}/toggle`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      }
+    );
+  }
+
+  async matchSkill(query: string, projectId?: string): Promise<SkillMatchResult> {
+    return this.fetchJson<SkillMatchResult>("/api/skills/match", {
+      method: "POST",
+      body: JSON.stringify({ query, projectId }),
+    });
   }
 
   // Secure MCP Tunnel

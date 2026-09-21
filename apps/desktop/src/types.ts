@@ -688,3 +688,55 @@ export interface FullControlStatusDto {
   allSessions: FullControlSession[];
 }
 
+// Nexus Skills types
+export type SkillSource = "builtin" | "user" | "project";
+export type SkillRisk = "low" | "medium" | "high";
+export type SkillCategory =
+  | "inspection"
+  | "debugging"
+  | "testing"
+  | "refactoring"
+  | "review"
+  | "runtime"
+  | "maintenance"
+  | "general";
+
+export type SkillValidationStatus = "valid" | "invalid" | "conflict" | "warning";
+
+export interface SkillMetadata {
+  id: string;
+  version: string | number;
+  name: Record<string, string>;
+  description: Record<string, string>;
+  category: SkillCategory;
+  risk: SkillRisk;
+  triggers: string[];
+  tools: string[];
+  workflow: string[];
+  enabled: boolean;
+  source: SkillSource;
+  sourcePath?: string;
+  projectId?: string;
+  validationStatus?: SkillValidationStatus;
+  validationErrors?: string[];
+  securityWarning?: string;
+}
+
+export interface SkillDefinition extends SkillMetadata {
+  instructions: string;
+}
+
+export interface SkillMatchResult {
+  skill: SkillMetadata | null;
+  confidence: number;
+  reason: string;
+}
+
+export interface SkillListFilter {
+  projectId?: string;
+  category?: string;
+  source?: SkillSource;
+  enabledOnly?: boolean;
+}
+
+

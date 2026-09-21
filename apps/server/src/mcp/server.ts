@@ -11,6 +11,7 @@ import { registerCodeTools } from "./tools/code.js";
 import { registerSessionTools } from "./tools/session.js";
 import { registerWorktreeTools } from "./tools/worktree.js";
 import { registerRuntimeTools } from "./tools/runtime.js";
+import { registerSkillTools } from "./tools/skills.js";
 
 export interface McpServerOptions {
   name?: string;
@@ -34,7 +35,7 @@ export function createLocalBridgeMcpServer(
   // Set negotiated protocol version to 2026-07-28 so the wire codec resolves server/discover and other 2026-era methods
   (server.server as any)._negotiatedProtocolVersion = MCP_PROTOCOL_VERSION;
 
-  // Register all tools (projects, filesystem, git, command, jobs, approvals, code, session, worktree, runtime)
+  // Register all tools (projects, filesystem, git, command, jobs, approvals, code, session, worktree, runtime, skills)
   registerProjectTools(server, context);
   registerFilesystemTools(server, context);
   registerGitTools(server, context);
@@ -45,6 +46,7 @@ export function createLocalBridgeMcpServer(
   registerSessionTools(server, context);
   registerWorktreeTools(server, context);
   registerRuntimeTools(server, context);
+  registerSkillTools(server, context);
 
   return server;
 }

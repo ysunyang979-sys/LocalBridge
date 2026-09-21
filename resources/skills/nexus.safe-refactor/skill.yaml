@@ -1,0 +1,38 @@
+id: nexus.safe-refactor
+version: 1.0.0
+name:
+  zh-CN: 安全结构重构与影响控制
+  en-US: Safe Code Refactoring & Impact Control
+description:
+  zh-CN: 评估重构影响范围、执行原子化代码补丁、实时校验 LSP 诊断并触发回归测试
+  en-US: Assess refactoring blast radius, perform atomic code edits, verify LSP diagnostics, and trigger regression tests
+category: refactoring
+risk: medium
+triggers:
+  - 重构代码
+  - safe refactor
+  - 重命名函数
+  - 拆分模块
+  - 优化代码结构
+  - code refactor
+  - clean up architecture
+  - 模块重构
+tools:
+  - localbridge_project_info
+  - localbridge_file_read
+  - localbridge_code_references
+  - localbridge_code_impact
+  - localbridge_file_patch
+  - localbridge_code_diagnostics
+  - localbridge_test_start
+  - localbridge_job_status
+  - localbridge_job_logs
+workflow:
+  - check_project_authorization
+  - evaluate_symbol_impact
+  - plan_refactoring_steps
+  - apply_atomic_patches
+  - verify_diagnostics
+  - run_regression_tests
+  - confirm_behavioral_parity
+enabled: true

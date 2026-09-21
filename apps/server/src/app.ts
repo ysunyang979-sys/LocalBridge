@@ -23,6 +23,7 @@ import { statusRoutes } from "./routes/status.js";
 import { runnerWsRoute } from "./routes/runner-ws.js";
 import { runnersRoutes } from "./routes/runners.js";
 import { projectsRoutes } from "./routes/projects.js";
+import { skillsRoutes } from "./routes/skills.js";
 import { managementRoutes } from "./routes/management.js";
 import { mcpRoutes, McpContext, McpRateLimiter } from "./mcp/index.js";
 
@@ -223,6 +224,13 @@ export async function buildApp(
   await app.register(projectsRoutes, {
     prefix: "/api",
     projectService,
+    tokenService,
+    managementSecret,
+    requireManagementAuth,
+  });
+  await app.register(skillsRoutes, {
+    prefix: "/api",
+    mcpContext,
     tokenService,
     managementSecret,
     requireManagementAuth,

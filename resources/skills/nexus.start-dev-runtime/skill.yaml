@@ -1,0 +1,41 @@
+id: nexus.start-dev-runtime
+version: 1.0.0
+name:
+  zh-CN: 本地开发运行时启动与托管
+  en-US: Local Dev Runtime Startup & Process Management
+description:
+  zh-CN: 智能识别项目开发服务器脚本、通过 Nexus 持久化守护进程托管启动、实时捕获启动日志并监控运行状态
+  en-US: Detect dev server scripts, launch via Nexus persistent runtime daemon, capture logs, and monitor running status
+category: runtime
+risk: high
+triggers:
+  - 启动项目
+  - 启动服务
+  - 启动开发服务
+  - 运行开发服务
+  - 开发服务
+  - 启动本地服务
+  - 跑起来
+  - 运行起来
+  - npm run dev
+  - start dev server
+  - start runtime
+  - run project
+  - 本地跑一下
+tools:
+  - localbridge_project_info
+  - localbridge_file_read
+  - localbridge_runtime_list
+  - localbridge_runtime_start
+  - localbridge_runtime_status
+  - localbridge_runtime_logs
+  - localbridge_runtime_stop
+workflow:
+  - check_project_authorization
+  - inspect_runtime_scripts
+  - check_existing_runtime
+  - launch_dev_runtime
+  - monitor_startup_status
+  - fetch_initial_logs
+  - report_access_url
+enabled: true

@@ -9,6 +9,7 @@ import { JobsPage } from "./pages/JobsPage.js";
 import { ConnectionsPage } from "./pages/ConnectionsPage.js";
 import { TokensPage } from "./pages/TokensPage.js";
 import { ActivityPage } from "./pages/ActivityPage.js";
+import { SkillsPage } from "./pages/SkillsPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { AuthorizeProjectModal } from "./components/modals/AuthorizeProjectModal.js";
 import { CreateTokenModal } from "./components/modals/CreateTokenModal.js";
@@ -268,6 +269,10 @@ export const App: React.FC = () => {
       title: t.activity.title,
       subtitle: t.activity.subtitle,
     },
+    skills: {
+      title: t.skills.title,
+      subtitle: t.skills.subtitle,
+    },
     settings: {
       title: t.settings.title,
       subtitle: t.settings.subtitle,
@@ -440,6 +445,13 @@ export const App: React.FC = () => {
                   await loadData();
                 }}
                 uxMode={uxMode}
+              />
+            )}
+
+            {currentPage === "skills" && (
+              <SkillsPage
+                uxMode={uxMode}
+                projectId={selectedProjectId ?? undefined}
               />
             )}
 

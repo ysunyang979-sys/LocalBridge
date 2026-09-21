@@ -1,0 +1,35 @@
+id: nexus.git-review
+version: 1.0.0
+name:
+  zh-CN: Git 变更审查与合规质检
+  en-US: Git Change Review & Compliance Inspection
+description:
+  zh-CN: 检查 Git 工作区状态、分析代码差异、梳理提交历史并结合代码智能评估变更风险（严禁未经请求的自动提交）
+  en-US: Inspect Git working tree, diffs, and history, analyzing change risks with code intelligence (strictly no unrequested commits)
+category: review
+risk: low
+triggers:
+  - 看下改动
+  - git review
+  - 审查代码变更
+  - git diff
+  - 检查git状态
+  - review changes
+  - 帮我看下改了什么
+  - 审阅代码
+tools:
+  - localbridge_project_info
+  - localbridge_git_info
+  - localbridge_git_status
+  - localbridge_git_diff
+  - localbridge_git_log
+  - localbridge_code_diagnostics
+  - localbridge_code_impact
+workflow:
+  - check_project_authorization
+  - inspect_git_status
+  - fetch_unified_diff
+  - inspect_recent_commits
+  - check_code_diagnostics
+  - synthesize_review_report
+enabled: true

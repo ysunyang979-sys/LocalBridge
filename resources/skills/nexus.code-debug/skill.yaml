@@ -1,0 +1,37 @@
+id: nexus.code-debug
+version: 1.0.0
+name:
+  zh-CN: 智能代码调试与链路诊断
+  en-US: Deep Code Debugging & Linkage Diagnosis
+description:
+  zh-CN: 结合 LSP 代码智能、类型悬停、定义与引用跳转及调用链分析，深度定位代码缺陷与运行时异常原因
+  en-US: Deeply locate code bugs and runtime exceptions using LSP code intelligence, hover, definition, references, and impact analysis
+category: debugging
+risk: low
+triggers:
+  - 帮我调一下bug
+  - 调试代码
+  - 为什么报错
+  - debug code
+  - locate bug
+  - 查一下这个函数
+  - 代码报错排查
+  - 排查异常
+tools:
+  - localbridge_project_info
+  - localbridge_file_read
+  - localbridge_code_diagnostics
+  - localbridge_code_hover
+  - localbridge_code_definition
+  - localbridge_code_references
+  - localbridge_code_call_hierarchy
+  - localbridge_code_impact
+workflow:
+  - check_project_authorization
+  - inspect_code_diagnostics
+  - inspect_symbol_hover
+  - trace_symbol_definition
+  - trace_symbol_references
+  - analyze_impact_scope
+  - report_root_cause
+enabled: true
