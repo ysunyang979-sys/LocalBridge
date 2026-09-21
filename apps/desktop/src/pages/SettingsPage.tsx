@@ -40,6 +40,7 @@ import {
   formatLatency,
 } from "../i18n/intelligence-map.js";
 import nexusLogo from "../assets/nexus.png";
+import { AIConnectionCenter } from "../components/connections/AIConnectionCenter.js";
 import type {
   Project,
   ProjectTrustPolicy,
@@ -1024,6 +1025,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <div className="space-y-6">
+        {/* Tab: AI Connection Center */}
+        {activeTab === "connections" && (
+          <AIConnectionCenter
+            tunnelStatus={tunnelStatus}
+            onRefreshAll={onRefresh}
+            onNavigateToTunnel={() => setActiveTab("tunnel")}
+          />
+        )}
+
         {/* Tab 1: Secure Tunnel (P0) */}
         {activeTab === "tunnel" && (
           <div className="max-w-4xl space-y-6">

@@ -27,6 +27,12 @@ import type {
   ModelDownloadOptions,
   ModelValidationResult,
   ModelImportOptions,
+  AIConnectionDto,
+  ProviderPreset,
+  AIConnectionConfig,
+  TestConnectionResult,
+  ConfigPreviewResult,
+  ApplyConfigResult,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -1085,6 +1091,72 @@ class ApiBridge {
     return this.fetchJson<ModelStatusDto>("/api/management/intelligence/model/import", {
       method: "POST",
       body: JSON.stringify(options),
+    });
+  }
+
+  // AI Connection Center
+  async listAiConnections(): Promise<{ connections: AIConnectionDto[] }> {
+    return this.fetchJson<{ connections: AIConnectionDto[] }>("/api/management/connections");
+  }
+
+  async getAiPresets(): Promise<{ presets: ProviderPreset[] }> {
+    return this.fetchJson<{ presets: ProviderPreset[] }>("/api/management/connections/presets");
+  }
+
+  async getAiConnection(id: string): Promise<AIConnectionDto> {
+    return this.fetchJson<AIConnectionDto>(`/api/management/connections/${id}`);
+  }
+
+  async saveAiConnection(config: AIConnectionConfig): Promise<AIConnectionDto> {
+    return this.fetchJson<AIConnectionDto>("/api/management/connections", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  }
+
+  async deleteAiConnection(id: string): Promise<{ success: boolean; id: string }> {
+    return this.fetchJson<{ success: boolean; id: string }>(`/api/management/connections/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async setPrimaryAiConnection(id: string): Promise<{ success: boolean; id: string }> {
+    return this.fetchJson<{ success: boolean; id: string }>(`/api/management/connections/${id}/primary`, {
+      method: "POST",
+    });
+  }
+
+  async rotateAiConnectionToken(id: string, scopes?: string[]): Promise<{ tokenId: string; token: string }> {
+    return this.fetchJson<{ tokenId: string; token: string }>(`/api/management/connections/${id}/token/rotate`, {
+      method: "POST",
+      body: JSON.stringify({ scopes }),
+    });
+  }
+
+  async testAiConnection(id: string): Promise<TestConnectionResult> {
+    return this.fetchJson<TestConnectionResult>(`/api/management/connections/${id}/test`, {
+      method: "POST",
+    });
+  }
+
+  async previewAiConnectionConfig(id: string, token?: string): Promise<ConfigPreviewResult> {
+    return this.fetchJson<ConfigPreviewResult>(`/api/management/connections/${id}/config-preview`, {
+      method: "POST",
+      body: JSON.stringify({ token: token || "" }),
+    });
+  }
+
+  async applyAiConnectionConfig(id: string, token?: string): Promise<ApplyConfigResult> {
+    return this.fetchJson<ApplyConfigResult>(`/api/management/connections/${id}/config-apply`, {
+      method: "POST",
+      body: JSON.stringify({ token: token || "" }),
+    });
+  }
+
+  async rollbackAiConnectionConfig(targetPath: string, backupPath: string): Promise<{ success: boolean }> {
+    return this.fetchJson<{ success: boolean }>("/api/management/connections/config-rollback", {
+      method: "POST",
+      body: JSON.stringify({ targetPath, backupPath }),
     });
   }
 }

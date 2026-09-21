@@ -79,8 +79,15 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-semibold text-theme-primary">
-                {t.approvalCard?.wantsToExecute || "AI wants to execute:"}
+                {approval.clientName
+                  ? `${approval.clientName} ${language === "zh-CN" ? "请求执行:" : "wants to execute:"}`
+                  : (t.approvalCard?.wantsToExecute || "AI wants to execute:")}
               </span>
+              {approval.clientName && (
+                <span className="px-1.5 py-0.5 rounded font-mono text-[10px] bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                  {approval.clientName}
+                </span>
+              )}
               <span className="px-2 py-0.5 rounded font-mono text-xs bg-theme-card-muted text-sky-600 dark:text-sky-300 border border-theme-subtle truncate max-w-md">
                 {approval.operation}
               </span>
@@ -247,6 +254,20 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
                 {approval.operation}
               </div>
             </div>
+
+            {approval.clientName && (
+              <div className="p-2.5 rounded bg-theme-card border border-theme-subtle space-y-1">
+                <div className="text-theme-muted text-[10px]">
+                  {language === "zh-CN" ? "发起请求客户端" : "Requesting AI Client"}
+                </div>
+                <div className="text-sky-600 dark:text-sky-300 font-semibold truncate flex items-center gap-1.5">
+                  <span>{approval.clientName}</span>
+                  {approval.clientType && (
+                    <span className="text-[10px] font-mono text-theme-muted">({approval.clientType})</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="p-2.5 rounded bg-theme-card border border-theme-subtle space-y-1">
               <div className="text-theme-muted text-[10px]">

@@ -54,6 +54,9 @@ export interface Approval {
   resolvedBy?: string | null;
   decisionSource?: string | null;
   advice?: DecisionAdvice | null;
+  clientId?: string | null;
+  clientType?: string | null;
+  clientName?: string | null;
 }
 
 export interface Job {
@@ -523,5 +526,17 @@ export interface ModelImportOptions {
   copyToManaged?: boolean;
 }
 
-
-
+export type {
+  AIClientType,
+  AIConnectionCategory,
+  AIConnectionStatus,
+  AIConnectionTransport,
+  AIConnectionDto,
+  AIConnectionConfig,
+  ConnectionHealthDto,
+  ConfigPreviewResult,
+  ApplyConfigResult,
+  ProviderPreset,
+  TestConnectionResult,
+  ClientAuditSource,
+} from "@localbridge/protocol";
