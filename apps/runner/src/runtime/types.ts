@@ -20,6 +20,7 @@ export interface RuntimeGenerationInfo {
   signal?: string | null;
   startedAt: number;
   stoppedAt?: number | null;
+  intentionalTermination?: "restart" | "user_stop" | "project_disabled" | "emergency_stop" | null;
 }
 
 export interface PersistentRuntimeRecord {

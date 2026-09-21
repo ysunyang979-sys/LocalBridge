@@ -164,7 +164,7 @@ export class ServerPersistentRuntimeManager {
                   state = ?, generation = ?, pid = ?, exit_code = ?, signal = ?,
                   restart_count = ?, last_error_code = ?, last_error = ?,
                   started_at = ?, stopped_at = ?, updated_at = ?
-                WHERE id = ?`
+                WHERE id = ? AND generation <= ?`
               )
               .run(
                 item.state,
@@ -178,7 +178,24 @@ export class ServerPersistentRuntimeManager {
                 item.startedAt ?? null,
                 item.stoppedAt ?? null,
                 item.updatedAt,
-                item.runtimeId
+                item.runtimeId,
+                item.generation
+              );
+
+            this.db
+              .prepare(
+                `UPDATE runtime_generations SET
+                  state = ?, pid = ?, exit_code = ?, signal = ?, stopped_at = ?
+                 WHERE runtime_id = ? AND generation = ?`
+              )
+              .run(
+                item.state,
+                item.pid ?? null,
+                item.exitCode ?? null,
+                item.signal ?? null,
+                item.stoppedAt ?? null,
+                item.runtimeId,
+                item.generation
               );
           }
 
@@ -275,7 +292,7 @@ export class ServerPersistentRuntimeManager {
               state = ?, generation = ?, pid = ?, exit_code = ?, signal = ?,
               restart_count = ?, last_error_code = ?, last_error = ?,
               started_at = ?, stopped_at = ?, updated_at = ?
-            WHERE id = ?`
+            WHERE id = ? AND generation <= ?`
           )
           .run(
             res.state,
@@ -289,7 +306,24 @@ export class ServerPersistentRuntimeManager {
             res.startedAt ?? null,
             res.stoppedAt ?? null,
             res.updatedAt,
-            res.runtimeId
+            res.runtimeId,
+            res.generation
+          );
+
+        this.db
+          .prepare(
+            `UPDATE runtime_generations SET
+              state = ?, pid = ?, exit_code = ?, signal = ?, stopped_at = ?
+             WHERE runtime_id = ? AND generation = ?`
+          )
+          .run(
+            res.state,
+            res.pid ?? null,
+            res.exitCode ?? null,
+            res.signal ?? null,
+            res.stoppedAt ?? null,
+            res.runtimeId,
+            res.generation
           );
 
         return res;
@@ -423,55 +457,64 @@ export class ServerPersistentRuntimeManager {
       );
     }
 
-    if (
-      row.state === "stopped" ||
-      row.state === "failed" ||
-      row.state === "interrupted"
-    ) {
+    if (row.state === "stopped" && !row.pid) {
       return {
         runtimeId: row.id,
-        state: row.state as RuntimeState,
+        state: "stopped",
         stopped: true,
         stoppedAt: row.stopped_at ?? Date.now(),
       };
     }
 
     const project = this.projectService.getProject(row.project_id);
-    if (!project || !this.runnerRegistry.has(project.runnerId)) {
-      const now = Date.now();
-      this.db
-        .prepare(
-          `UPDATE persistent_runtimes SET state = 'stopped', stopped_at = ?, pid = NULL, updated_at = ? WHERE id = ?`
-        )
-        .run(now, now, row.id);
+    let res: RuntimeStopResult;
 
-      return {
+    if (project && this.runnerRegistry.has(project.runnerId)) {
+      try {
+        res = await this.rpcService.request(
+          project.runnerId,
+          RunnerRpcMethods.RuntimeStop,
+          params
+        );
+      } catch (err) {
+        this.logger?.warn({ err, runtimeId: row.id }, "Runner stop failed or runner offline, enforcing stopped state");
+        res = {
+          runtimeId: row.id,
+          state: "stopped",
+          stopped: true,
+          stoppedAt: Date.now(),
+        };
+      }
+    } else {
+      res = {
         runtimeId: row.id,
         state: "stopped",
         stopped: true,
-        stoppedAt: now,
+        stoppedAt: Date.now(),
       };
     }
 
-    const res = await this.rpcService.request(
-      project.runnerId,
-      RunnerRpcMethods.RuntimeStop,
-      params
-    );
+    const now = Date.now();
+    const stoppedAt = res.stoppedAt ?? now;
 
     this.db
       .prepare(
-        `UPDATE persistent_runtimes SET state = ?, stopped_at = ?, pid = NULL, updated_at = ? WHERE id = ?`
+        `UPDATE persistent_runtimes SET state = 'stopped', stopped_at = ?, pid = NULL, updated_at = ? WHERE id = ?`
       )
-      .run(res.state, res.stoppedAt, Date.now(), row.id);
+      .run(stoppedAt, now, row.id);
 
     this.db
       .prepare(
-        `UPDATE runtime_generations SET state = ?, stopped_at = ? WHERE runtime_id = ? AND generation = ?`
+        `UPDATE runtime_generations SET state = 'stopped', stopped_at = ? WHERE runtime_id = ? AND generation = ?`
       )
-      .run(res.state, res.stoppedAt, row.id, row.generation);
+      .run(stoppedAt, row.id, row.generation);
 
-    return res;
+    return {
+      runtimeId: row.id,
+      state: "stopped",
+      stopped: true,
+      stoppedAt,
+    };
   }
 
   /**

@@ -98,9 +98,9 @@ export class PersistentRuntimeManager {
     for (const runtime of this.runtimes.values()) {
       if (
         runtime.projectId === projectId &&
-        (runtime.state === "starting" || runtime.state === "running")
+        (runtime.state === "starting" || runtime.state === "running" || runtime.state === "stopping")
       ) {
-        this.stop({ runtimeId: runtime.id, gracePeriodMs: 1000 }).catch((err) => {
+        this.stop({ runtimeId: runtime.id, gracePeriodMs: 1000, reason: "project_disabled" }).catch((err) => {
           this.logger?.warn({ err, runtimeId: runtime.id }, "Failed to stop runtime on project change");
         });
       }
@@ -652,14 +652,27 @@ export class PersistentRuntimeManager {
 
     child.on("error", (err) => {
       this.logger?.warn({ runtimeId: record.id, generation, err }, "Runtime process encountered error");
+      genInfo.state = "failed";
+      genInfo.stoppedAt = Date.now();
+
+      // STALE GENERATION GUARD:
+      // If this child does not match the active generation or active process,
+      // it is a callback from an earlier generation that must never mutate live runtime state.
+      if (record.generation !== generation || record.process !== child) {
+        this.logger?.info(
+          { runtimeId: record.id, callbackGeneration: generation, currentGeneration: record.generation },
+          "Stale generation process error ignored for live runtime state"
+        );
+        this.persistRuntimes();
+        return;
+      }
+
       if (record.state === "running" || record.state === "starting") {
         record.state = "failed";
         record.lastErrorCode = LocalBridgeErrorCode.RUNTIME_PROCESS_EXITED;
         record.lastError = err.message;
         record.stoppedAt = Date.now();
         record.updatedAt = Date.now();
-        genInfo.state = "failed";
-        genInfo.stoppedAt = record.stoppedAt;
         this.persistRuntimes();
       }
     });
@@ -669,6 +682,38 @@ export class PersistentRuntimeManager {
         { runtimeId: record.id, generation, exitCode, signal },
         "Runtime process closed"
       );
+
+      genInfo.exitCode = exitCode;
+      genInfo.signal = signal;
+      genInfo.stoppedAt = Date.now();
+
+      if (genInfo.intentionalTermination) {
+        genInfo.state = "stopped";
+      } else if (exitCode === 0) {
+        genInfo.state = "stopped";
+      } else {
+        genInfo.state = "failed";
+      }
+
+      // STALE GENERATION GUARD:
+      // If this child does not match the active generation or active process,
+      // this is a stale process callback from an earlier generation.
+      // It MUST NEVER mutate the live runtime state or clear active process/pid!
+      if (record.generation !== generation || record.process !== child) {
+        this.logger?.info(
+          {
+            runtimeId: record.id,
+            callbackGeneration: generation,
+            currentGeneration: record.generation,
+            exitCode,
+            signal,
+          },
+          "Stale generation process closed; preserved live runtime state"
+        );
+        this.persistRuntimes();
+        return;
+      }
+
       record.process = undefined;
       record.pid = undefined;
       record.exitCode = exitCode;
@@ -676,28 +721,30 @@ export class PersistentRuntimeManager {
       record.stoppedAt = Date.now();
       record.updatedAt = Date.now();
 
-      genInfo.exitCode = exitCode;
-      genInfo.signal = signal;
-      genInfo.stoppedAt = record.stoppedAt;
-
-      if (record.state === "stopping" || record.state === "stopped") {
+      if (
+        genInfo.intentionalTermination ||
+        record.state === "stopping" ||
+        record.state === "stopped" ||
+        exitCode === 0
+      ) {
         record.state = "stopped";
-        genInfo.state = "stopped";
-      } else if (exitCode === 0) {
-        record.state = "stopped";
-        genInfo.state = "stopped";
+        record.lastErrorCode = null;
+        record.lastError = null;
       } else {
         record.state = "failed";
         record.lastErrorCode = LocalBridgeErrorCode.RUNTIME_PROCESS_EXITED;
         record.lastError = `Process exited with code ${exitCode}${signal ? ` (signal ${signal})` : ""}`;
-        genInfo.state = "failed";
       }
 
       this.persistRuntimes();
     });
   }
 
-  async stop(params: RuntimeStopParams): Promise<RuntimeStopResult> {
+  async stop(
+    params: RuntimeStopParams & {
+      reason?: "restart" | "user_stop" | "project_disabled" | "emergency_stop";
+    }
+  ): Promise<RuntimeStopResult> {
     const record = this.runtimes.get(params.runtimeId);
     if (!record) {
       throw new LocalBridgeError(
@@ -706,16 +753,41 @@ export class PersistentRuntimeManager {
       );
     }
 
-    if (
-      record.state === "stopped" ||
-      record.state === "failed" ||
-      record.state === "interrupted"
-    ) {
+    const reason = params.reason ?? "user_stop";
+
+    // If already stopped and no dangling process handle exists
+    if (record.state === "stopped" && !record.process && !record.pid) {
       return {
         runtimeId: record.id,
-        state: record.state,
+        state: "stopped",
         stopped: true,
         stoppedAt: record.stoppedAt ?? Date.now(),
+      };
+    }
+
+    // Explicit stop contract: any state (starting, running, stopping, failed, interrupted)
+    // transitions to 'stopped' with pid = null.
+    // If it was failed or interrupted and has no live process running:
+    if (
+      (record.state === "failed" || record.state === "interrupted") &&
+      !record.process &&
+      !record.pid
+    ) {
+      record.state = "stopped";
+      record.stoppedAt = record.stoppedAt ?? Date.now();
+      record.updatedAt = Date.now();
+      const curGen = record.generations.find((g) => g.generation === record.generation);
+      if (curGen) {
+        curGen.state = "stopped";
+        curGen.stoppedAt = curGen.stoppedAt ?? record.stoppedAt;
+        curGen.intentionalTermination = reason;
+      }
+      this.persistRuntimes();
+      return {
+        runtimeId: record.id,
+        state: "stopped",
+        stopped: true,
+        stoppedAt: record.stoppedAt,
       };
     }
 
@@ -733,18 +805,29 @@ export class PersistentRuntimeManager {
     record.updatedAt = Date.now();
     const gracePeriodMs = params.gracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS;
 
+    const currentGen = record.generations.find((g) => g.generation === record.generation);
+    if (currentGen) {
+      currentGen.intentionalTermination = reason;
+    }
+
     record.stoppingPromise = (async () => {
       const child = record.process;
       if (!child || !child.pid) {
         record.state = "stopped";
         record.stoppedAt = Date.now();
         record.updatedAt = Date.now();
+        record.process = undefined;
+        record.pid = undefined;
+        if (currentGen) {
+          currentGen.state = "stopped";
+          currentGen.stoppedAt = record.stoppedAt;
+        }
         this.persistRuntimes();
         return;
       }
 
       const pid = child.pid;
-      this.logger?.debug({ runtimeId: record.id, pid, gracePeriodMs }, "Stopping runtime process");
+      this.logger?.debug({ runtimeId: record.id, pid, gracePeriodMs, reason }, "Stopping runtime process");
 
       if (process.platform === "win32") {
         // On Windows, child_process.kill("SIGTERM") only terminates the root wrapper (e.g. npm.cmd),
@@ -791,15 +874,42 @@ export class PersistentRuntimeManager {
         }
       }
 
+      // Settle wait: bounded wait (up to 2000ms) for child exit/close to settle
+      await new Promise<void>((resolve) => {
+        if (child.killed || child.exitCode !== null) {
+          resolve();
+          return;
+        }
+        let timer: NodeJS.Timeout | null = null;
+        const onDone = () => {
+          if (timer) clearTimeout(timer);
+          child.removeListener("close", onDone);
+          child.removeListener("exit", onDone);
+          resolve();
+        };
+        child.once("close", onDone);
+        child.once("exit", onDone);
+        timer = setTimeout(() => {
+          child.removeListener("close", onDone);
+          child.removeListener("exit", onDone);
+          resolve();
+        }, Math.min(gracePeriodMs, 2000));
+      });
+
       record.state = "stopped";
       record.stoppedAt = Date.now();
       record.updatedAt = Date.now();
       record.process = undefined;
       record.pid = undefined;
+      if (currentGen) {
+        currentGen.state = "stopped";
+        currentGen.stoppedAt = record.stoppedAt;
+      }
       this.persistRuntimes();
     })();
 
     await record.stoppingPromise;
+    record.stoppingPromise = undefined;
 
     return {
       runtimeId: record.id,
@@ -818,9 +928,13 @@ export class PersistentRuntimeManager {
       );
     }
 
-    // Stop if currently active
-    if (record.state === "starting" || record.state === "running") {
-      await this.stop({ runtimeId: record.id, gracePeriodMs: 1500 });
+    // Stop if currently active or stopping
+    if (
+      record.state === "starting" ||
+      record.state === "running" ||
+      record.state === "stopping"
+    ) {
+      await this.stop({ runtimeId: record.id, gracePeriodMs: 1500, reason: "restart" });
     }
 
     // Re-verify project exists and is enabled
@@ -1206,7 +1320,7 @@ export class PersistentRuntimeManager {
 
     await Promise.all(
       active.map((r) =>
-        this.stop({ runtimeId: r.id, gracePeriodMs: 1000 }).catch((err) => {
+        this.stop({ runtimeId: r.id, gracePeriodMs: 1000, reason: "emergency_stop" }).catch((err) => {
           this.logger?.warn({ err, runtimeId: r.id }, "Error stopping runtime during shutdown");
         })
       )
