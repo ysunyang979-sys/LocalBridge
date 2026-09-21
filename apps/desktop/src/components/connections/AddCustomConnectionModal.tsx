@@ -18,7 +18,9 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
   onSubmit,
   isSubmitting,
 }) => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const isZh = language === "zh-CN";
+
   const [category, setCategory] = useState<"native-mcp" | "tool-adapter">("tool-adapter");
   const [selectedPresetId, setSelectedPresetId] = useState<string>("custom");
 
@@ -52,7 +54,7 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setErrorMsg("Please enter a connection name");
+      setErrorMsg(isZh ? "请输入连接名称" : "Please enter a connection name");
       return;
     }
     setErrorMsg(null);
@@ -78,7 +80,7 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
       await onSubmit(newConfig);
       onClose();
     } catch (err: any) {
-      setErrorMsg(err?.message || "Failed to create connection");
+      setErrorMsg(err?.message || (isZh ? "添加连接失败" : "Failed to create connection"));
     }
   };
 
@@ -93,10 +95,12 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
             </div>
             <div>
               <h2 className="text-base font-bold text-theme-primary">
-                {t.aiConnections?.addModalTitle || "Add New AI Connection"}
+                {t.aiConnections?.addModalTitle || "添加新 AI 连接"}
               </h2>
               <p className="text-xs text-theme-muted">
-                Connect Native MCP clients or OpenAI-compatible tool calling models
+                {isZh
+                  ? "连接外部 Native MCP 客户端或 OpenAI 兼容工具调用模型"
+                  : "Connect external Native MCP clients or OpenAI-compatible models"}
               </p>
             </div>
           </div>
@@ -118,9 +122,9 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
           )}
 
           {/* Category Tabs */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <label className="text-theme-muted text-[11px] block font-semibold">
-              Connection Architecture
+              {t.aiConnections?.architecture || "连接架构"}
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -129,7 +133,7 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
                   setCategory("native-mcp");
                   setTransport("http");
                 }}
-                className={`p-2.5 rounded-xl border text-left transition flex items-start gap-2.5 ${
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
                   category === "native-mcp"
                     ? "bg-teal-500/10 border-teal-500/40 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30"
                     : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-hover"
@@ -137,9 +141,11 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
               >
                 <Server className="w-4 h-4 mt-0.5 text-teal-500 shrink-0" />
                 <div>
-                  <div className="font-bold text-xs">Native MCP Client</div>
+                  <div className="font-bold text-xs">
+                    {isZh ? "Native MCP 客户端" : "Native MCP Client"}
+                  </div>
                   <div className="text-[10px] text-theme-muted mt-0.5">
-                    Connects via HTTP / Streamable / stdio
+                    {isZh ? "通过本地 HTTP / stdio 协议直连" : "Connects via HTTP or stdio"}
                   </div>
                 </div>
               </button>
@@ -150,7 +156,7 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
                   setCategory("tool-adapter");
                   setTransport("http");
                 }}
-                className={`p-2.5 rounded-xl border text-left transition flex items-start gap-2.5 ${
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 ${
                   category === "tool-adapter"
                     ? "bg-purple-500/10 border-purple-500/40 text-purple-700 dark:text-purple-300 ring-1 ring-purple-500/30"
                     : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-hover"
@@ -158,27 +164,29 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
               >
                 <Cpu className="w-4 h-4 mt-0.5 text-purple-500 shrink-0" />
                 <div>
-                  <div className="font-bold text-xs">Tool / API Model</div>
+                  <div className="font-bold text-xs">
+                    {isZh ? "API 模型适配器" : "API Model Adapter"}
+                  </div>
                   <div className="text-[10px] text-theme-muted mt-0.5">
-                    OpenAI-compatible Function Calling
+                    {isZh ? "OpenAI 兼容 Function Calling" : "OpenAI-compatible Function Calling"}
                   </div>
                 </div>
               </button>
             </div>
           </div>
 
-          {/* Preset Selector */}
+          {/* Preset Selector for Tool Adapters */}
           {category === "tool-adapter" && presets.length > 0 && (
             <div className="space-y-1">
               <label className="text-theme-muted text-[11px] block font-mono">
-                {t.aiConnections?.presetLabel || "Select Preset Provider"}
+                {t.aiConnections?.presetLabel || "选择预设服务商"}
               </label>
               <select
                 value={selectedPresetId}
                 onChange={(e) => handlePresetSelect(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg bg-theme-card-muted border border-theme-subtle text-theme-primary font-mono focus:outline-none focus:border-sky-500"
               >
-                <option value="custom">-- {t.aiConnections?.presetCustom || "Custom / Other"} --</option>
+                <option value="custom">-- {t.aiConnections?.presetCustom || "自定义 / Other"} --</option>
                 {presets.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.suggestedModels?.[0] || p.defaultBaseUrl})
@@ -191,14 +199,14 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
           {/* Connection Name */}
           <div className="space-y-1">
             <label className="text-theme-muted text-[11px] block font-mono">
-              {t.aiConnections?.clientName || "Display Name"} *
+              {t.aiConnections?.clientName || "连接显示名称"} *
             </label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. SiliconFlow Qwen2.5 / Local Ollama"
+              placeholder={isZh ? "例如：SiliconFlow Qwen2.5 / 本地 Ollama" : "e.g. SiliconFlow Qwen2.5 / Local Ollama"}
               className="w-full px-3 py-2 text-xs rounded-lg bg-theme-card-muted border border-theme-subtle text-theme-primary focus:outline-none focus:border-sky-500"
             />
           </div>
@@ -206,7 +214,7 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
           {/* Endpoint URL */}
           <div className="space-y-1">
             <label className="text-theme-muted text-[11px] block font-mono">
-              {t.aiConnections?.endpointUrl || "Base URL / Endpoint"}
+              {t.aiConnections?.endpointUrl || "接口服务地址"}
             </label>
             <input
               type="text"
@@ -215,37 +223,37 @@ export const AddCustomConnectionModal: React.FC<AddCustomConnectionModalProps> =
               placeholder={
                 category === "native-mcp"
                   ? "http://127.0.0.1:18080/mcp"
-                  : "https://api.siliconflow.cn/v1 or http://localhost:11434/v1"
+                  : "https://api.siliconflow.cn/v1 或 http://localhost:11434/v1"
               }
               className="w-full px-3 py-2 text-xs rounded-lg bg-theme-card-muted border border-theme-subtle text-theme-primary font-mono focus:outline-none focus:border-sky-500"
             />
           </div>
 
-          {/* API Key (if tool adapter) */}
+          {/* API Key & Model (if tool adapter) */}
           {category === "tool-adapter" && (
             <>
               <div className="space-y-1">
                 <label className="text-theme-muted text-[11px] block font-mono">
-                  {t.aiConnections?.apiKey || "API Key / Secret Token"}
+                  {t.aiConnections?.apiKey || "API 密钥 (API Key)"}
                 </label>
                 <input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-•••••••• (Saved securely via DPAPI)"
+                  placeholder={isZh ? "sk-•••••••• (本地加密保存)" : "sk-•••••••• (Securely stored locally)"}
                   className="w-full px-3 py-2 text-xs rounded-lg bg-theme-card-muted border border-theme-subtle text-theme-primary font-mono focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <div className="space-y-1">
                 <label className="text-theme-muted text-[11px] block font-mono">
-                  {t.aiConnections?.modelName || "Default Model Name"}
+                  {t.aiConnections?.modelName || "默认模型名称"}
                 </label>
                 <input
                   type="text"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  placeholder="e.g. Qwen/Qwen2.5-Coder-32B-Instruct"
+                  placeholder={isZh ? "例如：Qwen/Qwen2.5-Coder-32B-Instruct" : "e.g. Qwen/Qwen2.5-Coder-32B-Instruct"}
                   className="w-full px-3 py-2 text-xs rounded-lg bg-theme-card-muted border border-theme-subtle text-theme-primary font-mono focus:outline-none focus:border-sky-500"
                 />
               </div>

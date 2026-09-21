@@ -362,6 +362,20 @@ export interface I18nDictionary {
     presetCustom: string;
     deleteConnection: string;
     deleteConfirm: string;
+    failedToLoad: string;
+    retry: string;
+    viewErrorDetails: string;
+    hideErrorDetails: string;
+    modeStandard: string;
+    modeAdvanced: string;
+    architecture: string;
+    nativeMcpSubtitle: string;
+    apiModelSubtitle: string;
+    openTunnel: string;
+    quickSetup: string;
+    changePrimary: string;
+    changePrimaryModalTitle: string;
+    selectAsPrimary: string;
   };
   tokens: {
     title: string;

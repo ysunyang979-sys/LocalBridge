@@ -988,6 +988,101 @@ fn desktop_evaluate_intelligence(
     desktop_management_call(state, "POST".into(), "/api/management/intelligence/evaluate".into(), Some(context))
 }
 
+#[tauri::command]
+fn desktop_list_ai_connections(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/management/connections".into(), None)
+}
+
+#[tauri::command]
+fn desktop_get_ai_presets(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), "/api/management/connections/presets".into(), None)
+}
+
+#[tauri::command]
+fn desktop_get_ai_connection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "GET".into(), format!("/api/management/connections/{}", id), None)
+}
+
+#[tauri::command]
+fn desktop_save_ai_connection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    config: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), "/api/management/connections".into(), Some(config))
+}
+
+#[tauri::command]
+fn desktop_delete_ai_connection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "DELETE".into(), format!("/api/management/connections/{}", id), None)
+}
+
+#[tauri::command]
+fn desktop_set_primary_ai_connection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), format!("/api/management/connections/{}/primary", id), None)
+}
+
+#[tauri::command]
+fn desktop_rotate_ai_connection_token(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+    scopes: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "scopes": scopes });
+    desktop_management_call(state, "POST".into(), format!("/api/management/connections/{}/token/rotate", id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_test_ai_connection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    desktop_management_call(state, "POST".into(), format!("/api/management/connections/{}/test", id), None)
+}
+
+#[tauri::command]
+fn desktop_preview_ai_connection_config(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+    token: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "token": token.unwrap_or_default() });
+    desktop_management_call(state, "POST".into(), format!("/api/management/connections/{}/config-preview", id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_apply_ai_connection_config(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    id: String,
+    token: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "token": token.unwrap_or_default() });
+    desktop_management_call(state, "POST".into(), format!("/api/management/connections/{}/config-apply", id), Some(payload))
+}
+
+#[tauri::command]
+fn desktop_rollback_ai_connection_config(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    target_path: String,
+    backup_path: String,
+) -> Result<serde_json::Value, String> {
+    let payload = serde_json::json!({ "targetPath": target_path, "backupPath": backup_path });
+    desktop_management_call(state, "POST".into(), "/api/management/connections/config-rollback".into(), Some(payload))
+}
+
+
 
 #[tauri::command]
 fn desktop_list_jobs(
@@ -2068,7 +2163,18 @@ fn main() {
             desktop_validate_model_path,
             desktop_set_model_path,
             desktop_import_model,
-            desktop_evaluate_intelligence
+            desktop_evaluate_intelligence,
+            desktop_list_ai_connections,
+            desktop_get_ai_presets,
+            desktop_get_ai_connection,
+            desktop_save_ai_connection,
+            desktop_delete_ai_connection,
+            desktop_set_primary_ai_connection,
+            desktop_rotate_ai_connection_token,
+            desktop_test_ai_connection,
+            desktop_preview_ai_connection_config,
+            desktop_apply_ai_connection_config,
+            desktop_rollback_ai_connection_config
         ])
         .setup(move |app| {
             let open_i = MenuItem::with_id(app, "open", "Open Nexus", true, None::<&str>)?;

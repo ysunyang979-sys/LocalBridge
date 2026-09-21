@@ -1096,18 +1096,30 @@ class ApiBridge {
 
   // AI Connection Center
   async listAiConnections(): Promise<{ connections: AIConnectionDto[] }> {
+    if (isTauri()) {
+      return invoke<{ connections: AIConnectionDto[] }>("desktop_list_ai_connections");
+    }
     return this.fetchJson<{ connections: AIConnectionDto[] }>("/api/management/connections");
   }
 
   async getAiPresets(): Promise<{ presets: ProviderPreset[] }> {
+    if (isTauri()) {
+      return invoke<{ presets: ProviderPreset[] }>("desktop_get_ai_presets");
+    }
     return this.fetchJson<{ presets: ProviderPreset[] }>("/api/management/connections/presets");
   }
 
   async getAiConnection(id: string): Promise<AIConnectionDto> {
+    if (isTauri()) {
+      return invoke<AIConnectionDto>("desktop_get_ai_connection", { id });
+    }
     return this.fetchJson<AIConnectionDto>(`/api/management/connections/${id}`);
   }
 
   async saveAiConnection(config: AIConnectionConfig): Promise<AIConnectionDto> {
+    if (isTauri()) {
+      return invoke<AIConnectionDto>("desktop_save_ai_connection", { config });
+    }
     return this.fetchJson<AIConnectionDto>("/api/management/connections", {
       method: "POST",
       body: JSON.stringify(config),
@@ -1115,18 +1127,27 @@ class ApiBridge {
   }
 
   async deleteAiConnection(id: string): Promise<{ success: boolean; id: string }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; id: string }>("desktop_delete_ai_connection", { id });
+    }
     return this.fetchJson<{ success: boolean; id: string }>(`/api/management/connections/${id}`, {
       method: "DELETE",
     });
   }
 
   async setPrimaryAiConnection(id: string): Promise<{ success: boolean; id: string }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; id: string }>("desktop_set_primary_ai_connection", { id });
+    }
     return this.fetchJson<{ success: boolean; id: string }>(`/api/management/connections/${id}/primary`, {
       method: "POST",
     });
   }
 
   async rotateAiConnectionToken(id: string, scopes?: string[]): Promise<{ tokenId: string; token: string }> {
+    if (isTauri()) {
+      return invoke<{ tokenId: string; token: string }>("desktop_rotate_ai_connection_token", { id, scopes });
+    }
     return this.fetchJson<{ tokenId: string; token: string }>(`/api/management/connections/${id}/token/rotate`, {
       method: "POST",
       body: JSON.stringify({ scopes }),
@@ -1134,12 +1155,18 @@ class ApiBridge {
   }
 
   async testAiConnection(id: string): Promise<TestConnectionResult> {
+    if (isTauri()) {
+      return invoke<TestConnectionResult>("desktop_test_ai_connection", { id });
+    }
     return this.fetchJson<TestConnectionResult>(`/api/management/connections/${id}/test`, {
       method: "POST",
     });
   }
 
   async previewAiConnectionConfig(id: string, token?: string): Promise<ConfigPreviewResult> {
+    if (isTauri()) {
+      return invoke<ConfigPreviewResult>("desktop_preview_ai_connection_config", { id, token });
+    }
     return this.fetchJson<ConfigPreviewResult>(`/api/management/connections/${id}/config-preview`, {
       method: "POST",
       body: JSON.stringify({ token: token || "" }),
@@ -1147,6 +1174,9 @@ class ApiBridge {
   }
 
   async applyAiConnectionConfig(id: string, token?: string): Promise<ApplyConfigResult> {
+    if (isTauri()) {
+      return invoke<ApplyConfigResult>("desktop_apply_ai_connection_config", { id, token });
+    }
     return this.fetchJson<ApplyConfigResult>(`/api/management/connections/${id}/config-apply`, {
       method: "POST",
       body: JSON.stringify({ token: token || "" }),
@@ -1154,6 +1184,9 @@ class ApiBridge {
   }
 
   async rollbackAiConnectionConfig(targetPath: string, backupPath: string): Promise<{ success: boolean }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean }>("desktop_rollback_ai_connection_config", { targetPath, backupPath });
+    }
     return this.fetchJson<{ success: boolean }>("/api/management/connections/config-rollback", {
       method: "POST",
       body: JSON.stringify({ targetPath, backupPath }),
