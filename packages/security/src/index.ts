@@ -6,3 +6,4 @@ export * from "./path/resolver.js";
 export * from "./command/index.js";
 export * from "./policy/evaluator.js";
 export * from "./git/validation.js";
+export * from "./intelligence/index.js";

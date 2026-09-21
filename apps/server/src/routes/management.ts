@@ -7,6 +7,7 @@ import {
   type ProjectExecutionMode,
   type ApprovalRisk,
   type ProjectTrustPolicy,
+  type DecisionContext,
 } from "@localbridge/protocol";
 import type { TokenService } from "../db/token-service.js";
 import type { RunnerRegistry } from "../runner/registry.js";
@@ -1612,5 +1613,48 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       return reply.status(200).send(res);
     }
   );
+
+  // ==========================================
+  // 12. Intelligence & DecisionProvider
+  // ==========================================
+  fastify.get("/management/intelligence/status", async (_request, reply) => {
+    const status = mcpContext.getIntelligenceStatus();
+    return reply.status(200).send(status);
+  });
+
+  fastify.get("/management/intelligence/config", async (_request, reply) => {
+    const status = mcpContext.getIntelligenceStatus();
+    return reply.status(200).send({
+      provider: status.provider,
+      modelPath: status.modelPath,
+      pythonPath: status.pythonPath,
+    });
+  });
+
+  fastify.post<{
+    Body: {
+      provider?: "disabled" | "laya";
+      modelPath?: string;
+      pythonPath?: string;
+      workerTimeoutMs?: number;
+    };
+  }>("/management/intelligence/config", async (request, reply) => {
+    const nextStatus = await mcpContext.updateIntelligenceConfig(request.body || {});
+    return reply.status(200).send(nextStatus);
+  });
+
+  fastify.post<{
+    Body: DecisionContext;
+  }>("/management/intelligence/evaluate", async (request, reply) => {
+    const context = request.body;
+    if (!context || !context.operation) {
+      return reply.status(400).send({
+        code: LocalBridgeErrorCode.INVALID_REQUEST,
+        message: "Field 'operation' is required",
+      });
+    }
+    const advice = await mcpContext.getDecisionAdvice(context);
+    return reply.status(200).send(advice);
+  });
 };
 

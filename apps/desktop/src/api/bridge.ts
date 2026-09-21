@@ -19,6 +19,10 @@ import type {
   WorkflowHandoffPacket,
   PersistentRuntime,
   RuntimeLogChunk,
+  DecisionContext,
+  DecisionAdvice,
+  DecisionProviderConfig,
+  IntelligenceStatusDto,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -927,6 +931,27 @@ class ApiBridge {
     return this.fetchJson<any>(`/api/management/runtimes/${runtimeId}/stop`, {
       method: "POST",
       body: JSON.stringify({ gracePeriodMs }),
+    });
+  }
+
+  // Intelligence & DecisionProvider
+  async getIntelligenceStatus(): Promise<IntelligenceStatusDto> {
+    return this.fetchJson<IntelligenceStatusDto>("/api/management/intelligence/status");
+  }
+
+  async updateIntelligenceConfig(
+    config: Partial<DecisionProviderConfig>
+  ): Promise<IntelligenceStatusDto> {
+    return this.fetchJson<IntelligenceStatusDto>("/api/management/intelligence/config", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  }
+
+  async evaluateDecision(context: DecisionContext): Promise<DecisionAdvice> {
+    return this.fetchJson<DecisionAdvice>("/api/management/intelligence/evaluate", {
+      method: "POST",
+      body: JSON.stringify(context),
     });
   }
 }

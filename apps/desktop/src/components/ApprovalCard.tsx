@@ -8,8 +8,10 @@ import {
   Check,
   X,
   Copy,
+  Brain,
 } from "lucide-react";
-import type { Approval } from "../types.js";
+import type { Approval, DecisionAdvice } from "../types.js";
+import { useTranslation } from "../i18n/useTranslation.js";
 
 interface ApprovalCardProps {
   approval: Approval;
@@ -17,6 +19,7 @@ interface ApprovalCardProps {
   onApprove: (id: string) => Promise<void>;
   onDeny: (id: string) => Promise<void>;
   isProcessing?: boolean;
+  advice?: DecisionAdvice | null;
 }
 
 export const ApprovalCard: React.FC<ApprovalCardProps> = ({
@@ -25,9 +28,22 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
   onApprove,
   onDeny,
   isProcessing,
+  advice,
 }) => {
+  const { t, language } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const effectiveAdvice = advice || approval.advice;
+  const rawRisk = effectiveAdvice ? (typeof effectiveAdvice.risk === "object" ? effectiveAdvice.risk?.label : (effectiveAdvice as any).risk) : null;
+  const riskKey = String(rawRisk || "").toUpperCase();
+  const rawConf = effectiveAdvice ? (typeof effectiveAdvice.risk === "object" ? effectiveAdvice.risk?.confidence : (effectiveAdvice as any).confidence) : 0.85;
+  const confPercent = Math.round(Number(rawConf ?? 0.85) * 100);
+  const isHighRisk = riskKey === "HIGH" || riskKey === "CRITICAL";
+  const isMediumRisk = riskKey === "MEDIUM";
+  const adviceRecommendation = effectiveAdvice ? ((effectiveAdvice as any).recommendation || (effectiveAdvice.approval?.recommended ? "APPROVE" : "ASK / REVIEW")) : "";
+  const adviceCategory = effectiveAdvice ? (effectiveAdvice.category || "General") : "";
+  const adviceRationale = effectiveAdvice ? ((effectiveAdvice as any).rationale || (effectiveAdvice.reasoningTags && effectiveAdvice.reasoningTags.length > 0 ? effectiveAdvice.reasoningTags.join(", ") : null)) : null;
 
   const isDangerous = approval.risk === "DANGEROUS";
   const timeLeftMs = Math.max(0, approval.expiresAt - Date.now());
@@ -43,8 +59,8 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
     <div
       className={`rounded-xl border transition-all duration-150 overflow-hidden ${
         isDangerous
-          ? "bg-[#140d12] border-red-500/25"
-          : "bg-[#0d1320] border-amber-500/20"
+          ? "bg-red-500/5 dark:bg-red-950/20 border-red-500/30"
+          : "bg-theme-card border-theme-subtle"
       }`}
     >
       {/* Main Bar */}
@@ -53,8 +69,8 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
           <div
             className={`p-2 rounded-lg shrink-0 mt-0.5 ${
               isDangerous
-                ? "bg-red-500/15 text-red-400"
-                : "bg-amber-500/15 text-amber-400"
+                ? "bg-red-500/15 text-red-500"
+                : "bg-amber-500/15 text-amber-500"
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
@@ -63,23 +79,56 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-semibold text-theme-primary">
-                AI wants to execute:
+                {t.approvalCard?.wantsToExecute || "AI wants to execute:"}
               </span>
-              <span className="px-2 py-0.5 rounded font-mono text-xs bg-[#050810] text-sky-300 border border-white/[0.08] truncate max-w-md">
+              <span className="px-2 py-0.5 rounded font-mono text-xs bg-theme-card-muted text-sky-600 dark:text-sky-300 border border-theme-subtle truncate max-w-md">
                 {approval.operation}
               </span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${
                   isDangerous
-                    ? "bg-red-500/15 text-red-400 border border-red-500/30"
-                    : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                    ? "bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30"
+                    : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
                 }`}
               >
                 {approval.risk}
               </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-theme-muted border border-white/[0.06]">
-                POLICY: ASK
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-theme-card-muted text-theme-muted border border-theme-subtle">
+                {t.approvalCard?.policyAsk || "POLICY: ASK"}
               </span>
+
+              {/* Laya Multilingual Advisory Badge */}
+              {effectiveAdvice && (
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded font-mono font-medium border flex items-center gap-1 ${
+                    isHighRisk
+                      ? "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30"
+                      : isMediumRisk
+                        ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                        : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                  }`}
+                  title={t.approvalCard?.advisoryDisclaimer || "Advisory only"}
+                >
+                  <Brain className="w-3 h-3 shrink-0" />
+                  <span>
+                    {language === "zh-CN"
+                      ? `AI 风险建议 · ${
+                          isHighRisk
+                            ? "高风险"
+                            : isMediumRisk
+                              ? "中风险"
+                              : "安全"
+                        } ${confPercent}% · 仅供参考`
+                      : `AI Risk Advice: ${
+                          isHighRisk
+                            ? "High"
+                            : isMediumRisk
+                              ? "Medium"
+                              : "Safe"
+                        } ${confPercent}% (Advisory)`}
+                  </span>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-3 text-[11px] text-theme-muted font-mono flex-wrap">
@@ -90,7 +139,9 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
               <span>&bull;</span>
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3 text-theme-muted" />
-                <span>Expires in {minutesLeft}m</span>
+                <span>
+                  {t.approvalCard?.expiresIn || "Expires in"} {minutesLeft}m
+                </span>
               </span>
               <span>&bull;</span>
               <span className="truncate max-w-sm text-theme-muted">
@@ -105,27 +156,31 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
           <button
             onClick={() => onDeny(approval.id)}
             disabled={isProcessing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition disabled:opacity-50"
-            title="Deny request"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 transition disabled:opacity-50"
+            title={t.approvalCard?.deny || "Deny"}
           >
             <X className="w-3.5 h-3.5" />
-            <span>Deny</span>
+            <span>{t.approvalCard?.deny || "Deny"}</span>
           </button>
 
           <button
             onClick={() => onApprove(approval.id)}
             disabled={isProcessing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition disabled:opacity-50"
-            title="Approve request"
+            title={t.approvalCard?.approve || "Approve"}
           >
             <Check className="w-3.5 h-3.5" />
-            <span>Approve</span>
+            <span>{isProcessing ? (t.approvalCard?.processing || "...") : (t.approvalCard?.approve || "Approve")}</span>
           </button>
 
           <button
             onClick={() => setExpanded(!expanded)}
-            className="p-1.5 rounded-lg text-theme-muted hover:text-theme-primary hover:bg-white/[0.06] transition"
-            title={expanded ? "Hide technical details" : "Show technical details"}
+            className="p-1.5 rounded-lg text-theme-muted hover:text-theme-primary hover:bg-theme-card-hover transition"
+            title={
+              expanded
+                ? (t.approvalCard?.hideDetails || "Hide technical details")
+                : (t.approvalCard?.showDetails || "Show technical details")
+            }
           >
             {expanded ? (
               <ChevronUp className="w-4 h-4" />
@@ -138,45 +193,108 @@ export const ApprovalCard: React.FC<ApprovalCardProps> = ({
 
       {/* Expandable Technical Details Drawer */}
       {expanded && (
-        <div className="px-4 pb-4 pt-2 border-t border-white/[0.06] bg-[#070b13] text-xs font-mono space-y-2">
+        <div className="px-4 pb-4 pt-3 border-t border-theme-subtle bg-theme-card-muted text-xs font-mono space-y-3">
           <div className="text-[10px] uppercase font-bold tracking-wider text-theme-muted">
-            Technical Specification & Audit Payload
+            {t.approvalCard?.techSpecTitle || "Technical Specification & Audit Payload"}
           </div>
 
+          {/* Laya Advisory Full Analysis Block */}
+          {effectiveAdvice && (
+            <div className="p-3 rounded-lg bg-theme-card border border-theme-subtle space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 flex items-center gap-1.5">
+                  <Brain className="w-3.5 h-3.5" />
+                  <span>{t.approvalCard?.aiRiskAdvice || "Decision Intelligence (Laya)"}</span>
+                </span>
+                <span className="text-[10px] text-theme-muted font-mono">
+                  {t.approvalCard?.advisoryDisclaimer || "Advisory only"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                <div>
+                  <span className="text-theme-muted">{t.intelligence?.riskEvaluation || "Risk"}: </span>
+                  <span className="font-semibold text-theme-primary">
+                    {riskKey || "UNKNOWN"} ({confPercent}%)
+                  </span>
+                </div>
+                <div>
+                  <span className="text-theme-muted">{t.intelligence?.recommendedAction || "Recommendation"}: </span>
+                  <span className="font-mono font-medium text-theme-primary">{adviceRecommendation}</span>
+                </div>
+                <div>
+                  <span className="text-theme-muted">Category: </span>
+                  <span className="font-mono text-theme-secondary">{adviceCategory}</span>
+                </div>
+              </div>
+              {adviceRationale && (
+                <div className="text-[11px] text-theme-secondary italic bg-theme-card-muted p-2 rounded border border-theme-subtle">
+                  "{adviceRationale}"
+                </div>
+              )}
+              <div className="text-[10px] text-theme-muted">
+                {t.approvalCard?.sanitizedNotice || "Sensitive credentials and paths sanitized before inference."}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
-            <div className="p-2.5 rounded bg-[#04060b] border border-white/[0.04] space-y-1">
-              <div className="text-theme-muted text-[10px]">Operation</div>
-              <div className="text-sky-300 font-semibold truncate">{approval.operation}</div>
+            <div className="p-2.5 rounded bg-theme-card border border-theme-subtle space-y-1">
+              <div className="text-theme-muted text-[10px]">
+                {t.approvalCard?.operation || "Operation"}
+              </div>
+              <div className="text-sky-600 dark:text-sky-300 font-semibold truncate">
+                {approval.operation}
+              </div>
             </div>
 
-            <div className="p-2.5 rounded bg-[#04060b] border border-white/[0.04] space-y-1">
-              <div className="text-theme-muted text-[10px]">Target Project ID</div>
-              <div className="text-theme-secondary font-mono truncate">{approval.projectId}</div>
+            <div className="p-2.5 rounded bg-theme-card border border-theme-subtle space-y-1">
+              <div className="text-theme-muted text-[10px]">
+                {t.approvalCard?.targetProject || "Target Project ID"}
+              </div>
+              <div className="text-theme-secondary font-mono truncate">
+                {approval.projectId}
+              </div>
             </div>
 
-            <div className="p-2.5 rounded bg-[#04060b] border border-white/[0.04] space-y-1">
-              <div className="text-theme-muted text-[10px]">Payload Hash (SHA-256)</div>
-              <div className="text-theme-secondary truncate">{approval.payloadHash}</div>
+            <div className="p-2.5 rounded bg-theme-card border border-theme-subtle space-y-1">
+              <div className="text-theme-muted text-[10px]">
+                {t.approvalCard?.payloadHash || "Payload Hash (SHA-256)"}
+              </div>
+              <div className="text-theme-secondary truncate font-mono">
+                {approval.payloadHash}
+              </div>
             </div>
 
-            <div className="p-2.5 rounded bg-[#04060b] border border-white/[0.04] space-y-1 flex items-center justify-between">
+            <div className="p-2.5 rounded bg-theme-card border border-theme-subtle space-y-1 flex items-center justify-between">
               <div>
-                <div className="text-theme-muted text-[10px]">Approval Request ID</div>
-                <div className="text-theme-secondary truncate">{approval.id}</div>
+                <div className="text-theme-muted text-[10px]">
+                  {t.approvalCard?.id || "Approval Request ID"}
+                </div>
+                <div className="text-theme-secondary truncate font-mono">
+                  {approval.id}
+                </div>
               </div>
               <button
                 onClick={handleCopyId}
-                className="p-1 rounded hover:bg-white/[0.08] text-theme-muted hover:text-theme-primary transition"
-                title="Copy ID"
+                className="p-1 rounded hover:bg-theme-card-hover text-theme-muted hover:text-theme-primary transition"
+                title={copied ? (t.approvalCard?.copied || "Copied") : (t.approvalCard?.copyId || "Copy ID")}
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
               </button>
             </div>
           </div>
 
-          <div className="p-2.5 rounded bg-[#04060b] border border-white/[0.04] space-y-1">
-            <div className="text-theme-muted text-[10px]">Summary & Context</div>
-            <div className="text-theme-secondary whitespace-pre-wrap">{approval.summary}</div>
+          <div className="p-2.5 rounded bg-theme-card border border-theme-subtle space-y-1">
+            <div className="text-theme-muted text-[10px]">
+              {t.approvalCard?.summary || "Summary & Context"}
+            </div>
+            <div className="text-theme-secondary whitespace-pre-wrap">
+              {approval.summary}
+            </div>
           </div>
         </div>
       )}

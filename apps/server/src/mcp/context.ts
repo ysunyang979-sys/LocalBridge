@@ -11,6 +11,16 @@ import type { ServerProjectService } from "../runner/project-service.js";
 import { WorkflowSessionManager } from "../session/manager.js";
 import { ManagedWorktreeManager } from "../worktree/manager.js";
 import { ServerPersistentRuntimeManager } from "../runtime/index.js";
+import {
+  DisabledDecisionProvider,
+  type DecisionProvider,
+} from "@localbridge/security";
+import type {
+  DecisionContext,
+  DecisionAdvice,
+  DecisionProviderConfig,
+  IntelligenceStatusDto,
+} from "@localbridge/protocol";
 import type { McpPrincipal } from "./types.js";
 
 export interface McpContextDeps {
@@ -22,6 +32,7 @@ export interface McpContextDeps {
   workflowSessionManager?: WorkflowSessionManager;
   worktreeManager?: ManagedWorktreeManager;
   persistentRuntimeManager?: ServerPersistentRuntimeManager;
+  decisionProvider?: DecisionProvider;
 }
 
 export interface SafeAuditMetadata {
@@ -53,6 +64,7 @@ export class McpContext {
   public readonly workflowSessionManager?: WorkflowSessionManager;
   public readonly worktreeManager?: ManagedWorktreeManager;
   public readonly persistentRuntimeManager?: ServerPersistentRuntimeManager;
+  public readonly decisionProvider: DecisionProvider;
 
   // In-memory mapping from jobId to runnerId for background jobs
   private readonly jobToRunnerMap = new Map<string, string>();
@@ -106,6 +118,23 @@ export class McpContext {
             logger: deps.logger,
           })
         : undefined);
+
+    this.decisionProvider =
+      deps.decisionProvider ?? new DisabledDecisionProvider();
+  }
+
+  async getDecisionAdvice(context: DecisionContext): Promise<DecisionAdvice> {
+    return this.decisionProvider.getAdvice(context);
+  }
+
+  getIntelligenceStatus(): IntelligenceStatusDto {
+    return this.decisionProvider.getStatus();
+  }
+
+  async updateIntelligenceConfig(
+    config: Partial<DecisionProviderConfig>
+  ): Promise<IntelligenceStatusDto> {
+    return this.decisionProvider.updateConfig(config);
   }
 
   recordSessionEvent(event: {

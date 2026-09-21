@@ -38,6 +38,8 @@ import type {
   ProjectCustomRules,
   ApprovalRoutingMode,
   TunnelNetworkMode,
+  IntelligenceStatusDto,
+  DecisionAdvice,
 } from "../types.js";
 
 interface SettingsPageProps {
@@ -48,7 +50,7 @@ interface SettingsPageProps {
 export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefresh }) => {
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useTheme();
-  const [activeTab, setActiveTab] = useState<"tunnel" | "security" | "general" | "about">("tunnel");
+  const [activeTab, setActiveTab] = useState<"tunnel" | "security" | "intelligence" | "general" | "about">("tunnel");
 
   // Server URL State
   const [serverUrl, setServerUrl] = useState(bridge.getBaseUrl());
@@ -132,6 +134,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
   const [routingModeBusy, setRoutingModeBusy] = useState(false);
   const [routingModeSavedMsg, setRoutingModeSavedMsg] = useState<string | null>(null);
 
+  // Decision Intelligence State
+  const [intelStatus, setIntelStatus] = useState<IntelligenceStatusDto | null>(null);
+  const [intelProvider, setIntelProvider] = useState<"disabled" | "laya">("disabled");
+  const [intelModelPath, setIntelModelPath] = useState("");
+  const [intelPythonPath, setIntelPythonPath] = useState("");
+  const [intelWorkerTimeout, setIntelWorkerTimeout] = useState(5000);
+  const [intelBusy, setIntelBusy] = useState(false);
+  const [intelTesting, setIntelTesting] = useState(false);
+  const [intelSuccessMsg, setIntelSuccessMsg] = useState<string | null>(null);
+  const [intelErrorMsg, setIntelErrorMsg] = useState<string | null>(null);
+  const [testAdvice, setTestAdvice] = useState<DecisionAdvice | null>(null);
+
   useEffect(() => {
     bridge.listProjects().then((res) => {
       setProjects(res.projects);
@@ -149,6 +163,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
     bridge.getApprovalRoutingMode().then((res) => {
       if (res.mode) {
         setApprovalRoutingMode(res.mode);
+      }
+    }).catch(() => {});
+
+    bridge.getIntelligenceStatus().then((res) => {
+      if (res) {
+        setIntelStatus(res);
+        setIntelProvider(res.provider);
+        if (res.modelPath) setIntelModelPath(res.modelPath);
+        if (res.pythonPath) setIntelPythonPath(res.pythonPath);
       }
     }).catch(() => {});
   }, []);
@@ -193,6 +216,47 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       alert(err?.message || String(err));
     } finally {
       setRoutingModeBusy(false);
+    }
+  };
+
+  const handleSaveIntelligence = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIntelBusy(true);
+    setIntelSuccessMsg(null);
+    setIntelErrorMsg(null);
+    try {
+      const res = await bridge.updateIntelligenceConfig({
+        provider: intelProvider,
+        modelPath: intelModelPath.trim() || undefined,
+        pythonPath: intelPythonPath.trim() || undefined,
+        workerTimeoutMs: intelWorkerTimeout,
+      });
+      setIntelStatus(res);
+      setIntelSuccessMsg(t.intelligence.savedSuccess);
+      setTimeout(() => setIntelSuccessMsg(null), 3000);
+      onRefresh();
+    } catch (err: any) {
+      setIntelErrorMsg(err?.message || String(err));
+    } finally {
+      setIntelBusy(false);
+    }
+  };
+
+  const handleTestBenchmark = async () => {
+    setIntelTesting(true);
+    setTestAdvice(null);
+    setIntelErrorMsg(null);
+    try {
+      const advice = await bridge.evaluateDecision({
+        operation: "command.execute",
+        command: "git status",
+        technicalContext: { tool: "bash", path: "src/index.ts" },
+      });
+      setTestAdvice(advice);
+    } catch (err: any) {
+      setIntelErrorMsg(err?.message || String(err));
+    } finally {
+      setIntelTesting(false);
     }
   };
 
@@ -610,18 +674,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
       </div>
 
       {/* Settings Navigation Tabs */}
-      <div className="flex items-center gap-1 bg-[#0d1320] border border-white/[0.06] p-1 rounded-xl overflow-x-auto">
+      <div className="flex items-center gap-1 bg-theme-card-muted border border-theme-subtle p-1 rounded-xl overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab("tunnel")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
             activeTab === "tunnel"
-              ? "bg-white/[0.1] text-white shadow-sm"
-              : "text-theme-muted hover:text-theme-primary"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
         >
           <Radio className="w-3.5 h-3.5 text-sky-400" />
-          <span>Secure Tunnel & Proxy</span>
+          <span>{t.settings.tabTunnel}</span>
         </button>
 
         <button
@@ -629,12 +693,25 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
           onClick={() => setActiveTab("security")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
             activeTab === "security"
-              ? "bg-white/[0.1] text-white shadow-sm"
-              : "text-theme-muted hover:text-theme-primary"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
         >
           <Shield className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Security & Trust Policies</span>
+          <span>{t.settings.tabSecurity}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("intelligence")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            activeTab === "intelligence"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
+          }`}
+        >
+          <Zap className="w-3.5 h-3.5 text-purple-400" />
+          <span>{t.settings.tabIntelligence}</span>
         </button>
 
         <button
@@ -642,12 +719,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
           onClick={() => setActiveTab("general")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
             activeTab === "general"
-              ? "bg-white/[0.1] text-white shadow-sm"
-              : "text-theme-muted hover:text-theme-primary"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
         >
           <Sliders className="w-3.5 h-3.5 text-slate-300" />
-          <span>General & Core Server</span>
+          <span>{t.settings.tabGeneral}</span>
         </button>
 
         <button
@@ -655,12 +732,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
           onClick={() => setActiveTab("about")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
             activeTab === "about"
-              ? "bg-white/[0.1] text-white shadow-sm"
-              : "text-theme-muted hover:text-theme-primary"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
         >
           <Info className="w-3.5 h-3.5 text-emerald-400" />
-          <span>About Nexus</span>
+          <span>{t.settings.tabAbout}</span>
         </button>
       </div>
 
@@ -1774,7 +1851,287 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
         </div>
       )}
 
-      {/* Tab 3: General & Core Server */}
+      {/* Tab 3: Decision Intelligence (Laya) */}
+      {activeTab === "intelligence" && (
+        <div className="max-w-4xl space-y-6">
+          <div className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
+                <Zap className="w-4 h-4 text-purple-400" />
+                <span>{t.intelligence.title}</span>
+              </div>
+              <span
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                  intelStatus?.provider === "laya" && intelStatus?.status === "ready"
+                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                    : intelStatus?.provider === "laya" && intelStatus?.status === "loading"
+                    ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                    : intelStatus?.provider === "laya" && intelStatus?.status === "error"
+                    ? "bg-red-500/15 text-red-400 border-red-500/30"
+                    : "bg-slate-500/15 text-slate-400 border-slate-500/30"
+                }`}
+              >
+                {intelStatus?.provider === "laya"
+                  ? intelStatus.status === "ready"
+                    ? t.intelligence.statusReady
+                    : intelStatus.status === "loading"
+                    ? t.intelligence.statusLoading
+                    : intelStatus.status === "error"
+                    ? t.intelligence.statusError
+                    : intelStatus.status
+                  : t.intelligence.statusDisabled}
+              </span>
+            </div>
+
+            <p className="text-xs text-theme-muted">{t.intelligence.subtitle}</p>
+
+            {intelSuccessMsg && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center gap-2 text-emerald-400 text-xs font-medium">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{intelSuccessMsg}</span>
+              </div>
+            )}
+
+            {intelErrorMsg && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-400 text-xs font-medium">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{intelErrorMsg}</span>
+              </div>
+            )}
+
+            {/* Provider Selection */}
+            <div className="space-y-3 pt-2">
+              <label className="text-xs font-semibold text-theme-primary">
+                {t.intelligence.provider}
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label
+                  onClick={() => setIntelProvider("laya")}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                    intelProvider === "laya"
+                      ? "bg-purple-500/10 border-purple-500/40 text-theme-primary"
+                      : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-primary/30"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="intelProvider"
+                    checked={intelProvider === "laya"}
+                    onChange={() => setIntelProvider("laya")}
+                    className="mt-0.5 text-purple-500 focus:ring-purple-500"
+                  />
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-theme-primary">
+                      {t.intelligence.providerLaya}
+                    </div>
+                    <div className="text-[11px] text-theme-muted">
+                      Local mmBERT-base worker (Python stdio NDJSON, &lt;15ms warm inference)
+                    </div>
+                  </div>
+                </label>
+
+                <label
+                  onClick={() => setIntelProvider("disabled")}
+                  className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                    intelProvider === "disabled"
+                      ? "bg-purple-500/10 border-purple-500/40 text-theme-primary"
+                      : "bg-theme-card-muted border-theme-subtle text-theme-secondary hover:border-theme-primary/30"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="intelProvider"
+                    checked={intelProvider === "disabled"}
+                    onChange={() => setIntelProvider("disabled")}
+                    className="mt-0.5 text-purple-500 focus:ring-purple-500"
+                  />
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-theme-primary">
+                      {t.intelligence.providerNone}
+                    </div>
+                    <div className="text-[11px] text-theme-muted">
+                      Disable advisory evaluation. Nexus deterministic security policies continue operating.
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Model & Python Paths */}
+            {intelProvider === "laya" && (
+              <div className="space-y-4 pt-2 border-t border-theme-subtle">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-theme-secondary">
+                    {t.intelligence.modelPath}
+                  </label>
+                  <input
+                    type="text"
+                    value={intelModelPath}
+                    onChange={(e) => setIntelModelPath(e.target.value)}
+                    placeholder={t.intelligence.modelPathPlaceholder}
+                    className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                  />
+                  <p className="text-[11px] text-theme-muted">
+                    Defaults to <code className="font-mono text-purple-400">E:\workspace\models\laya-multilingual</code> or <code className="font-mono text-purple-400">LAYA_MODEL_PATH</code>.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-theme-secondary">
+                    {t.intelligence.pythonPath}
+                  </label>
+                  <input
+                    type="text"
+                    value={intelPythonPath}
+                    onChange={(e) => setIntelPythonPath(e.target.value)}
+                    placeholder={t.intelligence.pythonPathPlaceholder}
+                    className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                  />
+                  <p className="text-[11px] text-theme-muted">
+                    Python interpreter with PyTorch/Transformers. Defaults to active virtualenv or <code className="font-mono text-purple-400">nexus-laya</code>.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-theme-secondary">
+                    Worker Timeout (ms)
+                  </label>
+                  <input
+                    type="number"
+                    value={intelWorkerTimeout}
+                    onChange={(e) => setIntelWorkerTimeout(Number(e.target.value) || 5000)}
+                    min={1000}
+                    max={60000}
+                    step={500}
+                    className="w-full px-3 py-2 rounded-lg bg-theme-input-bg border border-theme-input-border text-xs font-mono text-theme-primary placeholder:text-theme-muted focus:outline-none focus:border-purple-500"
+                  />
+                  <p className="text-[11px] text-theme-muted">
+                    Subprocess execution timeout before returning fallback advisory assessment. Default: 5000 ms.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.device}</div>
+                    <div className="font-mono text-theme-secondary font-semibold mt-0.5">
+                      {intelStatus?.execution?.toUpperCase() || "LOCAL"} &bull; CPU / CUDA
+                    </div>
+                  </div>
+                  <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.latency}</div>
+                    <div className="font-mono text-theme-secondary font-semibold mt-0.5">
+                      {intelStatus?.latencyMs ? `${intelStatus.latencyMs} ms` : "—"}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-theme-card-muted rounded-lg border border-theme-subtle text-xs">
+                    <div className="text-[10px] text-theme-muted">{t.intelligence.warmInferenceBenchmark}</div>
+                    <div className="font-mono text-emerald-400 font-semibold mt-0.5">
+                      &lt; 15 ms target
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div className="flex items-center gap-3 pt-3 flex-wrap">
+              <button
+                type="button"
+                onClick={handleSaveIntelligence}
+                disabled={intelBusy}
+                className="px-4 py-2 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {intelBusy ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>{intelBusy ? t.intelligence.saving : t.intelligence.saveAndRestart}</span>
+              </button>
+
+              {intelProvider === "laya" && (
+                <button
+                  type="button"
+                  onClick={handleTestBenchmark}
+                  disabled={intelTesting}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-theme-card-muted hover:bg-theme-card text-theme-secondary border border-theme-subtle transition disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {intelTesting ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 text-sky-400" />
+                  )}
+                  <span>{intelTesting ? t.intelligence.testing : t.intelligence.testInference}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Benchmark Result Card */}
+            {testAdvice && (() => {
+              const testRisk = typeof testAdvice.risk === "object" ? testAdvice.risk?.label : (testAdvice as any).risk;
+              const testRiskKey = String(testRisk || "").toUpperCase();
+              const testConf = typeof testAdvice.risk === "object" ? testAdvice.risk?.confidence : (testAdvice as any).confidence;
+              const testConfPercent = Math.round(Number(testConf ?? 0.85) * 100);
+              const testRec = (testAdvice as any).recommendation || (testAdvice.approval?.recommended ? "APPROVE" : "ASK / REVIEW");
+              const testCat = testAdvice.category || "General";
+              const testRationale = (testAdvice as any).rationale || (testAdvice.reasoningTags && testAdvice.reasoningTags.length > 0 ? testAdvice.reasoningTags.join(", ") : null);
+
+              return (
+                <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-3 pt-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-purple-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>{t.intelligence.testSuccess}</span>
+                    </span>
+                    <span className="font-mono text-[11px] text-purple-300">
+                      {testAdvice.latencyMs} ms
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">{t.intelligence.riskEvaluation}</div>
+                      <div className="text-amber-400 font-bold mt-0.5 uppercase">{testRiskKey}</div>
+                    </div>
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">{t.intelligence.recommendedAction}</div>
+                      <div className="text-theme-secondary font-bold mt-0.5 uppercase">
+                        {testRec}
+                      </div>
+                    </div>
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">Confidence</div>
+                      <div className="text-emerald-400 font-bold mt-0.5">
+                        {testConfPercent}%
+                      </div>
+                    </div>
+                    <div className="p-2 bg-theme-card rounded border border-theme-subtle">
+                      <div className="text-[10px] text-theme-muted">Category</div>
+                      <div className="text-theme-secondary mt-0.5 truncate">{testCat}</div>
+                    </div>
+                  </div>
+                  {testRationale && (
+                    <div className="text-[11px] text-theme-secondary font-mono bg-theme-card p-2.5 rounded border border-theme-subtle">
+                      <span className="text-theme-muted">{t.intelligence.rationale}: </span>
+                      {testRationale}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Advisory Authority Callout */}
+            <div className="p-3.5 bg-theme-card-muted border border-theme-subtle rounded-xl flex items-start gap-2.5 text-xs">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <strong className="text-theme-primary font-medium">{t.intelligence.advisoryNotice}: </strong>
+                <span className="text-theme-muted leading-relaxed">{t.intelligence.advisoryNoticeDesc}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: General & Core Server */}
       {activeTab === "general" && (
         <div className="max-w-4xl space-y-6">
           {/* General: Language */}
@@ -1949,11 +2306,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
         </div>
       )}
 
-      {/* Tab 4: About Nexus */}
+      {/* Tab 5: About Nexus */}
       {activeTab === "about" && (
         <div className="max-w-4xl space-y-6">
           {/* About Section */}
-          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 text-xs shadow-sm">
+          <div className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-4 text-xs shadow-sm">
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
               <Info className="w-4 h-4 text-sky-500" />
               <span>{t.settings.aboutGroup}</span>
@@ -1963,7 +2320,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
               <img
                 src={nexusLogo}
                 alt="Nexus"
-                className="w-12 h-12 rounded-xl object-cover shadow-sm border border-white/10"
+                className="w-12 h-12 rounded-xl object-cover shadow-sm border border-theme-subtle"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = "/nexus.png";
                 }}
@@ -1973,17 +2330,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ tunnelStatus, onRefr
                   {t.settings.appName || "Nexus"}
                 </div>
                 <div className="text-theme-secondary font-mono text-[11px]">
-                  Local AI Control Plane &bull; v2.0.0
+                  Local AI Control Plane &bull; v1.2.0 (UI: Quiet Command Center)
                 </div>
                 <div className="text-[10px] font-mono text-theme-muted">
-                  Build {typeof __BUILD_COMMIT__ !== "undefined" ? __BUILD_COMMIT__ : "ui-2.0"} &bull; Node Bundled Runtime
+                  Build {typeof __BUILD_COMMIT__ !== "undefined" ? __BUILD_COMMIT__ : "1.2.0"} &bull; Node Bundled Runtime &bull; Laya Decision Intelligence
                 </div>
               </div>
             </div>
           </div>
 
           {/* Security Architecture Summary */}
-          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 text-xs shadow-sm">
+          <div className="p-6 bg-theme-card border border-theme-subtle rounded-xl space-y-4 text-xs shadow-sm">
             <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
               <span>{t.settings.securityTitle}</span>

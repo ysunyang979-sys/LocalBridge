@@ -16,3 +16,4 @@ export * from "./session/index.js";
 export * from "./worktree/index.js";
 export * from "./runtime/index.js";
 export * from "./tunnel/index.js";
+export * from "./intelligence.js";
