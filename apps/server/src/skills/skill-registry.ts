@@ -200,6 +200,22 @@ export class SkillRegistry {
     return true;
   }
 
+  toggleCollection(
+    collectionId: string,
+    enabled: boolean,
+    projectId?: string
+  ): { success: boolean; modifiedCount: number; skills: SkillDefinition[] } {
+    const list = this.listSkills({ collectionId, projectId });
+    let modified = 0;
+    for (const skill of list) {
+      if (this.toggleSkill(skill.id, enabled, projectId)) {
+        modified++;
+      }
+    }
+    const updated = this.listSkills({ collectionId, projectId });
+    return { success: true, modifiedCount: modified, skills: updated };
+  }
+
   matchSkills(
     query: string,
     projectId?: string,

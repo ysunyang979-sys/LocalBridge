@@ -6,6 +6,9 @@ import YAML from "yaml";
 import {
   type SkillImportPreview,
   type SkillImportResult,
+  type SkillBatchImportParams,
+  type SkillBatchImportResult,
+  type SkillMetadata,
   type SkillDeleteResult,
   type SkillRawContentResult,
   type SkillCategory,
@@ -38,6 +41,21 @@ function slugify(str: string): string {
     .replace(/^[._-]+|[._-]+$/g, "");
   return slug.slice(0, 50) || "custom-skill";
 }
+
+export function normalizeCollectionName(sourceNameOrPath: string): string {
+  let base = path.basename(sourceNameOrPath);
+  base = base.replace(/\.(zip|tar\.gz|tgz|tar)$/i, "");
+  // Strip duplicate download patterns: (1), (2), -1, _1, copy
+  base = base.replace(/[\s_-]*\(\d+\)$/, "");
+  base = base.replace(/[\s_-]+\d+$/, "");
+  base = base.trim();
+  return base || "skill-collection";
+}
+
+export function normalizeCollectionId(collectionName: string): string {
+  return "collection." + slugify(collectionName);
+}
+
 
 
 function detectZipRootPrefix(entries: ZipEntry[]): string {
@@ -285,7 +303,7 @@ export class SkillImporter {
     const lowerMdPath = path.join(activeFolder, "skill.md");
     const readmePath = path.join(activeFolder, "README.md");
     const readmeZhPath = path.join(activeFolder, "README_zh.md");
-    const activeDocPath = fs.existsSync(mdPath)
+    let activeDocPath = fs.existsSync(mdPath)
       ? mdPath
       : fs.existsSync(lowerMdPath)
       ? lowerMdPath
@@ -322,6 +340,24 @@ export class SkillImporter {
     const candidateExecutablesCount = executableFilesFound.length;
 
     const candidateSkills = discoverSubCandidatesFromFolder(normPath);
+    if (!activeDocPath && !activeYamlPath && candidateSkills.length > 0) {
+      for (const cand of candidateSkills) {
+        const candDir = path.join(normPath, cand.path);
+        const candMd = path.join(candDir, "SKILL.md");
+        const candLowerMd = path.join(candDir, "skill.md");
+        const candReadme = path.join(candDir, "README.md");
+        if (fs.existsSync(candMd)) {
+          activeDocPath = candMd;
+          break;
+        } else if (fs.existsSync(candLowerMd)) {
+          activeDocPath = candLowerMd;
+          break;
+        } else if (fs.existsSync(candReadme)) {
+          activeDocPath = candReadme;
+          break;
+        }
+      }
+    }
     let markdownContent = "";
     if (activeDocPath) {
       try {
@@ -740,7 +776,22 @@ export class SkillImporter {
     overwrite?: boolean;
     customYaml?: string;
     subPath?: string;
+    selectedCandidateIds?: string[];
+    collectionName?: string;
   }): Promise<SkillImportResult> {
+    if (params.selectedCandidateIds && params.selectedCandidateIds.length > 0) {
+      return this.importBatch({
+        sourceType: "folder",
+        sourcePath: params.sourcePath,
+        target: params.target,
+        projectId: params.projectId,
+        projectRoot: params.projectRoot,
+        collectionName: params.collectionName,
+        selectedCandidateIds: params.selectedCandidateIds,
+        overwrite: params.overwrite,
+      });
+    }
+
     const stagingDir = this.createStagingDir();
 
     try {
@@ -1298,6 +1349,428 @@ export class SkillImporter {
   }
 
   /**
+   * Import multiple sub-skills from an archive or folder as a collection in a single atomic batch transaction.
+   */
+  async importBatch(params: SkillBatchImportParams): Promise<SkillBatchImportResult> {
+    const collName =
+      params.collectionName?.trim() ||
+      normalizeCollectionName(params.sourcePath || "skill-collection");
+    const collectionId = normalizeCollectionId(collName);
+
+    const baseTmp =
+      process.platform === "win32" && process.env.LOCALAPPDATA
+        ? path.join(process.env.LOCALAPPDATA, "LocalBridge", "tmp", "skill-staging")
+        : path.join(os.tmpdir(), "localbridge-skill-staging");
+    fs.mkdirSync(baseTmp, { recursive: true });
+    const batchStagingRoot = path.join(baseTmp, crypto.randomUUID());
+    fs.mkdirSync(batchStagingRoot, { recursive: true });
+
+    const installedSkills: SkillMetadata[] = [];
+    const skippedSkills: string[] = [];
+    const failedSkills: Array<{ id: string; error: string }> = [];
+
+    try {
+      if (params.sourceType === "zip") {
+        let buffer: Buffer;
+        if (params.zipBase64) {
+          buffer = Buffer.from(params.zipBase64, "base64");
+        } else if (params.sourcePath) {
+          const resolvedZip = path.resolve(params.sourcePath);
+          if (!fs.existsSync(resolvedZip)) {
+            return {
+              success: false,
+              code: "ZIP_NOT_FOUND",
+              stage: "staging_init",
+              message: `ZIP 文件未找到: ${params.sourcePath}`,
+              error: `ZIP 文件未找到: ${params.sourcePath}`,
+            };
+          }
+          buffer = fs.readFileSync(resolvedZip);
+        } else {
+          return {
+            success: false,
+            code: "INVALID_ARGUMENT",
+            stage: "staging_init",
+            message: "Missing ZIP source (sourcePath or zipBase64 required)",
+            error: "Missing ZIP source",
+          };
+        }
+
+        let entries: ZipEntry[];
+        try {
+          entries = parseZip(buffer);
+        } catch (err: any) {
+          return {
+            success: false,
+            code: "INVALID_ZIP_ARCHIVE",
+            stage: "staging_init",
+            message: `Failed to parse ZIP archive: ${err.message}`,
+            error: `Failed to parse ZIP archive: ${err.message}`,
+          };
+        }
+
+        const singleRoot = detectZipRootPrefix(entries);
+        const candidates = discoverSubCandidatesFromEntries(entries, singleRoot);
+        const selected =
+          params.selectedCandidateIds && params.selectedCandidateIds.length > 0
+            ? candidates.filter(
+                (c) =>
+                  params.selectedCandidateIds!.includes(c.id) ||
+                  params.selectedCandidateIds!.includes(c.name) ||
+                  params.selectedCandidateIds!.includes(c.path)
+              )
+            : candidates;
+
+        for (const candidate of candidates) {
+          if (!selected.includes(candidate)) {
+            skippedSkills.push(candidate.id);
+          }
+        }
+
+        if (selected.length === 0) {
+          return {
+            success: false,
+            code: "NO_CANDIDATES_SELECTED",
+            stage: "staging_init",
+            message: "未选择任何要导入的 Skill",
+            error: "未选择任何要导入的 Skill",
+          };
+        }
+
+        for (const candidate of selected) {
+          try {
+            const candPrefix = singleRoot ? `${singleRoot}${candidate.path}/` : `${candidate.path}/`;
+            const candEntries = entries.filter((e) => e.name.startsWith(candPrefix) && !e.isDirectory);
+            const candStaging = path.join(batchStagingRoot, candidate.id);
+            fs.mkdirSync(candStaging, { recursive: true });
+
+            let primaryDocName = "SKILL.md";
+            let docContent = "";
+
+            for (const e of candEntries) {
+              const rel = e.name.slice(candPrefix.length);
+              if (!rel || EXECUTABLE_FILE_REGEX.test(rel)) continue;
+              const destFile = path.join(candStaging, rel);
+              fs.mkdirSync(path.dirname(destFile), { recursive: true });
+              fs.writeFileSync(destFile, e.data);
+
+              const lower = rel.toLowerCase();
+              if (lower === "skill.md" || (!docContent && lower === "readme.md")) {
+                primaryDocName = rel;
+                docContent = e.data.toString("utf-8");
+              }
+            }
+
+            this.sanitizeTargetDir(candStaging);
+
+            const candDocs: string[] = [];
+            try {
+              const scan = (d: string, prefix = "") => {
+                for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+                  const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+                  if (ent.isDirectory()) {
+                    if (["references", "docs", "doc", "examples", "agents", "skills"].includes(ent.name.toLowerCase())) {
+                      scan(path.join(d, ent.name), rel);
+                    }
+                  } else if (ent.isFile() && /\.(md|txt|json|ya?ml)$/i.test(ent.name)) {
+                    candDocs.push(rel);
+                  }
+                }
+              };
+              scan(candStaging);
+            } catch {}
+
+            let skillMdText = "";
+            let readmeText = "";
+            if (primaryDocName.toLowerCase() === "skill.md") {
+              skillMdText = docContent;
+            } else {
+              readmeText = docContent;
+            }
+
+            const resolvedName = resolveRawSkillName({
+              skillMdContent: skillMdText,
+              readmeContent: readmeText,
+              folderName: candidate.name,
+            });
+
+            const summary = docContent
+              ? docContent.slice(0, 160).replace(/[#*`\n]/g, " ").trim()
+              : resolvedName;
+            const baseSlug = candidate.id.replace(/^user\./, "");
+            const keywords = Array.from(
+              new Set([
+                candidate.id,
+                baseSlug,
+                ...baseSlug.split(/[-_.]+/),
+                candidate.name,
+                ...candidate.name.split(/[-_.]+/),
+                resolvedName,
+              ].filter((k) => k && k.length >= 2))
+            );
+
+            const rawSkillManifest = {
+              id: candidate.id,
+              name: resolvedName,
+              type: "raw",
+              version: "1.0.0",
+              enabled: true,
+              collectionId,
+              collectionName: collName,
+              relativeSourcePath: candidate.path,
+              summary,
+              keywords,
+              description: summary,
+              primaryDocument: primaryDocName,
+              availableDocuments: candDocs.length > 0 ? candDocs : [primaryDocName],
+              documents: candDocs.length > 0 ? candDocs : [primaryDocName],
+              importedAt: new Date().toISOString(),
+            };
+
+            fs.writeFileSync(
+              path.join(candStaging, "raw-skill.json"),
+              JSON.stringify(rawSkillManifest, null, 2),
+              "utf-8"
+            );
+
+            const targetDir = this.resolveTargetDir(
+              candidate.id,
+              params.target,
+              params.projectId,
+              params.projectRoot
+            );
+            if (fs.existsSync(targetDir)) {
+              fs.rmSync(targetDir, { recursive: true, force: true });
+            }
+            fs.mkdirSync(targetDir, { recursive: true });
+            this.copyDirRecursive(candStaging, targetDir);
+            this.sanitizeTargetDir(targetDir);
+
+            installedSkills.push(rawSkillManifest as any);
+          } catch (err: any) {
+            failedSkills.push({ id: candidate.id, error: err.message || String(err) });
+          }
+        }
+      } else {
+        const normSrc = path.resolve(params.sourcePath!);
+        if (!fs.existsSync(normSrc)) {
+          return {
+            success: false,
+            code: "SOURCE_PATH_NOT_FOUND",
+            stage: "staging_init",
+            message: `源目录不存在: ${params.sourcePath}`,
+            error: `源目录不存在: ${params.sourcePath}`,
+          };
+        }
+
+        const candidates = discoverSubCandidatesFromFolder(normSrc);
+        const selected =
+          params.selectedCandidateIds && params.selectedCandidateIds.length > 0
+            ? candidates.filter(
+                (c) =>
+                  params.selectedCandidateIds!.includes(c.id) ||
+                  params.selectedCandidateIds!.includes(c.name) ||
+                  params.selectedCandidateIds!.includes(c.path)
+              )
+            : candidates;
+
+        for (const candidate of candidates) {
+          if (!selected.includes(candidate)) {
+            skippedSkills.push(candidate.id);
+          }
+        }
+
+        if (selected.length === 0) {
+          return {
+            success: false,
+            code: "NO_CANDIDATES_SELECTED",
+            stage: "staging_init",
+            message: "未选择任何要导入的 Skill",
+            error: "未选择任何要导入的 Skill",
+          };
+        }
+
+        for (const candidate of selected) {
+          try {
+            const candidateSrc = path.join(normSrc, candidate.path);
+            if (!fs.existsSync(candidateSrc)) {
+              skippedSkills.push(candidate.id);
+              continue;
+            }
+
+            const candStaging = path.join(batchStagingRoot, candidate.id);
+            fs.mkdirSync(candStaging, { recursive: true });
+            this.copyDirRecursive(candidateSrc, candStaging);
+            this.sanitizeTargetDir(candStaging);
+
+            const candDocs: string[] = [];
+            try {
+              const scan = (d: string, prefix = "") => {
+                for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+                  const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+                  if (ent.isDirectory()) {
+                    if (["references", "docs", "doc", "examples", "agents", "skills"].includes(ent.name.toLowerCase())) {
+                      scan(path.join(d, ent.name), rel);
+                    }
+                  } else if (ent.isFile() && /\.(md|txt|json|ya?ml)$/i.test(ent.name)) {
+                    candDocs.push(rel);
+                  }
+                }
+              };
+              scan(candStaging);
+            } catch {}
+
+            const mdPath = path.join(candStaging, "SKILL.md");
+            const lowerMdPath = path.join(candStaging, "skill.md");
+            const readmePath = path.join(candStaging, "README.md");
+            const readmeZhPath = path.join(candStaging, "README_zh.md");
+            const activeDocPath = fs.existsSync(mdPath)
+              ? mdPath
+              : fs.existsSync(lowerMdPath)
+              ? lowerMdPath
+              : fs.existsSync(readmePath)
+              ? readmePath
+              : fs.existsSync(readmeZhPath)
+              ? readmeZhPath
+              : candDocs.length > 0
+              ? path.join(candStaging, candDocs[0])
+              : null;
+
+            const primaryDocName = activeDocPath
+              ? path.relative(candStaging, activeDocPath).replace(/\\/g, "/")
+              : "SKILL.md";
+            let docContent = "";
+            try {
+              if (activeDocPath) docContent = fs.readFileSync(activeDocPath, "utf-8");
+            } catch {}
+
+            let skillMdText = "";
+            let readmeText = "";
+            if (primaryDocName.toLowerCase() === "skill.md") {
+              skillMdText = docContent;
+            } else {
+              readmeText = docContent;
+            }
+
+            const resolvedName = resolveRawSkillName({
+              skillMdContent: skillMdText,
+              readmeContent: readmeText,
+              folderName: candidate.name,
+            });
+
+            const summary = docContent
+              ? docContent.slice(0, 160).replace(/[#*`\n]/g, " ").trim()
+              : resolvedName;
+            const baseSlug = candidate.id.replace(/^user\./, "");
+            const keywords = Array.from(
+              new Set([
+                candidate.id,
+                baseSlug,
+                ...baseSlug.split(/[-_.]+/),
+                candidate.name,
+                ...candidate.name.split(/[-_.]+/),
+                resolvedName,
+              ].filter((k) => k && k.length >= 2))
+            );
+
+            const rawSkillManifest = {
+              id: candidate.id,
+              name: resolvedName,
+              type: "raw",
+              version: "1.0.0",
+              enabled: true,
+              collectionId,
+              collectionName: collName,
+              relativeSourcePath: candidate.path,
+              summary,
+              keywords,
+              description: summary,
+              primaryDocument: primaryDocName,
+              availableDocuments: candDocs.length > 0 ? candDocs : [primaryDocName],
+              documents: candDocs.length > 0 ? candDocs : [primaryDocName],
+              importedAt: new Date().toISOString(),
+            };
+
+            fs.writeFileSync(
+              path.join(candStaging, "raw-skill.json"),
+              JSON.stringify(rawSkillManifest, null, 2),
+              "utf-8"
+            );
+
+            const targetDir = this.resolveTargetDir(
+              candidate.id,
+              params.target,
+              params.projectId,
+              params.projectRoot
+            );
+            if (fs.existsSync(targetDir)) {
+              fs.rmSync(targetDir, { recursive: true, force: true });
+            }
+            fs.mkdirSync(targetDir, { recursive: true });
+            this.copyDirRecursive(candStaging, targetDir);
+            this.sanitizeTargetDir(targetDir);
+
+            installedSkills.push(rawSkillManifest as any);
+          } catch (err: any) {
+            failedSkills.push({ id: candidate.id, error: err.message || String(err) });
+          }
+        }
+      }
+
+      // Persist Collection Record (Requirement XIII)
+      const baseTargetDir =
+        params.target === "project" && params.projectRoot
+          ? path.join(params.projectRoot, ".nexus", "skills")
+          : this.loader.getUserDir();
+      const collectionsDir = path.join(baseTargetDir, "collections");
+      fs.mkdirSync(collectionsDir, { recursive: true });
+      const collRecord = {
+        id: collectionId,
+        name: collName,
+        sourceType: params.sourceType,
+        sourceName: params.sourcePath ? path.basename(params.sourcePath) : undefined,
+        totalSkills: installedSkills.length,
+        skills: installedSkills.map((s) => s.id),
+        importedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(
+        path.join(collectionsDir, `${collectionId}.json`),
+        JSON.stringify(collRecord, null, 2),
+        "utf-8"
+      );
+
+      // Registry Reload EXACTLY ONCE (Requirement XIV)
+      const projectDirs =
+        params.projectId && params.projectRoot
+          ? [{ projectId: params.projectId, rootPath: params.projectRoot }]
+          : [];
+      this.registry.reload(projectDirs);
+
+      const allImported = this.registry.listSkills({
+        collectionId,
+        projectId: params.projectId,
+      });
+
+      return {
+        success: installedSkills.length > 0,
+        collection: collRecord,
+        skills: allImported,
+        installedCount: installedSkills.length,
+        skippedCount: skippedSkills.length,
+        failedCount: failedSkills.length,
+        errors: failedSkills.length > 0 ? failedSkills : undefined,
+        reloadCount: 1,
+      };
+    } finally {
+      try {
+        if (fs.existsSync(batchStagingRoot)) {
+          fs.rmSync(batchStagingRoot, { recursive: true, force: true });
+        }
+      } catch {}
+    }
+  }
+
+  /**
    * Import a skill ZIP archive via a secure Staging Directory transaction.
    */
   async importZip(params: {
@@ -1308,7 +1781,23 @@ export class SkillImporter {
     overwrite?: boolean;
     customYaml?: string;
     subPath?: string;
+    selectedCandidateIds?: string[];
+    collectionName?: string;
   }): Promise<SkillImportResult> {
+    if (params.selectedCandidateIds && params.selectedCandidateIds.length > 0) {
+      return this.importBatch({
+        sourceType: "zip",
+        sourcePath: typeof params.zipBufferOrPath === "string" ? params.zipBufferOrPath : undefined,
+        zipBase64: typeof params.zipBufferOrPath !== "string" ? params.zipBufferOrPath.toString("base64") : undefined,
+        target: params.target,
+        projectId: params.projectId,
+        projectRoot: params.projectRoot,
+        collectionName: params.collectionName,
+        selectedCandidateIds: params.selectedCandidateIds,
+        overwrite: params.overwrite,
+      });
+    }
+
     const stagingDir = this.createStagingDir();
 
     try {
@@ -2149,6 +2638,9 @@ export class SkillImporter {
     rootQualityNotice?: string;
     candidateQualityScore?: number;
     candidateQualityReasons?: string[];
+    isCollection?: boolean;
+    collectionName?: string;
+    collectionId?: string;
   }): SkillImportPreview {
     const yaml = params.parsedYaml || {};
     const existing = this.registry.getSkill(params.id, params.projectId);
@@ -2192,6 +2684,11 @@ export class SkillImporter {
         ? params.candidateExecutablesCount
         : params.executableFilesFound.length;
 
+    const isColl =
+      params.isCollection !== undefined
+        ? params.isCollection
+        : Boolean(params.candidateSkills && params.candidateSkills.length > 1);
+
     return {
       valid,
       id: params.id,
@@ -2233,6 +2730,9 @@ export class SkillImporter {
       rootQualityNotice: params.rootQualityNotice,
       candidateQualityScore: params.candidateQualityScore,
       candidateQualityReasons: params.candidateQualityReasons,
+      isCollection: isColl,
+      collectionName: params.collectionName || (isColl ? normalizeCollectionName(params.detectedRoot || params.id) : undefined),
+      collectionId: params.collectionId || (isColl ? normalizeCollectionId(params.collectionName || normalizeCollectionName(params.detectedRoot || params.id)) : undefined),
     };
   }
 

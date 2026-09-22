@@ -1287,6 +1287,80 @@ fn skills_import_zip(
 }
 
 #[tauri::command]
+fn skills_import_batch(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    source_type: String,
+    source_path: Option<String>,
+    zip_base64: Option<String>,
+    target: Option<String>,
+    project_id: Option<String>,
+    project_root: Option<String>,
+    overwrite: Option<bool>,
+    collection_name: Option<String>,
+    selected_candidate_ids: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "sourceType": source_type,
+        "target": target.unwrap_or_else(|| "user".to_string()),
+        "overwrite": overwrite.unwrap_or(false),
+        "selectedCandidateIds": selected_candidate_ids,
+    });
+    if let Some(sp) = source_path {
+        payload["sourcePath"] = serde_json::Value::String(sp);
+    }
+    if let Some(zb) = zip_base64 {
+        payload["zipBase64"] = serde_json::Value::String(zb);
+    }
+    if let Some(pid) = project_id {
+        payload["projectId"] = serde_json::Value::String(pid);
+    }
+    if let Some(pr) = project_root {
+        payload["projectRoot"] = serde_json::Value::String(pr);
+    }
+    if let Some(cn) = collection_name {
+        payload["collectionName"] = serde_json::Value::String(cn);
+    }
+    match desktop_management_call(state, "POST".into(), "/api/skills/import-batch".into(), Some(payload)) {
+        Ok(v) => Ok(v),
+        Err(err_str) => {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&err_str) {
+                if v.get("success").and_then(|b| b.as_bool()) == Some(false) {
+                    return Ok(v);
+                }
+            }
+            Err(err_str)
+        }
+    }
+}
+
+#[tauri::command]
+fn skills_toggle_collection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    collection_id: String,
+    enabled: bool,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "enabled": enabled,
+    });
+    if let Some(pid) = project_id {
+        payload["projectId"] = serde_json::Value::String(pid);
+    }
+    let path = format!("/api/skills/collections/{}/toggle", collection_id);
+    desktop_management_call(state, "PATCH".into(), path, Some(payload))
+}
+
+#[tauri::command]
+fn desktop_toggle_collection(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    collection_id: String,
+    enabled: bool,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    skills_toggle_collection(state, collection_id, enabled, project_id)
+}
+
+#[tauri::command]
 fn skills_delete(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     skill_id: String,
@@ -2671,6 +2745,9 @@ fn main() {
             skills_preview_import,
             skills_import_folder,
             skills_import_zip,
+            skills_import_batch,
+            skills_toggle_collection,
+            desktop_toggle_collection,
             skills_delete,
             skills_get_raw,
             skills_open_source_folder,

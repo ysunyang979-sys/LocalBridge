@@ -38,6 +38,8 @@ import type {
   SkillSource,
   SkillImportPreview,
   SkillImportResult,
+  SkillBatchImportParams,
+  SkillBatchImportResult,
   SkillDeleteResult,
   SkillRawContentResult,
 } from "../types.js";
@@ -923,6 +925,52 @@ class ApiBridge {
         ...params,
       }),
     });
+  }
+
+  async importSkillBatch(
+    params: SkillBatchImportParams
+  ): Promise<SkillBatchImportResult> {
+    if (isTauri()) {
+      return invoke<SkillBatchImportResult>("skills_import_batch", {
+        sourceType: params.sourceType,
+        sourcePath: params.sourcePath ?? null,
+        zipBase64: params.zipBase64 ?? null,
+        target: params.target ?? "user",
+        projectId: params.projectId ?? null,
+        projectRoot: params.projectRoot ?? null,
+        overwrite: params.overwrite ?? false,
+        collectionName: params.collectionName ?? null,
+        selectedCandidateIds: params.selectedCandidateIds,
+      });
+    }
+    return this.fetchJson<SkillBatchImportResult>("/api/skills/import-batch", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+  }
+
+  async toggleCollection(
+    collectionId: string,
+    enabled: boolean,
+    projectId?: string
+  ): Promise<{ success: boolean; modifiedCount: number; skills: SkillDefinition[] }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; modifiedCount: number; skills: SkillDefinition[] }>(
+        "skills_toggle_collection",
+        {
+          collectionId,
+          enabled,
+          projectId: projectId ?? null,
+        }
+      );
+    }
+    return this.fetchJson<{ success: boolean; modifiedCount: number; skills: SkillDefinition[] }>(
+      `/api/skills/collections/${encodeURIComponent(collectionId)}/toggle`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ enabled, projectId }),
+      }
+    );
   }
 
   async deleteSkill(

@@ -18,6 +18,7 @@ import {
   Settings,
   ShieldAlert,
   FileText,
+  Search,
 } from "lucide-react";
 import type {
   SkillImportPreview,
@@ -94,7 +95,7 @@ export interface ImportStateContext {
   sourcePath: string;
   zipBase64: string;
   preview: SkillImportPreview | null;
-  selectedSubPath: string;
+  selectedCandidateCount?: number;
   showWizard: boolean;
   roundTripValid: boolean;
 }
@@ -118,8 +119,9 @@ export function computeImportState(ctx: ImportStateContext): ImportState {
     return "invalid";
   }
 
-  if (ctx.preview.candidateSkills && ctx.preview.candidateSkills.length > 1 && !ctx.selectedSubPath) {
-    return "candidate_selected";
+  // Multi-skill collection mode is immediately ready for batch import
+  if (ctx.preview.candidateSkills && ctx.preview.candidateSkills.length > 1) {
+    return "preview_valid";
   }
 
   if (ctx.preview.validationStatus === "needs_setup") {
@@ -154,7 +156,8 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
   const [sourcePath, setSourcePath] = useState<string>("");
   const [zipBase64, setZipBase64] = useState<string>("");
   const [selectedTarget, setSelectedTarget] = useState<"user" | "project">("user");
-  const [selectedSubPath, setSelectedSubPath] = useState<string>("");
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set());
+  const [candidateSearch, setCandidateSearch] = useState<string>("");
 
   const [preview, setPreview] = useState<SkillImportPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -286,22 +289,10 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
         projectId,
         subPath: sub || undefined,
       });
-      if (
-        !sub &&
-        prev.candidateSkills &&
-        prev.candidateSkills.length > 0 &&
-        prev.candidateQualityScore !== undefined &&
-        prev.candidateQualityScore < 30
-      ) {
-        const firstValid =
-          prev.candidateSkills.find((c) => c.isValidCandidate !== false) ||
-          prev.candidateSkills[0];
-        if (firstValid && firstValid.path) {
-          setSelectedSubPath(firstValid.path);
-          return loadFolderPreview(folderPath, firstValid.path);
-        }
-      }
       setPreview(prev);
+      if (prev.candidateSkills && prev.candidateSkills.length > 1) {
+        setSelectedCandidateIds(new Set(prev.candidateSkills.map((c) => c.id)));
+      }
       syncWizardFieldsFromPreview(prev);
     } catch (err: any) {
       setPreviewError(err?.message || "Failed to preview skill folder");
@@ -326,22 +317,10 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
         projectId,
         subPath: sub || undefined,
       });
-      if (
-        !sub &&
-        prev.candidateSkills &&
-        prev.candidateSkills.length > 0 &&
-        prev.candidateQualityScore !== undefined &&
-        prev.candidateQualityScore < 30
-      ) {
-        const firstValid =
-          prev.candidateSkills.find((c) => c.isValidCandidate !== false) ||
-          prev.candidateSkills[0];
-        if (firstValid && firstValid.path) {
-          setSelectedSubPath(firstValid.path);
-          return loadZipPreview(pathOrBase64, firstValid.path);
-        }
-      }
       setPreview(prev);
+      if (prev.candidateSkills && prev.candidateSkills.length > 1) {
+        setSelectedCandidateIds(new Set(prev.candidateSkills.map((c) => c.id)));
+      }
       syncWizardFieldsFromPreview(prev);
     } catch (err: any) {
       setPreviewError(err?.message || "Failed to preview skill ZIP archive");
@@ -433,7 +412,6 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
           sourcePath,
           target,
           projectId,
-          subPath: selectedSubPath || undefined,
         })
         .then((p) => {
           setPreview(p);
@@ -448,22 +426,12 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
           zipBase64: zipBase64 || undefined,
           target,
           projectId,
-          subPath: selectedSubPath || undefined,
         })
         .then((p) => {
           setPreview(p);
           syncWizardFieldsFromPreview(p);
         })
         .catch(() => {});
-    }
-  };
-
-  const handleSubCandidateChange = (sub: string) => {
-    setSelectedSubPath(sub);
-    if (selectedSourceType === "folder" && sourcePath) {
-      loadFolderPreview(sourcePath, sub);
-    } else if (selectedSourceType === "zip") {
-      loadZipPreview({ path: sourcePath || undefined, base64: zipBase64 || undefined }, sub);
     }
   };
 
@@ -531,7 +499,6 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
           projectRoot,
           overwrite: effectiveOverwrite,
           customYaml,
-          subPath: selectedSubPath || undefined,
         });
       } else {
         result = await bridge.importSkillZip({
@@ -542,7 +509,6 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
           projectRoot,
           overwrite: effectiveOverwrite,
           customYaml,
-          subPath: selectedSubPath || undefined,
         });
       }
 
@@ -596,6 +562,100 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
     handleImport(wizardOverwrite, yaml);
   };
 
+  const displayedCandidates = React.useMemo(() => {
+    if (!preview?.candidateSkills) return [];
+    if (!candidateSearch.trim()) return preview.candidateSkills;
+    const q = candidateSearch.toLowerCase();
+    return preview.candidateSkills.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q) ||
+        c.path.toLowerCase().includes(q)
+    );
+  }, [preview?.candidateSkills, candidateSearch]);
+
+  const handleToggleCandidate = (id: string) => {
+    setSelectedCandidateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = (select: boolean) => {
+    if (!preview?.candidateSkills) return;
+    if (select) {
+      setSelectedCandidateIds(new Set(preview.candidateSkills.map((c) => c.id)));
+    } else {
+      setSelectedCandidateIds(new Set());
+    }
+  };
+
+  const handleBatchImport = async () => {
+    if (!preview) return;
+    const selectedList = Array.from(selectedCandidateIds);
+    if (selectedList.length === 0) return;
+
+    setImporting(true);
+    setImportError(null);
+    setImportErrorData(null);
+
+    try {
+      const result = await bridge.importSkillBatch({
+        sourceType: selectedSourceType === "folder" ? "folder" : "zip",
+        sourcePath: sourcePath || undefined,
+        zipBase64: zipBase64 || undefined,
+        target: selectedTarget,
+        projectId,
+        projectRoot,
+        collectionName: preview.collectionName,
+        selectedCandidateIds: selectedList,
+        overwrite: wizardOverwrite,
+      });
+
+      if (result.success) {
+        setImportSuccess(true);
+        if (result.skills && result.skills.length > 0) {
+          onSuccess(result.skills[0]!);
+        }
+        onClose();
+      } else {
+        const errMsg =
+          result.errors?.[0]?.error ||
+          (result as any).error ||
+          (result as any).message ||
+          "批量导入失败";
+        setImportError(errMsg);
+        setImportErrorData({
+          stage: "filesystem_commit",
+          code: "BATCH_IMPORT_FAILED",
+          message: errMsg,
+          details: result.errors,
+        });
+      }
+    } catch (err: any) {
+      let msg = "批量导入失败";
+      if (typeof err === "string") {
+        try {
+          const parsed = JSON.parse(err);
+          msg = parsed.error || parsed.message || err;
+        } catch {
+          msg = err;
+        }
+      } else if (err?.message) {
+        msg = err.message;
+      }
+      setImportError(msg);
+      setImportErrorData({ message: msg });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const importState = computeImportState({
     importSuccess,
     importing,
@@ -605,27 +665,60 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
     sourcePath,
     zipBase64,
     preview,
-    selectedSubPath,
+    selectedCandidateCount: selectedCandidateIds.size,
     showWizard,
     roundTripValid: roundTrip.valid,
   });
 
   const handleContinue = () => {
     if (selectedSourceType === "folder" && sourcePath) {
-      loadFolderPreview(sourcePath, selectedSubPath);
+      loadFolderPreview(sourcePath);
     } else if (selectedSourceType === "zip" && (sourcePath || zipBase64)) {
-      loadZipPreview(
-        { path: sourcePath || undefined, base64: zipBase64 || undefined },
-        selectedSubPath
-      );
+      loadZipPreview({
+        path: sourcePath || undefined,
+        base64: zipBase64 || undefined,
+      });
     }
   };
 
-  const handleConfirmCandidate = () => {
-    handleContinue();
-  };
-
   const renderPrimaryCTA = () => {
+    if (preview?.candidateSkills && preview.candidateSkills.length > 1) {
+      if (importing) {
+        return (
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 text-white opacity-70 cursor-not-allowed shadow-none"
+          >
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{language === "zh-CN" ? "正在导入..." : "Importing..."}</span>
+          </button>
+        );
+      }
+      const totalCandidates = preview.candidateSkills.length;
+      const count = selectedCandidateIds.size;
+      const isAll = count === totalCandidates;
+      return (
+        <button
+          type="button"
+          onClick={handleBatchImport}
+          disabled={count === 0}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>
+            {language === "zh-CN"
+              ? isAll
+                ? `导入全部 ${count} 个 Skill`
+                : `导入 ${count} 个 Skill`
+              : isAll
+              ? `Import All ${count} Skills`
+              : `Import ${count} Skills`}
+          </span>
+        </button>
+      );
+    }
+
     switch (importState) {
       case "idle":
         return (
@@ -648,17 +741,6 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
           >
             {previewLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             <span>{language === "zh-CN" ? "继续" : "Continue"}</span>
-          </button>
-        );
-
-      case "candidate_selected":
-        return (
-          <button
-            type="button"
-            onClick={handleConfirmCandidate}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition"
-          >
-            <span>{language === "zh-CN" ? "确认候选" : "Confirm Candidate"}</span>
           </button>
         );
 
@@ -919,36 +1001,112 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
             )}
           </div>
 
-          {/* Candidate Sub-Skill Picker (if multiple detected in subdirectories) */}
+          {/* Candidate Multi-Skill Collection Batch Selector */}
           {preview?.candidateSkills && preview.candidateSkills.length > 1 && (
-            <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 text-xs space-y-2">
-              <label className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-2">
-                <Workflow className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                <span>发现多项候选子技能，请选择要导入的一项：</span>
-              </label>
-              <select
-                value={selectedSubPath}
-                onChange={(e) => handleSubCandidateChange(e.target.value)}
-                className="w-full text-xs font-medium rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-800 dark:text-slate-200"
-              >
-                <option value="">
-                  {preview.candidateQualityScore !== undefined && preview.candidateQualityScore < 30
-                    ? "仓库根目录 (未检测到独立技能特征)"
-                    : "仓库根目录"}
-                </option>
-                {preview.candidateSkills.map((c) => (
-                  <option key={c.path} value={c.path}>
-                    {c.name} {c.hasManifest ? "(含 skill.yaml)" : "(含 SKILL.md)"} {c.qualityScore !== undefined ? `[评分: ${c.qualityScore}]` : ""}
-                  </option>
-                ))}
-              </select>
+            <div className="p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 text-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-2">
+                  <Workflow className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span>发现 {preview.candidateSkills.length} 个 Skill</span>
+                </label>
+                <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-300">
+                  已选 {selectedCandidateIds.size} / {preview.candidateSkills.length}
+                </span>
+              </div>
 
-              {preview.rootQualityNotice && !selectedSubPath && (
-                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed flex items-start gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                  <span>{preview.rootQualityNotice}</span>
+              {/* Search Filter */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={candidateSearch}
+                  onChange={(e) => setCandidateSearch(e.target.value)}
+                  placeholder="搜索 Skill..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              {/* Master Select All Checkbox */}
+              <div className="flex items-center justify-between py-1 border-b border-purple-200 dark:border-purple-800/60">
+                <label className="flex items-center gap-2 font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={
+                      displayedCandidates.length > 0 &&
+                      displayedCandidates.every((c) => selectedCandidateIds.has(c.id))
+                    }
+                    onChange={(e) => handleToggleSelectAll(e.target.checked)}
+                    className="rounded text-purple-600 focus:ring-purple-500"
+                  />
+                  <span>全选 ({selectedCandidateIds.size} / {preview.candidateSkills.length})</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSelectAll(true)}
+                    className="text-[11px] text-purple-600 dark:text-purple-400 hover:underline"
+                  >
+                    全部选中
+                  </button>
+                  <span className="text-slate-300 dark:text-slate-700">|</span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSelectAll(false)}
+                    className="text-[11px] text-purple-600 dark:text-purple-400 hover:underline"
+                  >
+                    全部取消
+                  </button>
                 </div>
-              )}
+              </div>
+
+              {/* Scrollable Fixed-Height List of Candidates */}
+              <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                {displayedCandidates.map((c) => {
+                  const isChecked = selectedCandidateIds.has(c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      className={`flex items-center justify-between p-2 rounded-lg border transition cursor-pointer ${
+                        isChecked
+                          ? "bg-white dark:bg-slate-900 border-purple-300 dark:border-purple-700 text-slate-800 dark:text-slate-200 shadow-2xs"
+                          : "bg-purple-50/30 dark:bg-purple-950/20 border-purple-100 dark:border-purple-900/40 text-slate-500 dark:text-slate-400 opacity-75"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleCandidate(c.id)}
+                          className="rounded text-purple-600 focus:ring-purple-500"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-semibold text-xs truncate text-slate-900 dark:text-slate-100">
+                            {c.name}
+                          </div>
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate font-mono">
+                            {c.path}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        {c.hasManifest && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                            skill.yaml
+                          </span>
+                        )}
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          SKILL.md
+                        </span>
+                      </div>
+                    </label>
+                  );
+                })}
+                {displayedCandidates.length === 0 && (
+                  <div className="py-4 text-center text-slate-400 dark:text-slate-500 text-xs">
+                    没有匹配的子技能
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1069,7 +1227,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
           )}
 
           {/* Section 4: Skill Preview Card */}
-          {preview && !previewLoading && (
+          {preview && !previewLoading && (!preview.candidateSkills || preview.candidateSkills.length <= 1) && (
             <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-3.5 shadow-2xs animate-in fade-in duration-200">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">

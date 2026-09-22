@@ -68,7 +68,7 @@ describe("Skills Import CTA: State Machine Core Transitions", () => {
     expect(computeImportState(ctx)).toBe("error");
   });
 
-  it("returns 'candidate_selected' when multiple candidate skills are detected and none is selected", () => {
+  it("returns 'preview_valid' when multiple candidate skills are detected (ready for batch import)", () => {
     const preview = createMockPreview({
       validationStatus: "needs_setup",
       candidateSkills: [
@@ -79,9 +79,8 @@ describe("Skills Import CTA: State Machine Core Transitions", () => {
     const ctx = createDefaultContext({
       sourcePath: "C:\\path\\to\\repo.zip",
       preview,
-      selectedSubPath: "",
     });
-    expect(computeImportState(ctx)).toBe("candidate_selected");
+    expect(computeImportState(ctx)).toBe("preview_valid");
   });
 
   it("returns 'needs_setup' when candidate is selected and validationStatus is needs_setup without wizard open", () => {

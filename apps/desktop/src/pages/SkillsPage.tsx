@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   X,
   FileText,
+  Layers,
 } from "lucide-react";
 import type {
   SkillMetadata,
@@ -21,6 +22,7 @@ import type {
 import { useTranslation } from "../i18n/useTranslation.js";
 import { bridge } from "../api/bridge.js";
 import { SkillDetailDrawer } from "../components/skills/SkillDetailDrawer.js";
+import { CollectionDetailDrawer } from "../components/skills/CollectionDetailDrawer.js";
 import { ImportSkillModal } from "../components/skills/ImportSkillModal.js";
 
 interface SkillsPageProps {
@@ -46,6 +48,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
 
   // Modals & Drawer State
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [highlightedSkillId, setHighlightedSkillId] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
 
@@ -108,6 +111,24 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
     }
   };
 
+  const handleToggleCollection = async (collectionId: string, enabled: boolean) => {
+    try {
+      const res = await bridge.toggleCollection(collectionId, enabled, projectId);
+      if (res.success) {
+        setSkills((prev) =>
+          prev.map((s) => (s.collectionId === collectionId ? { ...s, enabled } : s))
+        );
+        showToast(
+          enabled ? "已启用集合内所有 Skill" : "已关闭集合内所有 Skill",
+          undefined,
+          "success"
+        );
+      }
+    } catch (err: any) {
+      showToast("操作失败", err?.message, "error");
+    }
+  };
+
   const handleImportSuccess = (imported: SkillMetadata) => {
     const name =
       imported.name[language] ||
@@ -158,7 +179,10 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
   };
 
   const collections = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; total: number; enabled: number }>();
+    const map = new Map<
+      string,
+      { id: string; name: string; total: number; enabled: number; source: SkillSource }
+    >();
     for (const s of skills) {
       if (s.collectionId) {
         let entry = map.get(s.collectionId);
@@ -168,6 +192,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
             name: s.collectionName || s.collectionId.replace(/^collection\./, ""),
             total: 0,
             enabled: 0,
+            source: s.source,
           };
           map.set(s.collectionId, entry);
         }
@@ -178,8 +203,42 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
     return Array.from(map.values());
   }, [skills]);
 
+  const filteredCollections = useMemo(() => {
+    return collections.filter((coll) => {
+      if (sourceFilter !== "all" && coll.source !== sourceFilter) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        if (coll.name.toLowerCase().includes(q) || coll.id.toLowerCase().includes(q)) {
+          return true;
+        }
+        const collSkills = skills.filter((s) => s.collectionId === coll.id);
+        return collSkills.some((s) => {
+          const nameZh = (s.name["zh-CN"] || "").toLowerCase();
+          const nameEn = (s.name["en-US"] || "").toLowerCase();
+          const descZh = (s.description["zh-CN"] || "").toLowerCase();
+          const descEn = (s.description["en-US"] || "").toLowerCase();
+          return (
+            s.id.toLowerCase().includes(q) ||
+            nameZh.includes(q) ||
+            nameEn.includes(q) ||
+            descZh.includes(q) ||
+            descEn.includes(q) ||
+            s.triggers.some((t) => t.toLowerCase().includes(q))
+          );
+        });
+      }
+      return true;
+    });
+  }, [collections, skills, sourceFilter, searchQuery]);
+
   const filteredSkills = useMemo(() => {
     return skills.filter((skill) => {
+      // Child skills of a collection MUST NOT render in the top-level grid
+      if (skill.collectionId) {
+        return false;
+      }
       if (sourceFilter !== "all" && skill.source !== sourceFilter) {
         return false;
       }
@@ -207,8 +266,9 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
     });
   }, [skills, sourceFilter, searchQuery]);
 
-  const isUserFilterEmpty = sourceFilter === "user" && filteredSkills.length === 0;
-  const isProjectFilterEmpty = sourceFilter === "project" && filteredSkills.length === 0;
+  const hasAnyItems = filteredSkills.length > 0 || filteredCollections.length > 0;
+  const isUserFilterEmpty = sourceFilter === "user" && !hasAnyItems;
+  const isProjectFilterEmpty = sourceFilter === "project" && !hasAnyItems;
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-y-auto p-6 space-y-6">
@@ -332,7 +392,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       )}
 
       {/* Empty States */}
-      {!loading && filteredSkills.length === 0 && (
+      {!loading && !hasAnyItems && (
         <div className="py-20 flex flex-col items-center justify-center text-center p-8 rounded-2xl bg-white/60 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 border-dashed shadow-2xs">
           <div className="p-3.5 rounded-full bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 mb-3 shadow-2xs">
             <Sparkles className="w-8 h-8" />
@@ -383,40 +443,118 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         </div>
       )}
 
-      {/* Collection Overview Banners */}
-      {!loading && collections.length > 0 && (
-        <div className="space-y-3">
-          {collections.map((coll) => (
-            <div
-              key={coll.id}
-              className="p-4 rounded-xl bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-950/30 dark:to-indigo-950/30 border border-sky-200 dark:border-sky-800/60 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 shrink-0">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {coll.name}
+      {/* Skills Cards Grid (Collections + Standalone Skills) */}
+      {!loading && hasAnyItems && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {/* Collection Cards */}
+          {filteredCollections.map((coll) => {
+            const isAllEnabled = coll.enabled === coll.total && coll.total > 0;
+            const isNoneEnabled = coll.enabled === 0;
+            const isMixed = !isAllEnabled && !isNoneEnabled;
+
+            return (
+              <div
+                key={coll.id}
+                onClick={() => setSelectedCollectionId(coll.id)}
+                className="group p-4 rounded-xl bg-gradient-to-br from-white to-sky-50/30 dark:from-[#0d1320] dark:to-sky-950/20 border border-sky-200/80 dark:border-sky-800/50 hover:border-sky-500/60 dark:hover:border-sky-500/60 transition-all cursor-pointer flex flex-col justify-between hover:shadow-md"
+              >
+                <div>
+                  {/* Card Header */}
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="p-1.5 rounded-lg bg-sky-100 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-400 shrink-0">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate group-hover:text-sky-600 dark:group-hover:text-sky-400 transition">
+                          {coll.name}
+                        </h3>
+                        {uxMode === "advanced" && (
+                          <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">
+                            {coll.id}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Collection Master Toggle */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleCollection(coll.id, !isAllEnabled);
+                      }}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        isAllEnabled
+                          ? "bg-sky-600 dark:bg-sky-500"
+                          : isMixed
+                          ? "bg-amber-500"
+                          : "bg-slate-300 dark:bg-slate-700"
+                      }`}
+                      title={isAllEnabled ? "全部关闭" : "全部启用"}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          isAllEnabled
+                            ? "translate-x-4"
+                            : isMixed
+                            ? "translate-x-2"
+                            : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Badges Strip */}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800/60 font-semibold">
+                      用户 Skill 集合
                     </span>
-                    <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-100 dark:bg-sky-900/60 px-2 py-0.5 rounded-full border border-sky-200 dark:border-sky-700">
-                      ChatGPT 可使用 {coll.enabled} / {coll.total} 个 Skill
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium">
+                      {coll.total} 个 Skill
+                    </span>
+                    <span
+                      className={`text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                        isAllEnabled
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60"
+                          : isMixed
+                          ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60"
+                          : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isAllEnabled ? "bg-emerald-500" : isMixed ? "bg-amber-500" : "bg-slate-400"
+                        }`}
+                      />
+                      <span>
+                        {coll.enabled} / {coll.total} 已启用
+                      </span>
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    已启用的 Skill 可被 ChatGPT 自动发现、读取并用于任务。
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed mb-3">
+                    包含 {coll.total} 个专用技能。已启用的技能可供 ChatGPT 自动发现和执行。
                   </p>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Skills Cards Grid */}
-      {!loading && filteredSkills.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {/* Card Footer */}
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                    <Sparkles className="w-3.5 h-3.5 text-sky-500" />
+                    <span>Skill 集合包</span>
+                  </div>
+
+                  <div className="flex items-center gap-1 text-sky-600 dark:text-sky-400 group-hover:translate-x-0.5 transition-transform text-[11px] font-semibold">
+                    <span>管理集合 →</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Standalone Skill Cards */}
           {filteredSkills.map((skill) => {
             const displayName =
               skill.name[language] ||
@@ -627,6 +765,32 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         onClose={() => setSelectedSkillId(null)}
         onReload={loadSkills}
         initialMode={uxMode}
+      />
+
+      {/* Collection Detail Drawer */}
+      <CollectionDetailDrawer
+        collectionId={selectedCollectionId}
+        collectionName={collections.find((c) => c.id === selectedCollectionId)?.name}
+        skills={skills}
+        projectId={projectId}
+        projectRoot={projectRoot}
+        onClose={() => setSelectedCollectionId(null)}
+        onToggleSkill={async (skill, enabled) => {
+          const res = await bridge.toggleSkill(skill.id, enabled);
+          if (res.success) {
+            setSkills((prev) =>
+              prev.map((s) => (s.id === skill.id ? { ...s, enabled } : s))
+            );
+          }
+        }}
+        onToggleAll={async (enabled) => {
+          if (selectedCollectionId) {
+            await handleToggleCollection(selectedCollectionId, enabled);
+          }
+        }}
+        onSelectSkill={(skillId) => {
+          setSelectedSkillId(skillId);
+        }}
       />
 
       {/* Import Skill Modal */}

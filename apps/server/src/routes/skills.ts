@@ -7,6 +7,30 @@ export interface SkillsRouteOptions extends ManagementSecurityOptions {
   mcpContext: McpContext;
 }
 
+function sanitizeSecretStrings<T>(input: T): T {
+  if (typeof input === "string") {
+    return input
+      .replace(/lm_[a-zA-Z0-9_\-]+/g, "lm_***")
+      .replace(/lb_[a-zA-Z0-9_\-]+/g, "lb_***")
+      .replace(/(token|secret|password|bearer)\s*[:=]\s*["']?[a-zA-Z0-9_\-\.]+["']?/gi, "$1=***") as unknown as T;
+  }
+  if (Array.isArray(input)) {
+    return input.map(sanitizeSecretStrings) as unknown as T;
+  }
+  if (input && typeof input === "object") {
+    const copy: Record<string, any> = {};
+    for (const [k, v] of Object.entries(input)) {
+      if (/token|secret|password/i.test(k) && typeof v === "string") {
+        copy[k] = "***";
+      } else {
+        copy[k] = sanitizeSecretStrings(v);
+      }
+    }
+    return copy as T;
+  }
+  return input;
+}
+
 export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
   fastify,
   opts
@@ -108,6 +132,25 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
     });
   });
 
+  // PATCH /api/skills/collections/:collectionId/toggle - Enable or disable all skills in a collection
+  fastify.patch<{
+    Params: { collectionId: string };
+    Body: { enabled: boolean; projectId?: string };
+  }>("/skills/collections/:collectionId/toggle", async (request, reply) => {
+    const { collectionId } = request.params;
+    const { enabled, projectId } = request.body || {};
+
+    if (typeof enabled !== "boolean") {
+      return reply.status(400).send({
+        code: "INVALID_ARGUMENT",
+        message: "Field 'enabled' (boolean) is required in request body",
+      });
+    }
+
+    const result = mcpContext.skillRegistry.toggleCollection(collectionId, enabled, projectId);
+    return reply.status(200).send(result);
+  });
+
   // POST /api/skills/match - Test match a query against skills
   fastify.post<{
     Body: { query: string; projectId?: string };
@@ -194,12 +237,14 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
       sourceType: "folder" | "zip";
       sourcePath?: string;
       zipBase64?: string;
-      target: "user" | "project";
+      target?: "user" | "project";
       projectId?: string;
       projectRoot?: string;
       overwrite?: boolean;
       customYaml?: string;
       subPath?: string;
+      selectedCandidateIds?: string[];
+      collectionName?: string;
     };
   }>("/skills/import", async (request, reply) => {
     const {
@@ -212,6 +257,8 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
       overwrite,
       customYaml,
       subPath,
+      selectedCandidateIds,
+      collectionName,
     } = request.body || {};
 
     if (!sourceType || (sourceType !== "folder" && sourceType !== "zip")) {
@@ -228,31 +275,27 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
       });
     }
 
-function sanitizeSecretStrings<T>(input: T): T {
-  if (typeof input === "string") {
-    return input
-      .replace(/lm_[a-zA-Z0-9_\-]+/g, "lm_***")
-      .replace(/lb_[a-zA-Z0-9_\-]+/g, "lb_***")
-      .replace(/(token|secret|password|bearer)\s*[:=]\s*["']?[a-zA-Z0-9_\-\.]+["']?/gi, "$1=***") as unknown as T;
-  }
-  if (Array.isArray(input)) {
-    return input.map(sanitizeSecretStrings) as unknown as T;
-  }
-  if (input && typeof input === "object") {
-    const copy: Record<string, any> = {};
-    for (const [k, v] of Object.entries(input)) {
-      if (/token|secret|password/i.test(k) && typeof v === "string") {
-        copy[k] = "***";
-      } else {
-        copy[k] = sanitizeSecretStrings(v);
-      }
-    }
-    return copy as T;
-  }
-  return input;
-}
-
     try {
+      if (selectedCandidateIds && selectedCandidateIds.length > 0) {
+        const result = await mcpContext.skillImporter.importBatch({
+          sourceType,
+          sourcePath,
+          zipBase64,
+          target,
+          projectId,
+          projectRoot,
+          overwrite,
+          collectionName,
+          selectedCandidateIds,
+        });
+
+        const sanitized = sanitizeSecretStrings(result);
+        if (!sanitized.success) {
+          return reply.status(400).send(sanitized);
+        }
+        return reply.status(200).send(sanitized);
+      }
+
       if (sourceType === "folder") {
         if (!sourcePath) {
           return reply.status(400).send({
@@ -268,6 +311,8 @@ function sanitizeSecretStrings<T>(input: T): T {
           overwrite,
           customYaml,
           subPath,
+          selectedCandidateIds,
+          collectionName,
         });
 
         const sanitized = sanitizeSecretStrings(result);
@@ -295,6 +340,8 @@ function sanitizeSecretStrings<T>(input: T): T {
           overwrite,
           customYaml,
           subPath,
+          selectedCandidateIds,
+          collectionName,
         });
 
         const sanitized = sanitizeSecretStrings(result);
@@ -303,6 +350,83 @@ function sanitizeSecretStrings<T>(input: T): T {
         }
         return reply.status(200).send(sanitized);
       }
+    } catch (err: any) {
+      const sanitizedMsg = sanitizeSecretStrings(err.message || String(err));
+      return reply.status(500).send({
+        success: false,
+        code: "UNEXPECTED_SERVER_ERROR",
+        stage: "filesystem_commit",
+        error: sanitizedMsg,
+        message: sanitizedMsg,
+      });
+    }
+  });
+
+  // POST /api/skills/import-batch - Import multiple skills as a collection
+  fastify.post<{
+    Body: {
+      sourceType: "folder" | "zip";
+      sourcePath?: string;
+      zipBase64?: string;
+      target?: "user" | "project";
+      projectId?: string;
+      projectRoot?: string;
+      overwrite?: boolean;
+      collectionName?: string;
+      selectedCandidateIds: string[];
+    };
+  }>("/skills/import-batch", async (request, reply) => {
+    const {
+      sourceType,
+      sourcePath,
+      zipBase64,
+      target = "user",
+      projectId,
+      projectRoot,
+      overwrite,
+      collectionName,
+      selectedCandidateIds,
+    } = request.body || {};
+
+    if (!sourceType || (sourceType !== "folder" && sourceType !== "zip")) {
+      return reply.status(400).send({
+        code: "INVALID_ARGUMENT",
+        message: "Field 'sourceType' must be 'folder' or 'zip'",
+      });
+    }
+
+    if (!selectedCandidateIds || !Array.isArray(selectedCandidateIds) || selectedCandidateIds.length === 0) {
+      return reply.status(400).send({
+        code: "INVALID_ARGUMENT",
+        message: "Field 'selectedCandidateIds' (string[]) is required and must not be empty",
+      });
+    }
+
+    if (target === "project" && !projectRoot) {
+      return reply.status(400).send({
+        code: "INVALID_ARGUMENT",
+        message: "Field 'projectRoot' is required for project-scoped skill import",
+      });
+    }
+
+    try {
+      const result = await mcpContext.skillImporter.importBatch({
+        sourceType,
+        sourcePath,
+        zipBase64,
+        target,
+        projectId,
+        projectRoot,
+        overwrite,
+        collectionName,
+        selectedCandidateIds,
+      });
+
+      const sanitized = sanitizeSecretStrings(result);
+      if (!sanitized.success) {
+        return reply.status(400).send(sanitized);
+      }
+      return reply.status(200).send(sanitized);
     } catch (err: any) {
       const sanitizedMsg = sanitizeSecretStrings(err.message || String(err));
       return reply.status(500).send({

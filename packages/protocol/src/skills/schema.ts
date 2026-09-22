@@ -70,3 +70,16 @@ export const SkillMatchParamsSchema = z.object({
   collectionId: z.string().optional(),
   layaRecommendation: z.string().optional(),
 });
+
+export const SkillBatchImportParamsSchema = z.object({
+  sourceType: z.enum(["folder", "zip"]),
+  sourcePath: z.string().optional(),
+  zipBase64: z.string().optional(),
+  target: z.enum(["user", "project"]),
+  projectId: z.string().optional(),
+  projectRoot: z.string().optional(),
+  collectionName: z.string().optional(),
+  selectedCandidateIds: z.array(z.string()).optional(),
+  overwrite: z.boolean().optional(),
+});
+

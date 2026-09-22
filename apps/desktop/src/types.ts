@@ -831,6 +831,9 @@ export interface SkillImportPreview {
   rootQualityNotice?: string;
   candidateQualityScore?: number;
   candidateQualityReasons?: string[];
+  isCollection?: boolean;
+  collectionName?: string;
+  collectionId?: string;
 }
 
 export interface SkillImportParams {
@@ -843,11 +846,64 @@ export interface SkillImportParams {
   overwrite?: boolean;
   customYaml?: string;
   subPath?: string;
+  selectedCandidateIds?: string[];
+  collectionName?: string;
+}
+
+export interface SkillBatchImportParams {
+  sourceType: "folder" | "zip";
+  sourcePath?: string;
+  zipBase64?: string;
+  target: "user" | "project";
+  projectId?: string;
+  projectRoot?: string;
+  collectionName?: string;
+  selectedCandidateIds?: string[];
+  overwrite?: boolean;
+}
+
+export interface SkillBatchImportResult {
+  success: boolean;
+  code?: string;
+  stage?: string;
+  message?: string;
+  error?: string;
+  collection?: {
+    id: string;
+    name: string;
+    sourceType?: string;
+    sourceName?: string;
+    totalSkills: number;
+    skills: string[];
+    importedAt?: string;
+  };
+  skills?: SkillMetadata[];
+  installedCount?: number;
+  skippedCount?: number;
+  failedCount?: number;
+  errors?: Array<{ id: string; error: string }>;
+  reloadCount?: number;
+  validationErrors?: string[];
 }
 
 export interface SkillImportResult {
   success: boolean;
   skill?: SkillMetadata;
+  skills?: SkillMetadata[];
+  collection?: {
+    id: string;
+    name: string;
+    count: number;
+    totalSkills?: number;
+    skills?: string[];
+    sourceType?: string;
+    sourceName?: string;
+    importedAt?: string;
+  };
+  installedCount?: number;
+  skippedCount?: number;
+  failedCount?: number;
+  reloadCount?: number;
   error?: string;
   code?: string;
   stage?: string;
