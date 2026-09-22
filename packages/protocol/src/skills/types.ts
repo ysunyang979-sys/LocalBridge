@@ -34,6 +34,25 @@ export interface SkillI18nText {
 
 export type SkillType = "nexus" | "raw";
 
+export interface SkillCollection {
+  id: string;
+  name: string;
+  description?: string;
+  source: SkillSource;
+  skillsCount: number;
+  enabledSkillsCount: number;
+  skillIds: string[];
+  importedAt?: string;
+}
+
+export interface SkillMatchInfo {
+  skillId: string;
+  name: string;
+  confidence: number;
+  reason: string;
+  collectionId?: string;
+}
+
 export interface SkillMetadata {
   id: string;
   version: string | number;
@@ -52,6 +71,10 @@ export interface SkillMetadata {
   validationErrors?: string[];
   securityWarning?: string;
   type?: SkillType;
+  collectionId?: string;
+  collectionName?: string;
+  summary?: string;
+  keywords?: string[];
   primaryDocument?: string;
   availableDocuments?: string[];
   documents?: string[];
@@ -69,6 +92,11 @@ export interface SkillMatchResult {
   reason: string;
   matchedTriggers?: string[];
   matchedIntent?: string;
+  primarySkill?: SkillMatchInfo;
+  relatedSkills?: SkillMatchInfo[];
+  allMatches?: SkillMatchInfo[];
+  skill?: SkillMetadata | null;
+  matched?: boolean;
 }
 
 export interface SkillListFilter {
@@ -76,28 +104,45 @@ export interface SkillListFilter {
   category?: string;
   source?: SkillSource;
   enabledOnly?: boolean;
+  collectionId?: string;
+  type?: SkillType;
 }
 
 export interface SkillListParams {
   projectId?: string;
+  collectionId?: string;
+  source?: SkillSource;
+  enabledOnly?: boolean;
+  type?: SkillType;
 }
 
 export interface SkillListResult {
   skills: SkillMetadata[];
+  collection?: {
+    id: string;
+    name: string;
+  };
+  count?: number;
 }
 
 export interface SkillGetParams {
   skillId: string;
   projectId?: string;
+  documentPath?: string;
 }
 
 export interface SkillGetResult {
   skill: SkillDefinition;
   id?: string;
+  skillId?: string;
   name?: string | SkillI18nText;
   type?: SkillType;
   source?: SkillSource;
+  collectionId?: string;
+  collectionName?: string;
+  enabled?: boolean;
   primaryDocument?: string;
+  documentPath?: string;
   content?: string;
   availableDocuments?: string[];
   documents?: string[];
@@ -106,6 +151,8 @@ export interface SkillGetResult {
 export interface SkillMatchParams {
   query: string;
   projectId?: string;
+  collectionId?: string;
+  layaRecommendation?: string;
 }
 
 export interface SkillImportPreview {
@@ -165,6 +212,12 @@ export interface SkillImportParams {
 export interface SkillImportResult {
   success: boolean;
   skill?: SkillMetadata;
+  skills?: SkillMetadata[];
+  collection?: {
+    id: string;
+    name: string;
+    count: number;
+  };
   error?: string;
   code?: string;
   stage?: string;

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
   SkillListParamsSchema,
   SkillGetParamsSchema,
@@ -17,7 +19,7 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
     "localbridge_skill_list",
     {
       description:
-        "List all available and valid Nexus skills for ChatGPT, including built-in recipes, user workflows, and project-specific skills.",
+        "List all available and valid Nexus skills for ChatGPT, including built-in recipes, user workflows, raw collections, and project-specific skills.",
       inputSchema: toMcpSchema(SkillListParamsSchema),
       annotations: TOOL_ANNOTATIONS.localbridge_skill_list,
     },
@@ -27,23 +29,65 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
         context.logAudit("mcp_tool_started", {
           toolName: "localbridge_skill_list",
           projectId: args?.projectId,
+          collectionId: args?.collectionId,
         });
 
+        const enabledOnly = args?.enabledOnly !== undefined ? Boolean(args.enabledOnly) : true;
         const skills = context.skillRegistry.listSkills({
           projectId: args?.projectId,
-          enabledOnly: true,
+          collectionId: args?.collectionId,
+          source: args?.source,
+          type: args?.type,
+          enabledOnly,
         });
+
+        // Format lightweight summaries (fast in-memory retrieval; never reads 100+ markdown files on disk)
+        const skillSummaries = skills.map((s) => ({
+          id: s.id,
+          name: typeof s.name === "string" ? s.name : s.name?.["zh-CN"] || s.name?.["en-US"] || s.id,
+          description:
+            typeof s.description === "string"
+              ? s.description
+              : s.description?.["zh-CN"] || s.description?.["en-US"] || s.summary || "",
+          type: s.type || "nexus",
+          enabled: s.enabled,
+          primaryDocument: s.primaryDocument || "SKILL.md",
+          summary: s.summary,
+          keywords: s.keywords,
+          collectionId: s.collectionId,
+          collectionName: s.collectionName,
+        }));
 
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_skill_list",
           projectId: args?.projectId,
+          collectionId: args?.collectionId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
         });
 
+        if (args?.collectionId) {
+          const coll = context.skillRegistry.getCollection(args.collectionId, args?.projectId);
+          const collName =
+            coll?.name ||
+            skills[0]?.collectionName ||
+            args.collectionId.replace(/^collection\./, "");
+
+          return formatToolSuccess({
+            collection: {
+              id: args.collectionId,
+              name: collName,
+              totalSkills: coll?.skillsCount ?? skills.length,
+              enabledSkills: coll?.enabledSkillsCount ?? skills.filter((s) => s.enabled).length,
+            },
+            count: skillSummaries.length,
+            skills: skillSummaries,
+          });
+        }
+
         return formatToolSuccess({
-          count: skills.length,
-          skills,
+          count: skillSummaries.length,
+          skills: skillSummaries,
         });
       } catch (error) {
         context.logAudit("mcp_tool_failed", {
@@ -63,7 +107,7 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
     "localbridge_skill_get",
     {
       description:
-        "Retrieve the complete declarative definition, step-by-step instructions (SKILL.md), and recommended MCP tools for a specific Nexus Skill.",
+        "Retrieve the complete declarative definition, step-by-step instructions (SKILL.md), or referenced documentation files for a specific Nexus Skill.",
       inputSchema: toMcpSchema(SkillGetParamsSchema),
       annotations: TOOL_ANNOTATIONS.localbridge_skill_get,
     },
@@ -73,6 +117,8 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
         context.logAudit("mcp_tool_started", {
           toolName: "localbridge_skill_get",
           projectId: args?.projectId,
+          skillId: args?.skillId,
+          documentPath: args?.documentPath,
         });
 
         const skill = context.skillRegistry.getSkill(args.skillId, args?.projectId);
@@ -83,9 +129,44 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
           );
         }
 
+        let docPath = skill.primaryDocument || "SKILL.md";
+        let docContent = skill.instructions;
+
+        if (args?.documentPath) {
+          const resolvedBase = path.resolve(skill.sourcePath);
+          const resolvedTarget = path.resolve(skill.sourcePath, args.documentPath);
+
+          // Path containment check (prevent Zip-Slip / path traversal outside skill directory)
+          if (!resolvedTarget.startsWith(resolvedBase + path.sep) && resolvedTarget !== resolvedBase) {
+            throw new LocalBridgeError(
+              LocalBridgeErrorCode.PATH_TRAVERSAL,
+              `Document path '${args.documentPath}' escapes skill directory`
+            );
+          }
+
+          if (!fs.existsSync(resolvedTarget) || fs.statSync(resolvedTarget).isDirectory()) {
+            throw new LocalBridgeError(
+              LocalBridgeErrorCode.FILE_NOT_FOUND,
+              `Document '${args.documentPath}' was not found in skill '${args.skillId}'`
+            );
+          }
+
+          docPath = args.documentPath;
+          try {
+            docContent = fs.readFileSync(resolvedTarget, "utf-8");
+          } catch (err: any) {
+            throw new LocalBridgeError(
+              LocalBridgeErrorCode.INTERNAL_ERROR,
+              `Failed to read document '${args.documentPath}': ${err?.message || String(err)}`
+            );
+          }
+        }
+
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_skill_get",
           projectId: args?.projectId,
+          skillId: args?.skillId,
+          documentPath: docPath,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
           clientName: "chatgpt",
@@ -94,12 +175,21 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
         return formatToolSuccess({
           skill,
           id: skill.id,
-          name: typeof skill.name === "string" ? skill.name : (skill.name?.["zh-CN"] || skill.name?.["en-US"] || skill.id),
+          skillId: skill.id,
+          name:
+            typeof skill.name === "string"
+              ? skill.name
+              : skill.name?.["zh-CN"] || skill.name?.["en-US"] || skill.id,
           type: skill.type || "nexus",
           source: skill.source,
+          collectionId: skill.collectionId,
+          collectionName: skill.collectionName,
+          enabled: skill.enabled,
           primaryDocument: skill.primaryDocument || "SKILL.md",
-          content: skill.instructions,
-          availableDocuments: skill.availableDocuments || (skill.primaryDocument ? [skill.primaryDocument] : ["SKILL.md"]),
+          documentPath: docPath,
+          content: docContent,
+          availableDocuments:
+            skill.availableDocuments || (skill.primaryDocument ? [skill.primaryDocument] : ["SKILL.md"]),
           documents: skill.documents || skill.availableDocuments || [],
         });
       } catch (error) {
@@ -130,6 +220,7 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
         context.logAudit("mcp_tool_started", {
           toolName: "localbridge_skill_match",
           projectId: args?.projectId,
+          collectionId: args?.collectionId,
         });
 
         let layaRec = args?.layaRecommendation;
@@ -147,11 +238,17 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
           }
         }
 
-        const match = context.skillRegistry.matchSkills(args.query, args?.projectId, layaRec);
+        const match = context.skillRegistry.matchSkills(
+          args.query,
+          args?.projectId,
+          layaRec,
+          args?.collectionId
+        );
 
         context.logAudit("mcp_tool_completed", {
           toolName: "localbridge_skill_match",
           projectId: args?.projectId,
+          collectionId: args?.collectionId,
           durationMs: Date.now() - startTime,
           resultStatus: "success",
           clientName: "chatgpt",

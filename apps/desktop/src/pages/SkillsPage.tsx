@@ -157,6 +157,27 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
     }
   };
 
+  const collections = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; total: number; enabled: number }>();
+    for (const s of skills) {
+      if (s.collectionId) {
+        let entry = map.get(s.collectionId);
+        if (!entry) {
+          entry = {
+            id: s.collectionId,
+            name: s.collectionName || s.collectionId.replace(/^collection\./, ""),
+            total: 0,
+            enabled: 0,
+          };
+          map.set(s.collectionId, entry);
+        }
+        entry.total++;
+        if (s.enabled) entry.enabled++;
+      }
+    }
+    return Array.from(map.values());
+  }, [skills]);
+
   const filteredSkills = useMemo(() => {
     return skills.filter((skill) => {
       if (sourceFilter !== "all" && skill.source !== sourceFilter) {
@@ -362,6 +383,37 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         </div>
       )}
 
+      {/* Collection Overview Banners */}
+      {!loading && collections.length > 0 && (
+        <div className="space-y-3">
+          {collections.map((coll) => (
+            <div
+              key={coll.id}
+              className="p-4 rounded-xl bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-950/30 dark:to-indigo-950/30 border border-sky-200 dark:border-sky-800/60 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                      {coll.name}
+                    </span>
+                    <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-100 dark:bg-sky-900/60 px-2 py-0.5 rounded-full border border-sky-200 dark:border-sky-700">
+                      ChatGPT 可使用 {coll.enabled} / {coll.total} 个 Skill
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    已启用的 Skill 可被 ChatGPT 自动发现、读取并用于任务。
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Skills Cards Grid */}
       {!loading && filteredSkills.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -479,6 +531,23 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60 font-semibold flex items-center gap-1">
                         <ShieldAlert className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                         {t.skills.statusWarning}
+                      </span>
+                    )}
+
+                    <span
+                      className={`text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                        skill.enabled
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60"
+                          : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${skill.enabled ? "bg-emerald-500" : "bg-slate-400"}`} />
+                      <span>{skill.enabled ? "ChatGPT 可自动使用" : "ChatGPT 不会自动使用"}</span>
+                    </span>
+
+                    {skill.collectionName && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                        {skill.collectionName}
                       </span>
                     )}
                   </div>

@@ -219,6 +219,10 @@ export class SkillLoader {
       securityWarning: validation.securityWarning,
       type: "nexus",
       primaryDocument: "SKILL.md",
+      collectionId: parsedYaml?.collectionId,
+      collectionName: parsedYaml?.collectionName,
+      summary: parsedYaml?.summary || (typeof parsedYaml?.description === "string" ? parsedYaml.description : parsedYaml?.description?.["zh-CN"] || parsedYaml?.description?.["en-US"] || ""),
+      keywords: parsedYaml?.keywords || (Array.isArray(parsedYaml?.triggers) ? parsedYaml.triggers : []),
     };
   }
 
@@ -322,20 +326,38 @@ export class SkillLoader {
       typeof skillName === "string" ? skillName : skillName["en-US"],
     ].filter(Boolean)));
 
+    // Extract summary and keywords
+    const leadSummary =
+      rawMeta?.summary ||
+      (typeof rawMeta?.description === "string"
+        ? rawMeta.description
+        : rawMeta?.description?.["zh-CN"] || rawMeta?.description?.["en-US"]) ||
+      (markdownContent ? markdownContent.slice(0, 160).replace(/[#*`\n]/g, " ").trim() : "");
+
+    const keywords = Array.from(new Set([
+      ...(Array.isArray(rawMeta?.keywords) ? rawMeta.keywords : []),
+      ...triggers,
+    ]));
+
+    const enabled =
+      rawMeta?.enabled !== undefined
+        ? Boolean(rawMeta.enabled)
+        : validation.status !== "invalid";
+
     return {
       id: skillId,
       version: rawMeta?.version || "1.0.0",
       name: nameObj,
       description: {
-        "zh-CN": rawMeta?.description?.["zh-CN"] || (markdownContent ? markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim() : ""),
-        "en-US": rawMeta?.description?.["en-US"] || (markdownContent ? markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim() : ""),
+        "zh-CN": typeof rawMeta?.description === "string" ? rawMeta.description : rawMeta?.description?.["zh-CN"] || leadSummary,
+        "en-US": typeof rawMeta?.description === "string" ? rawMeta.description : rawMeta?.description?.["en-US"] || leadSummary,
       },
       category: "general",
       risk: "low",
       triggers,
       tools: [],
       workflow: [],
-      enabled: validation.status !== "invalid",
+      enabled,
       source,
       sourcePath: skillDir,
       projectId,
@@ -344,6 +366,10 @@ export class SkillLoader {
       validationErrors: validation.errors.length > 0 ? validation.errors : undefined,
       securityWarning: validation.securityWarning,
       type: "raw",
+      collectionId: rawMeta?.collectionId,
+      collectionName: rawMeta?.collectionName,
+      summary: leadSummary,
+      keywords,
       primaryDocument: primaryDoc,
       availableDocuments: docFiles,
       documents: docFiles,

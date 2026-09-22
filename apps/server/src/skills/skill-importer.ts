@@ -756,6 +756,136 @@ export class SkillImporter {
         };
       }
 
+      if (!params.subPath && !params.customYaml) {
+        const candidateSkills = discoverSubCandidatesFromFolder(normSrc);
+        if (candidateSkills.length > 1) {
+          // Batch Collection Import
+          const pkgName = path.basename(normSrc);
+          const collectionId = "collection." + slugify(pkgName);
+          const collectionName = pkgName;
+
+          for (const candidate of candidateSkills) {
+            const candidateSrc = path.join(normSrc, candidate.path);
+            if (!fs.existsSync(candidateSrc)) continue;
+
+            const candStaging = path.join(stagingDir, candidate.id);
+            fs.mkdirSync(candStaging, { recursive: true });
+            this.copyDirRecursive(candidateSrc, candStaging);
+            this.sanitizeTargetDir(candStaging);
+
+            const candDocs: string[] = [];
+            try {
+              const scan = (d: string, prefix = "") => {
+                for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+                  const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+                  if (ent.isDirectory()) {
+                    if (["references", "docs", "doc", "examples", "agents", "skills"].includes(ent.name.toLowerCase())) {
+                      scan(path.join(d, ent.name), rel);
+                    }
+                  } else if (ent.isFile() && /\.(md|txt)$/i.test(ent.name)) {
+                    candDocs.push(rel);
+                  }
+                }
+              };
+              scan(candStaging);
+            } catch {}
+
+            let primaryDocName = "SKILL.md";
+            if (candDocs.some((d) => d.toLowerCase() === "skill.md")) {
+              primaryDocName = candDocs.find((d) => d.toLowerCase() === "skill.md")!;
+            } else if (candDocs.some((d) => d.toLowerCase() === "readme.md")) {
+              primaryDocName = candDocs.find((d) => d.toLowerCase() === "readme.md")!;
+            } else if (candDocs.length > 0) {
+              primaryDocName = candDocs[0];
+            }
+
+            let docContent = "";
+            const primaryFull = path.join(candStaging, primaryDocName);
+            if (fs.existsSync(primaryFull)) {
+              try { docContent = fs.readFileSync(primaryFull, "utf-8"); } catch {}
+            }
+
+            let skillMdText = "";
+            let readmeText = "";
+            if (primaryDocName.toLowerCase() === "skill.md") {
+              skillMdText = docContent;
+            } else {
+              readmeText = docContent;
+            }
+
+            const resolvedName = resolveRawSkillName({
+              skillMdContent: skillMdText,
+              readmeContent: readmeText,
+              folderName: candidate.name,
+            });
+
+            const summary = docContent ? docContent.slice(0, 160).replace(/[#*`\n]/g, " ").trim() : resolvedName;
+            const baseSlug = candidate.id.replace(/^user\./, "");
+            const keywords = Array.from(new Set([
+              candidate.id,
+              baseSlug,
+              ...baseSlug.split(/[-_.]+/),
+              resolvedName,
+              ...resolvedName.split(/[-_.]+/),
+            ].filter(Boolean)));
+
+            const rawSkillManifest = {
+              id: candidate.id,
+              name: resolvedName,
+              type: "raw",
+              version: "1.0.0",
+              collectionId,
+              collectionName,
+              enabled: true,
+              summary,
+              keywords,
+              description: summary,
+              primaryDocument: primaryDocName,
+              availableDocuments: candDocs.length > 0 ? candDocs : [primaryDocName],
+              documents: candDocs.length > 0 ? candDocs : [primaryDocName],
+              importedAt: new Date().toISOString(),
+            };
+
+            fs.writeFileSync(
+              path.join(candStaging, "raw-skill.json"),
+              JSON.stringify(rawSkillManifest, null, 2),
+              "utf-8"
+            );
+
+            const targetDir = this.resolveTargetDir(
+              candidate.id,
+              params.target,
+              params.projectId,
+              params.projectRoot
+            );
+            if (fs.existsSync(targetDir)) {
+              fs.rmSync(targetDir, { recursive: true, force: true });
+            }
+            fs.mkdirSync(targetDir, { recursive: true });
+            this.copyDirRecursive(candStaging, targetDir);
+            this.sanitizeTargetDir(targetDir);
+          }
+
+          const projectDirs =
+            params.projectId && params.projectRoot
+              ? [{ projectId: params.projectId, rootPath: params.projectRoot }]
+              : [];
+          this.registry.reload(projectDirs);
+
+          const allImported = this.registry.listSkills({ collectionId, projectId: params.projectId });
+          return {
+            success: true,
+            collection: {
+              id: collectionId,
+              name: collectionName,
+              count: allImported.length,
+            },
+            skills: allImported,
+            skill: allImported[0],
+          };
+        }
+      }
+
       const activeSrc = params.subPath ? path.resolve(normSrc, params.subPath) : normSrc;
       if (!fs.existsSync(activeSrc)) {
         return {
@@ -1214,6 +1344,137 @@ export class SkillImporter {
       }
 
       // Step 2: Resolve root prefix & subPath
+      if (!params.subPath && !params.customYaml) {
+        const singleRoot = detectZipRootPrefix(entries);
+        const candidateSkills = discoverSubCandidatesFromEntries(entries, singleRoot);
+        if (candidateSkills.length > 1) {
+          // Batch Collection Import
+          const pkgName = singleRoot.replace(/\/$/, "") ||
+            (typeof params.zipBufferOrPath === "string"
+              ? path.basename(params.zipBufferOrPath, ".zip")
+              : "skill-collection");
+          const collectionId = "collection." + slugify(pkgName);
+          const collectionName = pkgName;
+
+          for (const candidate of candidateSkills) {
+            const candPrefix = singleRoot ? `${singleRoot}${candidate.path}/` : `${candidate.path}/`;
+            const candidateSkillId = candidate.id;
+
+            const candStaging = path.join(stagingDir, candidate.id);
+            fs.mkdirSync(candStaging, { recursive: true });
+
+            const candDocs: string[] = [];
+            for (const e of entries) {
+              if (!e.name.startsWith(candPrefix) || e.isDirectory) continue;
+              const rel = e.name.slice(candPrefix.length);
+              if (!rel || EXECUTABLE_FILE_REGEX.test(rel)) continue;
+
+              const out = path.join(candStaging, rel);
+              fs.mkdirSync(path.dirname(out), { recursive: true });
+              fs.writeFileSync(out, e.data);
+              if (/\.(md|txt)$/i.test(rel)) {
+                candDocs.push(rel);
+              }
+            }
+
+            this.sanitizeTargetDir(candStaging);
+
+            let primaryDocName = "SKILL.md";
+            if (candDocs.some((d) => d.toLowerCase() === "skill.md")) {
+              primaryDocName = candDocs.find((d) => d.toLowerCase() === "skill.md")!;
+            } else if (candDocs.some((d) => d.toLowerCase() === "readme.md")) {
+              primaryDocName = candDocs.find((d) => d.toLowerCase() === "readme.md")!;
+            } else if (candDocs.length > 0) {
+              primaryDocName = candDocs[0];
+            }
+
+            let docContent = "";
+            const primaryFull = path.join(candStaging, primaryDocName);
+            if (fs.existsSync(primaryFull)) {
+              try { docContent = fs.readFileSync(primaryFull, "utf-8"); } catch {}
+            }
+
+            let skillMdText = "";
+            let readmeText = "";
+            if (primaryDocName.toLowerCase() === "skill.md") {
+              skillMdText = docContent;
+            } else {
+              readmeText = docContent;
+            }
+
+            const resolvedName = resolveRawSkillName({
+              skillMdContent: skillMdText,
+              readmeContent: readmeText,
+              folderName: candidate.name,
+            });
+
+            const summary = docContent ? docContent.slice(0, 160).replace(/[#*`\n]/g, " ").trim() : resolvedName;
+            const baseSlug = candidateSkillId.replace(/^user\./, "");
+            const keywords = Array.from(new Set([
+              candidateSkillId,
+              baseSlug,
+              ...baseSlug.split(/[-_.]+/),
+              resolvedName,
+              ...resolvedName.split(/[-_.]+/),
+            ].filter(Boolean)));
+
+            const rawSkillManifest = {
+              id: candidateSkillId,
+              name: resolvedName,
+              type: "raw",
+              version: "1.0.0",
+              collectionId,
+              collectionName,
+              enabled: true,
+              summary,
+              keywords,
+              description: summary,
+              primaryDocument: primaryDocName,
+              availableDocuments: candDocs.length > 0 ? candDocs : [primaryDocName],
+              documents: candDocs.length > 0 ? candDocs : [primaryDocName],
+              importedAt: new Date().toISOString(),
+            };
+
+            fs.writeFileSync(
+              path.join(candStaging, "raw-skill.json"),
+              JSON.stringify(rawSkillManifest, null, 2),
+              "utf-8"
+            );
+
+            const targetDir = this.resolveTargetDir(
+              candidateSkillId,
+              params.target,
+              params.projectId,
+              params.projectRoot
+            );
+            if (fs.existsSync(targetDir)) {
+              fs.rmSync(targetDir, { recursive: true, force: true });
+            }
+            fs.mkdirSync(targetDir, { recursive: true });
+            this.copyDirRecursive(candStaging, targetDir);
+            this.sanitizeTargetDir(targetDir);
+          }
+
+          const projectDirs =
+            params.projectId && params.projectRoot
+              ? [{ projectId: params.projectId, rootPath: params.projectRoot }]
+              : [];
+          this.registry.reload(projectDirs);
+
+          const allImported = this.registry.listSkills({ collectionId, projectId: params.projectId });
+          return {
+            success: true,
+            collection: {
+              id: collectionId,
+              name: collectionName,
+              count: allImported.length,
+            },
+            skills: allImported,
+            skill: allImported[0],
+          };
+        }
+      }
+
       const rootPrefix = resolveZipPrefix(entries, params.subPath);
 
       // Verify subPath exists in zip entries if specified

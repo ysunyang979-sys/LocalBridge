@@ -52,14 +52,21 @@ export type SkillYamlInput = z.infer<typeof SkillYamlSchema>;
 
 export const SkillListParamsSchema = z.object({
   projectId: z.string().optional(),
+  collectionId: z.string().optional(),
+  source: z.enum(["builtin", "user", "project"]).optional(),
+  enabledOnly: z.boolean().optional(),
+  type: z.enum(["nexus", "raw"]).optional(),
 });
 
 export const SkillGetParamsSchema = z.object({
   skillId: z.string().min(1, "skillId is required"),
   projectId: z.string().optional(),
+  documentPath: z.string().optional(),
 });
 
 export const SkillMatchParamsSchema = z.object({
   query: z.string().min(1, "query is required"),
   projectId: z.string().optional(),
+  collectionId: z.string().optional(),
+  layaRecommendation: z.string().optional(),
 });

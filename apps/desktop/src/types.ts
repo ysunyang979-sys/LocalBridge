@@ -752,11 +752,26 @@ export interface SkillMetadata {
   validationErrors?: string[];
   securityWarning?: string;
   type?: SkillType;
+  collectionId?: string;
+  collectionName?: string;
+  summary?: string;
+  keywords?: string[];
   primaryDocument?: string;
   availableDocuments?: string[];
   documents?: string[];
   importedAt?: string;
   filesCount?: number;
+}
+
+export interface SkillCollection {
+  id: string;
+  name: string;
+  description?: string;
+  source: SkillSource;
+  skillsCount: number;
+  enabledSkillsCount: number;
+  skillIds: string[];
+  importedAt?: string;
 }
 
 export interface SkillDefinition extends SkillMetadata {

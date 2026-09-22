@@ -1,4 +1,4 @@
-import type { SkillMatchResult, SkillMetadata } from "@localbridge/protocol";
+import type { SkillMatchResult, SkillMetadata, SkillMatchInfo } from "@localbridge/protocol";
 import type { SkillRegistry } from "./skill-registry.js";
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
@@ -75,22 +75,28 @@ export class SkillResolver {
   resolve(
     query: string,
     projectId?: string,
-    layaRecommendation?: string
+    layaRecommendation?: string,
+    collectionId?: string
   ): SkillMatchResult {
     const trimmed = query.trim();
     if (!trimmed) {
       return {
+        matched: false,
         matchedSkill: null,
+        skill: null,
         confidence: 0,
         reason: "Empty query provided",
+        primarySkill: undefined,
+        relatedSkills: [],
       };
     }
 
-    const availableSkills = this.registry.listSkills({ projectId });
     const lowerQuery = trimmed.toLowerCase();
 
     // 1. Explicit Skill Name / ID Matching (Highest Priority: 1.0)
-    for (const skill of availableSkills) {
+    // First, check all skills in registry for explicit mention to provide clear error if disabled
+    const allSkills = this.registry.listSkills({ projectId, collectionId });
+    for (const skill of allSkills) {
       const shortId = skill.id.startsWith("nexus.") ? skill.id.slice(6) : skill.id;
       const explicitPatterns = [
         skill.id.toLowerCase(),
@@ -101,32 +107,61 @@ export class SkillResolver {
         `使用 ${shortId.toLowerCase()} skill`,
         `使用 ${skill.id.toLowerCase()}`,
         `使用${shortId.toLowerCase()}技能`,
+        `使用 ${skill.name["zh-CN"]?.toLowerCase()}`,
+        `使用 ${skill.name["en-US"]?.toLowerCase()}`,
       ];
 
       const isExplicit = explicitPatterns.some((p) => lowerQuery.includes(p));
       if (isExplicit) {
         if (!skill.enabled) {
           return {
+            matched: false,
             matchedSkill: null,
+            skill: null,
             confidence: 0,
             reason: `Explicitly requested skill '${skill.id}' is currently disabled`,
+            primarySkill: undefined,
+            relatedSkills: [],
           };
         }
         if (skill.validationStatus === "invalid" || skill.validationStatus === "conflict") {
           return {
+            matched: false,
             matchedSkill: null,
+            skill: null,
             confidence: 0,
             reason: `Explicitly requested skill '${skill.id}' has validation errors or conflicts`,
+            primarySkill: undefined,
+            relatedSkills: [],
           };
         }
 
-        return {
-          matchedSkill: skill,
+        const skillNameStr = typeof skill.name === "string" ? skill.name : skill.name["zh-CN"] || skill.name["en-US"] || skill.id;
+        const primarySkill: SkillMatchInfo = {
+          skillId: skill.id,
+          name: skillNameStr,
           confidence: 1.0,
           reason: `Explicitly specified skill '${skill.id}'`,
+          collectionId: skill.collectionId,
+        };
+
+        return {
+          matched: true,
+          matchedSkill: skill,
+          skill,
+          confidence: 1.0,
+          reason: `Explicitly specified skill '${skill.id}'`,
+          primarySkill,
+          relatedSkills: [],
+          allMatches: [primarySkill],
         };
       }
     }
+
+    // Only enabled and valid skills are eligible for automatic matching
+    const candidatePool = allSkills.filter(
+      (s) => s.enabled && s.validationStatus !== "invalid" && s.validationStatus !== "conflict"
+    );
 
     // 2. High-Level Intent & Context Analysis
     const hasCodeFileExtension = CODE_FILE_EXTENSION_REGEX.test(lowerQuery);
@@ -134,29 +169,42 @@ export class SkillResolver {
       CODE_TARGET_KEYWORDS.find((w) => lowerQuery.includes(w)) ||
       (hasCodeFileExtension ? "file extension" : null);
 
-    const hasSpecificFileTarget = Boolean(hasCodeFileExtension || lowerQuery.includes("app.js") || lowerQuery.includes("这个文件") || lowerQuery.includes("这段代码") || lowerQuery.includes("这个函数") || lowerQuery.includes("js 文件") || lowerQuery.includes("ts 文件"));
+    const hasSpecificFileTarget = Boolean(
+      hasCodeFileExtension ||
+      lowerQuery.includes("app.js") ||
+      lowerQuery.includes("这个文件") ||
+      lowerQuery.includes("这段代码") ||
+      lowerQuery.includes("这个函数") ||
+      lowerQuery.includes("js 文件") ||
+      lowerQuery.includes("ts 文件")
+    );
     const matchedDebugAction = DEBUG_ACTION_KEYWORDS.find((w) => lowerQuery.includes(w));
     const matchedProjectTarget = PROJECT_TARGET_KEYWORDS.find((w) => lowerQuery.includes(w));
     const matchedInspectAction = PROJECT_INSPECT_ACTION_KEYWORDS.find((w) => lowerQuery.includes(w));
 
+    // Tokenize query words for semantic keyword matching
+    const queryTokens = lowerQuery
+      .split(/[\s,._\-\/\\:;!?()\[\]{}'"]+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 2);
+
     // 3. Score Candidate Skills
-    let bestSkill: SkillMetadata | null = null;
-    let highestScore = 0;
-    let bestReason = "";
-    let bestMatchedTriggers: string[] = [];
-    let bestMatchedIntent: string | undefined = undefined;
+    interface ScoredCandidate {
+      skill: SkillMetadata;
+      score: number;
+      reason: string;
+      matchedTriggers?: string[];
+      matchedIntent?: string;
+    }
+    const scoredList: ScoredCandidate[] = [];
 
-    for (const skill of availableSkills) {
-      if (!skill.enabled || skill.validationStatus === "invalid" || skill.validationStatus === "conflict") {
-        continue;
-      }
-
+    for (const skill of candidatePool) {
       let score = 0;
       const matchedTriggers: string[] = [];
       let matchedIntent: string | undefined = undefined;
 
       // A. Trigger keywords matching (Phrase Level)
-      for (const trigger of skill.triggers) {
+      for (const trigger of skill.triggers || []) {
         const lowerTrigger = trigger.toLowerCase();
         if (lowerQuery.includes(lowerTrigger)) {
           matchedTriggers.push(trigger);
@@ -169,28 +217,22 @@ export class SkillResolver {
 
       // B. Domain-specific Intent Heuristics (Disambiguating File Debug vs Project Inspection)
       if (skill.id === "nexus.code-debug") {
-        // Code-debug intent: Target is code/file AND asking about problems/debugging
         if ((hasSpecificFileTarget || matchedCodeTarget) && matchedDebugAction) {
-          // If query is specifically about project health without any specific code file, avoid code-debug false positive
           if (matchedProjectTarget && !hasSpecificFileTarget) {
-            // "看看这个项目有没有问题" -> Whole project inspection, not single file code-debug
             score += 0.20;
           } else {
             score += 0.78;
             matchedIntent = `file/code-level debugging: ${matchedCodeTarget || "file"} + ${matchedDebugAction}`;
           }
         } else if (matchedDebugAction && !matchedProjectTarget) {
-          // General debug action without project target (e.g. "有没有 bug", "为什么报错")
           score += 0.75;
           matchedIntent = `general code debugging: ${matchedDebugAction}`;
         }
       } else if (skill.id === "nexus.project-inspect") {
-        // Project inspection intent: Target is the project as a whole
         if (matchedProjectTarget && matchedInspectAction) {
           score += 0.82;
           matchedIntent = `project architecture & inspection: ${matchedProjectTarget} + ${matchedInspectAction}`;
         } else if (matchedProjectTarget && matchedDebugAction && !hasSpecificFileTarget) {
-          // "看看这个项目有没有问题" -> Project level health inspection
           score += 0.78;
           matchedIntent = `project-level health check: ${matchedProjectTarget} + ${matchedDebugAction}`;
         } else if (matchedProjectTarget && (lowerQuery.includes("看") || lowerQuery.includes("分析") || lowerQuery.includes("了解"))) {
@@ -216,13 +258,58 @@ export class SkillResolver {
       }
 
       // D. Description / Name matching
-      const zhName = skill.name["zh-CN"]?.toLowerCase() || "";
-      const enName = skill.name["en-US"]?.toLowerCase() || "";
-      if (lowerQuery.includes(zhName) || (enName && lowerQuery.includes(enName))) {
-        score += 0.20;
+      const zhName = (typeof skill.name === "string" ? skill.name : skill.name?.["zh-CN"] || "").toLowerCase();
+      const enName = (typeof skill.name === "string" ? skill.name : skill.name?.["en-US"] || "").toLowerCase();
+      if ((zhName && lowerQuery.includes(zhName)) || (enName && lowerQuery.includes(enName))) {
+        score += 0.25;
       }
 
-      // E. Laya Recommendation Bonus
+      // E. Raw & Collection Skill Keyword / Token Matching
+      const skillTokens = Array.from(new Set([
+        ...skill.id.replace(/^user\./, "").split(/[-_.]+/),
+        ...(skill.triggers || []).flatMap((t) => t.toLowerCase().split(/[-_\s.]+/)),
+        ...(skill.keywords || []).flatMap((k) => k.toLowerCase().split(/[-_\s.]+/)),
+      ])).map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 2);
+
+      const matchedSkillTokens: string[] = [];
+      for (const token of skillTokens) {
+        if (
+          lowerQuery.includes(token) ||
+          queryTokens.includes(token) ||
+          (token.length >= 4 && queryTokens.some((qt) => qt.includes(token) || token.includes(qt)))
+        ) {
+          matchedSkillTokens.push(token);
+        }
+      }
+
+      if (matchedSkillTokens.length > 0) {
+        const tokenBonus = Math.min(0.92, 0.55 + matchedSkillTokens.length * 0.12);
+        if (tokenBonus > score) {
+          score = tokenBonus;
+        } else {
+          score += Math.min(0.20, matchedSkillTokens.length * 0.08);
+        }
+        if (!matchedIntent) {
+          matchedIntent = `matched intent keywords: [${matchedSkillTokens.join(", ")}]`;
+        }
+      }
+
+      // F. Summary text matching
+      const summaryText = (
+        skill.summary ||
+        (typeof skill.description === "string"
+          ? skill.description
+          : skill.description?.["zh-CN"] || skill.description?.["en-US"] || "")
+      ).toLowerCase();
+
+      if (summaryText) {
+        const summaryHits = queryTokens.filter((qt) => qt.length >= 3 && summaryText.includes(qt));
+        if (summaryHits.length > 0) {
+          score += Math.min(0.20, summaryHits.length * 0.06);
+        }
+      }
+
+      // G. Laya Recommendation Bonus
       const isLayaRecommended = Boolean(
         layaRecommendation &&
           (layaRecommendation === skill.id ||
@@ -236,18 +323,16 @@ export class SkillResolver {
       // Normalized cap at 0.98
       const finalConfidence = Math.min(0.98, score);
 
-      if (finalConfidence > highestScore) {
-        highestScore = finalConfidence;
-        bestSkill = skill;
-        bestMatchedTriggers = matchedTriggers;
-        bestMatchedIntent = matchedIntent;
-
+      if (finalConfidence >= 0.40) {
         const reasonParts: string[] = [];
         if (matchedIntent) {
-          reasonParts.push(`matched intent: ${matchedIntent}`);
+          reasonParts.push(matchedIntent);
         }
         if (matchedTriggers.length > 0) {
           reasonParts.push(`matched triggers: [${matchedTriggers.join(", ")}]`);
+        }
+        if (matchedSkillTokens.length > 0 && !matchedIntent) {
+          reasonParts.push(`keywords: [${matchedSkillTokens.join(", ")}]`);
         }
         if (catMatches.length > 0) {
           reasonParts.push(`category: ${skill.category}`);
@@ -255,24 +340,67 @@ export class SkillResolver {
         if (isLayaRecommended) {
           reasonParts.push(`recommended by Laya`);
         }
-        bestReason = reasonParts.length > 0 ? reasonParts.join(", ") : `matched skill description`;
+        const reason = reasonParts.length > 0 ? reasonParts.join(", ") : `matched skill description`;
+
+        scoredList.push({
+          skill,
+          score: finalConfidence,
+          reason,
+          matchedTriggers: matchedTriggers.length > 0 ? matchedTriggers : undefined,
+          matchedIntent,
+        });
       }
     }
 
-    if (bestSkill && highestScore >= 0.40) {
+    // Sort descending by confidence score
+    scoredList.sort((a, b) => b.score - a.score);
+
+    if (scoredList.length > 0) {
+      const top = scoredList[0];
+      const related = scoredList.slice(1);
+
+      const topNameStr = typeof top.skill.name === "string" ? top.skill.name : top.skill.name?.["zh-CN"] || top.skill.name?.["en-US"] || top.skill.id;
+      const primarySkill: SkillMatchInfo = {
+        skillId: top.skill.id,
+        name: topNameStr,
+        confidence: Math.round(top.score * 100) / 100,
+        reason: top.reason,
+        collectionId: top.skill.collectionId,
+      };
+
+      const relatedSkills: SkillMatchInfo[] = related.map((r) => {
+        const rNameStr = typeof r.skill.name === "string" ? r.skill.name : r.skill.name?.["zh-CN"] || r.skill.name?.["en-US"] || r.skill.id;
+        return {
+          skillId: r.skill.id,
+          name: rNameStr,
+          confidence: Math.round(r.score * 100) / 100,
+          reason: r.reason,
+          collectionId: r.skill.collectionId,
+        };
+      });
+
       return {
-        matchedSkill: bestSkill,
-        confidence: Math.round(highestScore * 100) / 100,
-        reason: bestReason,
-        matchedTriggers: bestMatchedTriggers.length > 0 ? bestMatchedTriggers : undefined,
-        matchedIntent: bestMatchedIntent,
+        matched: true,
+        matchedSkill: top.skill,
+        skill: top.skill,
+        confidence: primarySkill.confidence,
+        reason: primarySkill.reason,
+        matchedTriggers: top.matchedTriggers,
+        matchedIntent: top.matchedIntent,
+        primarySkill,
+        relatedSkills,
+        allMatches: [primarySkill, ...relatedSkills],
       };
     }
 
     return {
+      matched: false,
       matchedSkill: null,
+      skill: null,
       confidence: 0,
       reason: "No matching skill found for query",
+      primarySkill: undefined,
+      relatedSkills: [],
     };
   }
 }

@@ -5,7 +5,8 @@ name:
   en-US: Fix Build Failures
 description:
   zh-CN: 安全复现构建失败、准确定位代码根因、执行最小范围修改并验证构建通过
-  en-US: Diagnose and safely fix project build errors with minimal code edits and verification
+  en-US: Diagnose and safely fix project build errors with minimal code edits and
+    verification
 category: debugging
 risk: medium
 triggers:

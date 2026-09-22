@@ -414,6 +414,23 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
                       v{skill.version}
                     </span>
                   )}
+                  {skill && (
+                    <span
+                      className={`text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                        skill.enabled
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60"
+                          : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${skill.enabled ? "bg-emerald-500" : "bg-slate-400"}`} />
+                      <span>{skill.enabled ? "ChatGPT 可自动使用" : "ChatGPT 不会自动使用"}</span>
+                    </span>
+                  )}
+                  {skill?.collectionName && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60 font-semibold">
+                      Collection: {skill.collectionName}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-500 dark:text-slate-400 font-mono">

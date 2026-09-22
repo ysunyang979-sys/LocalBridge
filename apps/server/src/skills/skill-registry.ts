@@ -1,8 +1,13 @@
+import fs from "node:fs";
+import path from "node:path";
+import YAML from "yaml";
 import type {
   SkillDefinition,
   SkillMetadata,
   SkillListFilter,
   SkillMatchResult,
+  SkillCollection,
+  SkillSource,
 } from "@localbridge/protocol";
 import type { SkillLoader } from "./skill-loader.js";
 import { SkillResolver } from "./skill-resolver.js";
@@ -81,6 +86,14 @@ export class SkillRegistry {
         continue;
       }
 
+      if (filter.collectionId && skill.collectionId !== filter.collectionId) {
+        continue;
+      }
+
+      if (filter.type && skill.type !== filter.type) {
+        continue;
+      }
+
       if (filter.enabledOnly && !skill.enabled) {
         continue;
       }
@@ -91,6 +104,49 @@ export class SkillRegistry {
     }
 
     return results;
+  }
+
+  listCollections(filter: { projectId?: string; source?: SkillSource } = {}): SkillCollection[] {
+    const collectionMap = new Map<string, SkillCollection>();
+
+    for (const skill of this.skills.values()) {
+      if (skill.source === "project" && filter.projectId && skill.projectId !== filter.projectId) {
+        continue;
+      }
+      if (filter.source && skill.source !== filter.source) {
+        continue;
+      }
+      if (!skill.collectionId) {
+        continue;
+      }
+
+      let coll = collectionMap.get(skill.collectionId);
+      if (!coll) {
+        coll = {
+          id: skill.collectionId,
+          name: skill.collectionName || skill.collectionId.replace(/^collection\./, ""),
+          source: skill.source,
+          skillsCount: 0,
+          enabledSkillsCount: 0,
+          skillIds: [],
+          importedAt: skill.importedAt,
+        };
+        collectionMap.set(skill.collectionId, coll);
+      }
+
+      coll.skillsCount++;
+      if (skill.enabled) {
+        coll.enabledSkillsCount++;
+      }
+      coll.skillIds.push(skill.id);
+    }
+
+    return Array.from(collectionMap.values());
+  }
+
+  getCollection(collectionId: string, projectId?: string): SkillCollection | null {
+    const list = this.listCollections({ projectId });
+    return list.find((c) => c.id === collectionId) || null;
   }
 
   getSkill(id: string, projectId?: string): SkillDefinition | null {
@@ -119,10 +175,37 @@ export class SkillRegistry {
     }
 
     skill.enabled = enabled;
+
+    // Persist to raw-skill.json or skill.yaml on disk if possible
+    try {
+      if (skill.sourcePath) {
+        const rawJsonPath = path.join(skill.sourcePath, "raw-skill.json");
+        if (fs.existsSync(rawJsonPath)) {
+          const content = JSON.parse(fs.readFileSync(rawJsonPath, "utf-8"));
+          content.enabled = enabled;
+          fs.writeFileSync(rawJsonPath, JSON.stringify(content, null, 2), "utf-8");
+        } else {
+          const yamlPath = path.join(skill.sourcePath, "skill.yaml");
+          const ymlPath = path.join(skill.sourcePath, "skill.yml");
+          const activeYaml = fs.existsSync(yamlPath) ? yamlPath : fs.existsSync(ymlPath) ? ymlPath : null;
+          if (activeYaml) {
+            const parsed = YAML.parse(fs.readFileSync(activeYaml, "utf-8")) || {};
+            parsed.enabled = enabled;
+            fs.writeFileSync(activeYaml, YAML.stringify(parsed), "utf-8");
+          }
+        }
+      }
+    } catch {}
+
     return true;
   }
 
-  matchSkills(query: string, projectId?: string, layaRecommendation?: string): SkillMatchResult {
-    return this.resolver.resolve(query, projectId, layaRecommendation);
+  matchSkills(
+    query: string,
+    projectId?: string,
+    layaRecommendation?: string,
+    collectionId?: string
+  ): SkillMatchResult {
+    return this.resolver.resolve(query, projectId, layaRecommendation, collectionId);
   }
 }
