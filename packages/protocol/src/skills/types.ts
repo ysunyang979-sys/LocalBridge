@@ -20,6 +20,10 @@ export interface SkillCandidate {
   path: string;
   hasManifest: boolean;
   docPath?: string;
+  qualityScore?: number;
+  isValidCandidate?: boolean;
+  qualityReasons?: string[];
+  isRoot?: boolean;
 }
 
 export interface SkillI18nText {
@@ -119,6 +123,10 @@ export interface SkillImportPreview {
   excludedFilesCount?: number;
   archiveTotalExecutables?: number;
   candidateExecutablesCount?: number;
+  manifestRoundTripValid?: boolean;
+  rootQualityNotice?: string;
+  candidateQualityScore?: number;
+  candidateQualityReasons?: string[];
 }
 
 export interface SkillImportParams {

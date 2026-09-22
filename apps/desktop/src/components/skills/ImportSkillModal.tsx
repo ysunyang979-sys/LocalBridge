@@ -24,6 +24,10 @@ import type {
   SkillCategory,
   SkillRisk,
 } from "../../types.js";
+import {
+  validateSkillManifestRoundTrip,
+  type SkillYamlInput,
+} from "@localbridge/protocol";
 import { useTranslation } from "../../i18n/useTranslation.js";
 import { bridge } from "../../api/bridge.js";
 
@@ -176,6 +180,21 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
         projectId,
         subPath: sub || undefined,
       });
+      if (
+        !sub &&
+        prev.candidateSkills &&
+        prev.candidateSkills.length > 0 &&
+        prev.candidateQualityScore !== undefined &&
+        prev.candidateQualityScore < 30
+      ) {
+        const firstValid =
+          prev.candidateSkills.find((c) => c.isValidCandidate !== false) ||
+          prev.candidateSkills[0];
+        if (firstValid && firstValid.path) {
+          setSelectedSubPath(firstValid.path);
+          return loadFolderPreview(folderPath, firstValid.path);
+        }
+      }
       setPreview(prev);
       syncWizardFieldsFromPreview(prev);
     } catch (err: any) {
@@ -201,6 +220,21 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
         projectId,
         subPath: sub || undefined,
       });
+      if (
+        !sub &&
+        prev.candidateSkills &&
+        prev.candidateSkills.length > 0 &&
+        prev.candidateQualityScore !== undefined &&
+        prev.candidateQualityScore < 30
+      ) {
+        const firstValid =
+          prev.candidateSkills.find((c) => c.isValidCandidate !== false) ||
+          prev.candidateSkills[0];
+        if (firstValid && firstValid.path) {
+          setSelectedSubPath(firstValid.path);
+          return loadZipPreview(pathOrBase64, firstValid.path);
+        }
+      }
       setPreview(prev);
       syncWizardFieldsFromPreview(prev);
     } catch (err: any) {
@@ -327,7 +361,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
     }
   };
 
-  const buildWizardYaml = (): string => {
+  const roundTrip = React.useMemo(() => {
     const trigs = wizardTriggers
       .split(/[,，]/)
       .map((s) => s.trim())
@@ -337,24 +371,41 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    return `id: ${wizardId.trim()}
-version: "1.0.0"
-name:
-  zh-CN: "${wizardNameZh.trim() || wizardId}"
-  en-US: "${wizardNameEn.trim() || wizardId}"
-description:
-  zh-CN: "${wizardDescZh.trim() || wizardNameZh}"
-  en-US: "${wizardDescEn.trim() || wizardNameEn}"
-category: ${wizardCategory}
-risk: ${wizardRisk}
-triggers:
-${trigs.length > 0 ? trigs.map((t) => `  - "${t}"`).join("\n") : `  - "${wizardId}"`}
-tools:
-${wizardTools.map((tool) => `  - "${tool}"`).join("\n")}
-workflow:
-${workflows.length > 0 ? workflows.map((w) => `  - "${w}"`).join("\n") : `  - "inspect"`}
-enabled: true
-`;
+    const manifestObj: SkillYamlInput = {
+      id: wizardId.trim() || "user.custom-skill",
+      version: "1.0.0",
+      name: {
+        "zh-CN": wizardNameZh.trim() || wizardId.trim() || "Custom Skill",
+        "en-US": wizardNameEn.trim() || wizardId.trim() || "Custom Skill",
+      },
+      description: {
+        "zh-CN": wizardDescZh.trim() || wizardNameZh.trim() || "Custom Skill Description",
+        "en-US": wizardDescEn.trim() || wizardNameEn.trim() || "Custom Skill Description",
+      },
+      category: wizardCategory as any,
+      risk: wizardRisk as any,
+      triggers: trigs.length > 0 ? trigs : [wizardId.trim() || "skill"],
+      tools: wizardTools.length > 0 ? wizardTools : ["localbridge_file_read"],
+      workflow: workflows.length > 0 ? workflows : ["inspect"],
+      enabled: true,
+    };
+
+    return validateSkillManifestRoundTrip(manifestObj);
+  }, [
+    wizardId,
+    wizardNameZh,
+    wizardNameEn,
+    wizardDescZh,
+    wizardDescEn,
+    wizardCategory,
+    wizardRisk,
+    wizardTriggers,
+    wizardTools,
+    wizardWorkflow,
+  ]);
+
+  const buildWizardYaml = (): string => {
+    return roundTrip.yaml;
   };
 
   const handleImport = async (overwrite = false, customYaml?: string) => {
@@ -602,13 +653,24 @@ enabled: true
                 onChange={(e) => handleSubCandidateChange(e.target.value)}
                 className="w-full text-xs font-medium rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-800 dark:text-slate-200"
               >
-                <option value="">-- 包根目录 (默认) --</option>
+                <option value="">
+                  {preview.candidateQualityScore !== undefined && preview.candidateQualityScore < 30
+                    ? "仓库根目录 (未检测到独立技能特征)"
+                    : "仓库根目录"}
+                </option>
                 {preview.candidateSkills.map((c) => (
                   <option key={c.path} value={c.path}>
-                    {c.name} {c.hasManifest ? "(含 skill.yaml)" : "(含 SKILL.md)"}
+                    {c.name} {c.hasManifest ? "(含 skill.yaml)" : "(含 SKILL.md)"} {c.qualityScore !== undefined ? `[评分: ${c.qualityScore}]` : ""}
                   </option>
                 ))}
               </select>
+
+              {preview.rootQualityNotice && !selectedSubPath && (
+                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[11px] leading-relaxed flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>{preview.rootQualityNotice}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -832,6 +894,35 @@ enabled: true
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        技能中文描述 (Description zh-CN)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={wizardDescZh}
+                        onChange={(e) => setWizardDescZh(e.target.value)}
+                        placeholder="请填写技能用途"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs resize-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        技能英文描述 (Description en-US)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={wizardDescEn}
+                        onChange={(e) => setWizardDescEn(e.target.value)}
+                        placeholder="Skill purpose"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs resize-none"
+                        required
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       Skill ID (小写字母/数字/点/破折号)
@@ -910,6 +1001,53 @@ enabled: true
                     />
                   </div>
 
+                  {/* Live Manifest Preview & Round-Trip Validation Status */}
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 text-xs">
+                        <Sparkles className="w-3.5 h-3.5 text-sky-500" />
+                        <span>生成的 Manifest 预览 (Generated Manifest Preview)</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${
+                            roundTrip.valid
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60"
+                              : "bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800/60"
+                          }`}
+                        >
+                          {roundTrip.valid ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                          <span>YAML Serialization Valid</span>
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${
+                            roundTrip.valid
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60"
+                              : "bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800/60"
+                          }`}
+                        >
+                          {roundTrip.valid ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                          <span>Skill Schema Valid</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {!roundTrip.valid && roundTrip.errors.length > 0 && (
+                      <div className="p-2 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-[11px] text-red-700 dark:text-red-300">
+                        <div className="font-semibold mb-1">Manifest 校验未通过：</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                          {roundTrip.errors.map((err, idx) => (
+                            <li key={idx}>{err}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="bg-slate-900 dark:bg-slate-950 rounded-lg p-2.5 font-mono text-[11px] text-slate-200 overflow-x-auto max-h-40 border border-slate-800">
+                      <pre>{roundTrip.yaml || "等待配置..."}</pre>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between pt-2">
                     <label className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400 select-none cursor-pointer">
                       <input
@@ -923,8 +1061,8 @@ enabled: true
 
                     <button
                       type="submit"
-                      disabled={importing}
-                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs shadow-xs"
+                      disabled={importing || !roundTrip.valid}
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-xs shadow-xs"
                     >
                       {importing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                       <span>生成并导入为 Nexus Skill</span>

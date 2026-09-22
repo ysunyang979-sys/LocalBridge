@@ -3,15 +3,17 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import YAML from "yaml";
-import type {
-  SkillImportPreview,
-  SkillImportResult,
-  SkillDeleteResult,
-  SkillRawContentResult,
-  SkillCategory,
-  SkillRisk,
-  SkillValidationStatus,
-  SkillCandidate,
+import {
+  type SkillImportPreview,
+  type SkillImportResult,
+  type SkillDeleteResult,
+  type SkillRawContentResult,
+  type SkillCategory,
+  type SkillRisk,
+  type SkillValidationStatus,
+  type SkillCandidate,
+  extractMarkdownMetadata,
+  evaluateCandidateQuality,
 } from "@localbridge/protocol";
 import type { SkillValidator } from "./skill-validator.js";
 import type { SkillLoader } from "./skill-loader.js";
@@ -36,24 +38,6 @@ function slugify(str: string): string {
   return slug.slice(0, 50) || "custom-skill";
 }
 
-function extractMarkdownTitleAndDesc(md: string): { title: string; desc: string } {
-  let title = "";
-  let desc = "";
-  const lines = md.split("\n");
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (!title && line.startsWith("#")) {
-      title = line.replace(/^#+\s*/, "").trim();
-    } else if (!desc && !line.startsWith("#") && !line.startsWith("```") && line.length > 3) {
-      desc = line.replace(/^[*_`#>-]+\s*/, "").slice(0, 150).trim();
-    }
-    if (title && desc) {
-      break;
-    }
-  }
-  return { title: title || "Custom Skill", desc: desc || "Imported Skill Package" };
-}
 
 function detectZipRootPrefix(entries: ZipEntry[]): string {
   const nonDirEntries = entries.filter((e) => !e.isDirectory && e.name.length > 0);
@@ -127,12 +111,35 @@ function discoverSubCandidatesFromEntries(entries: ZipEntry[], rootPrefix: strin
                 x.name.toLowerCase() === `${candidatePrefix}skill.md`)
           );
 
+          let candidateDoc = "";
+          if (hasMd) {
+            const docEntry = entries.find(
+              (x) =>
+                !x.isDirectory &&
+                (x.name === `${candidatePrefix}SKILL.md` ||
+                  x.name.toLowerCase() === `${candidatePrefix}skill.md`)
+            );
+            if (docEntry) {
+              candidateDoc = docEntry.data.toString("utf-8");
+            }
+          }
+          const quality = evaluateCandidateQuality({
+            isRoot: false,
+            hasSkillMd: hasMd,
+            hasManifest: hasYaml,
+            content: candidateDoc,
+          });
+
           candidates.push({
             id: `user.${slugify(name)}`,
             name,
             path: subRelPath,
             hasManifest: hasYaml,
             docPath: hasMd ? `${subRelPath}/SKILL.md` : undefined,
+            qualityScore: quality.score,
+            isValidCandidate: quality.isValidCandidate,
+            qualityReasons: quality.reasons,
+            isRoot: false,
           });
         }
       }
@@ -167,12 +174,31 @@ function discoverSubCandidatesFromFolder(rootPath: string): SkillCandidate[] {
                 fs.existsSync(path.join(subFull, "SKILL.md")) ||
                 fs.existsSync(path.join(subFull, "skill.md"));
 
+              let candidateDoc = "";
+              const candidateMdPath = path.join(subFull, "SKILL.md");
+              const candidateLowerMdPath = path.join(subFull, "skill.md");
+              if (fs.existsSync(candidateMdPath)) {
+                candidateDoc = fs.readFileSync(candidateMdPath, "utf-8");
+              } else if (fs.existsSync(candidateLowerMdPath)) {
+                candidateDoc = fs.readFileSync(candidateLowerMdPath, "utf-8");
+              }
+              const quality = evaluateCandidateQuality({
+                isRoot: false,
+                hasSkillMd: hasMd,
+                hasManifest: hasYaml,
+                content: candidateDoc,
+              });
+
               candidates.push({
                 id: `user.${slugify(dirName)}`,
                 name: dirName,
                 path: subRelPath,
                 hasManifest: hasYaml,
                 docPath: hasMd ? `${subRelPath}/SKILL.md` : undefined,
+                qualityScore: quality.score,
+                isValidCandidate: quality.isValidCandidate,
+                qualityReasons: quality.reasons,
+                isRoot: false,
               });
             }
           }
@@ -355,7 +381,19 @@ export class SkillImporter {
 
     // Case 2: No skill.yaml manifest, but documentation exists -> Needs Setup
     if (activeDocPath) {
-      const { title, desc } = extractMarkdownTitleAndDesc(markdownContent);
+      const meta = extractMarkdownMetadata(markdownContent, folderName);
+      const isRoot = !subPath || subPath === "" || subPath === "/";
+      const hasSkillMd = Boolean(
+        activeDocPath.toLowerCase().endsWith("/skill.md") ||
+          activeDocPath.toLowerCase().endsWith("\\skill.md")
+      );
+      const quality = evaluateCandidateQuality({
+        isRoot,
+        hasSkillMd,
+        hasManifest: false,
+        content: markdownContent,
+      });
+
       const tentativeId = "user." + slugify(folderName);
       let secWarning: string | undefined;
       if (archiveTotalExecutables > 0) {
@@ -365,12 +403,19 @@ export class SkillImporter {
             : `文件夹共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 0 个，导入时全部排除。`;
       }
 
+      let rootNotice: string | undefined;
+      if (isRoot && !quality.isValidCandidate && candidateSkills.length > 0) {
+        rootNotice = "该仓库根目录不是一个明确的 Skill。检测到包含多个子技能候选，请从下方选择具体的 Skill 目录导入。";
+      }
+
+      const finalDesc = isRoot && !quality.isValidCandidate ? "" : meta.desc;
+
       return this.buildPreview({
         id: tentativeId,
         version: "1.0.0",
         parsedYaml: {
-          name: { "zh-CN": title, "en-US": title },
-          description: { "zh-CN": desc, "en-US": desc },
+          name: { "zh-CN": meta.title, "en-US": meta.title },
+          description: { "zh-CN": finalDesc, "en-US": finalDesc },
           category: "general",
           risk: "medium",
           triggers: [folderName, folderName.replace(/[-_]/g, " ")],
@@ -392,6 +437,9 @@ export class SkillImporter {
         candidateSkills: candidateSkills.length > 0 ? candidateSkills : undefined,
         archiveTotalExecutables,
         candidateExecutablesCount,
+        rootQualityNotice: rootNotice,
+        candidateQualityScore: quality.score,
+        candidateQualityReasons: quality.reasons,
       });
     }
 
@@ -548,7 +596,23 @@ export class SkillImporter {
 
     // Case 2: No skill.yaml manifest, but documentation exists -> Needs Setup
     if (mdEntry) {
-      const { title, desc } = extractMarkdownTitleAndDesc(markdownContent);
+      const meta = extractMarkdownMetadata(markdownContent, pkgName);
+      const isRoot = !subPath || subPath === "" || subPath === "/";
+      const hasSkillMd = Boolean(
+        entries.some(
+          (e) =>
+            !e.isDirectory &&
+            (e.name === `${rootPrefix}SKILL.md` ||
+              e.name.toLowerCase() === `${rootPrefix}skill.md`)
+        )
+      );
+      const quality = evaluateCandidateQuality({
+        isRoot,
+        hasSkillMd,
+        hasManifest: false,
+        content: markdownContent,
+      });
+
       const tentativeId = "user." + slugify(pkgName);
       let secWarning: string | undefined;
       if (archiveTotalExecutables > 0) {
@@ -558,12 +622,19 @@ export class SkillImporter {
             : `归档共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 0 个，导入时全部排除。`;
       }
 
+      let rootNotice: string | undefined;
+      if (isRoot && !quality.isValidCandidate && candidateSkills.length > 0) {
+        rootNotice = "该仓库根目录不是一个明确的 Skill。检测到包含多个子技能候选，请从下方选择具体的 Skill 目录导入。";
+      }
+
+      const finalDesc = isRoot && !quality.isValidCandidate ? "" : meta.desc;
+
       return this.buildPreview({
         id: tentativeId,
         version: "1.0.0",
         parsedYaml: {
-          name: { "zh-CN": title, "en-US": title },
-          description: { "zh-CN": desc, "en-US": desc },
+          name: { "zh-CN": meta.title, "en-US": meta.title },
+          description: { "zh-CN": finalDesc, "en-US": finalDesc },
           category: "general",
           risk: "medium",
           triggers: [pkgName, pkgName.replace(/[-_]/g, " ")],
@@ -585,6 +656,9 @@ export class SkillImporter {
         candidateSkills: candidateSkills.length > 0 ? candidateSkills : undefined,
         archiveTotalExecutables,
         candidateExecutablesCount,
+        rootQualityNotice: rootNotice,
+        candidateQualityScore: quality.score,
+        candidateQualityReasons: quality.reasons,
       });
     }
 
@@ -651,7 +725,28 @@ export class SkillImporter {
 
       // Step 4: Inject customYaml or verify existing manifest in staging
       if (params.customYaml) {
-        fs.writeFileSync(path.join(stagingDir, "skill.yaml"), params.customYaml, "utf-8");
+        let parsedCustom: any;
+        try {
+          parsedCustom = YAML.parse(params.customYaml);
+        } catch (err: any) {
+          return {
+            success: false,
+            code: "MANIFEST_PARSE_ERROR",
+            stage: "manifest_injection",
+            message: `Failed to parse skill.yaml manifest: ${err.message}`,
+            error: err.message,
+            details: { parseError: err.message },
+          };
+        }
+
+        let canonicalYaml = params.customYaml;
+        try {
+          if (parsedCustom && typeof parsedCustom === "object") {
+            canonicalYaml = YAML.stringify(parsedCustom, { indent: 2, lineWidth: 0 });
+          }
+        } catch {}
+
+        fs.writeFileSync(path.join(stagingDir, "skill.yaml"), canonicalYaml, "utf-8");
       }
 
       const stagingYamlPath = path.join(stagingDir, "skill.yaml");
@@ -943,7 +1038,28 @@ export class SkillImporter {
 
       // Step 5: Manifest Injection / Setup in Staging
       if (params.customYaml) {
-        fs.writeFileSync(path.join(stagingDir, "skill.yaml"), params.customYaml, "utf-8");
+        let parsedCustom: any;
+        try {
+          parsedCustom = YAML.parse(params.customYaml);
+        } catch (err: any) {
+          return {
+            success: false,
+            code: "MANIFEST_PARSE_ERROR",
+            stage: "manifest_injection",
+            message: `Failed to parse skill.yaml manifest: ${err.message}`,
+            error: err.message,
+            details: { parseError: err.message },
+          };
+        }
+
+        let canonicalYaml = params.customYaml;
+        try {
+          if (parsedCustom && typeof parsedCustom === "object") {
+            canonicalYaml = YAML.stringify(parsedCustom, { indent: 2, lineWidth: 0 });
+          }
+        } catch {}
+
+        fs.writeFileSync(path.join(stagingDir, "skill.yaml"), canonicalYaml, "utf-8");
       }
 
       const stagingYamlPath = path.join(stagingDir, "skill.yaml");
@@ -1338,6 +1454,10 @@ export class SkillImporter {
     candidateSkills?: SkillCandidate[];
     archiveTotalExecutables?: number;
     candidateExecutablesCount?: number;
+    manifestRoundTripValid?: boolean;
+    rootQualityNotice?: string;
+    candidateQualityScore?: number;
+    candidateQualityReasons?: string[];
   }): SkillImportPreview {
     const yaml = params.parsedYaml || {};
     const existing = this.registry.getSkill(params.id, params.projectId);
@@ -1413,6 +1533,10 @@ export class SkillImporter {
       excludedFilesCount: excludedCount,
       archiveTotalExecutables: params.archiveTotalExecutables,
       candidateExecutablesCount: params.candidateExecutablesCount,
+      manifestRoundTripValid: params.manifestRoundTripValid ?? (params.validationStatus === "valid"),
+      rootQualityNotice: params.rootQualityNotice,
+      candidateQualityScore: params.candidateQualityScore,
+      candidateQualityReasons: params.candidateQualityReasons,
     };
   }
 

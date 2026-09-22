@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import childProcess from "node:child_process";
 import type { SystemProxyInfo } from "./types.js";
 
 export class WindowsSystemProxyResolver {
@@ -8,11 +8,11 @@ export class WindowsSystemProxyResolver {
     this.queryRunner =
       customQueryRunner ??
       (() => {
-        if (process.platform !== "win32") {
+        if (typeof process === "undefined" || process.platform !== "win32") {
           return "";
         }
         try {
-          return execSync(
+          return childProcess.execSync(
             'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"',
             {
               encoding: "utf-8",
