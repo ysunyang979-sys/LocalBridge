@@ -72,6 +72,73 @@ function formatStageName(stage?: string, lang: string = "zh-CN"): string {
   return lang === "zh-CN" ? item.zh : item.en;
 }
 
+export type ImportState =
+  | "idle"
+  | "source_selected"
+  | "candidate_selected"
+  | "needs_setup"
+  | "configuring"
+  | "preview_valid"
+  | "importing"
+  | "success"
+  | "invalid"
+  | "error";
+
+export interface ImportStateContext {
+  importSuccess: boolean;
+  importing: boolean;
+  previewLoading: boolean;
+  previewError: string | null;
+  importError: string | null;
+  sourcePath: string;
+  zipBase64: string;
+  preview: SkillImportPreview | null;
+  selectedSubPath: string;
+  showWizard: boolean;
+  roundTripValid: boolean;
+}
+
+export function computeImportState(ctx: ImportStateContext): ImportState {
+  if (ctx.importSuccess) return "success";
+  if (ctx.importing) return "importing";
+  if (ctx.previewLoading) return "source_selected";
+  if (ctx.previewError) return "error";
+
+  if (!ctx.sourcePath && !ctx.zipBase64 && !ctx.preview) {
+    return "idle";
+  }
+
+  if (!ctx.preview) {
+    return "source_selected";
+  }
+
+  // Has preview loaded
+  if (ctx.preview.isBuiltinConflict || ctx.preview.validationStatus === "invalid") {
+    return "invalid";
+  }
+
+  if (ctx.preview.candidateSkills && ctx.preview.candidateSkills.length > 1 && !ctx.selectedSubPath) {
+    return "candidate_selected";
+  }
+
+  if (ctx.preview.validationStatus === "needs_setup") {
+    if (!ctx.showWizard) {
+      return "needs_setup";
+    }
+    // When wizard is open, check if compiled YAML & schema are valid
+    if (ctx.roundTripValid) {
+      return "preview_valid";
+    }
+    return "configuring";
+  }
+
+  if (ctx.preview.validationStatus === "valid" || ctx.preview.validationStatus === "warning") {
+    return "preview_valid";
+  }
+
+  return "preview_valid";
+}
+
 export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
   isOpen,
   onClose,
@@ -93,6 +160,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   const [importing, setImporting] = useState(false);
+  const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importErrorData, setImportErrorData] = useState<StructuredImportError | null>(null);
 
@@ -154,14 +222,53 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
     const en = prev.name["en-US"] || prev.id;
     setWizardNameZh(zh);
     setWizardNameEn(en);
-    setWizardId(prev.id.startsWith("user.") ? prev.id : `user.${prev.id}`);
-    setWizardDescZh(prev.description["zh-CN"] || prev.description[language] || "");
-    setWizardDescEn(prev.description["en-US"] || prev.description["zh-CN"] || "");
-    setWizardCategory(prev.category || "general");
+    const cleanId = prev.id.replace(/^user\./, "");
+    setWizardId(`user.${cleanId}`);
+
+    const descZh =
+      prev.description["zh-CN"] ||
+      prev.description[language] ||
+      prev.description["en-US"] ||
+      "";
+    const descEn =
+      prev.description["en-US"] ||
+      prev.description["zh-CN"] ||
+      descZh;
+    setWizardDescZh(descZh || `${zh} 技能配置`);
+    setWizardDescEn(descEn || `${en} skill configuration`);
+
+    let cat: SkillCategory = prev.category || "general";
+    const combinedText = `${prev.id} ${zh} ${en} ${descZh} ${descEn} ${(prev.triggers || []).join(" ")}`.toLowerCase();
+    if (
+      combinedText.includes("reverse") ||
+      combinedText.includes("逆向") ||
+      combinedText.includes("inspect") ||
+      combinedText.includes("分析")
+    ) {
+      cat = "inspection";
+    } else if (combinedText.includes("test") || combinedText.includes("测试")) {
+      cat = "testing";
+    } else if (combinedText.includes("debug") || combinedText.includes("调试")) {
+      cat = "debugging";
+    } else if (combinedText.includes("refactor") || combinedText.includes("重构")) {
+      cat = "refactoring";
+    }
+    setWizardCategory(cat);
     setWizardRisk(prev.risk || "medium");
-    setWizardTriggers(prev.triggers.join(", ") || prev.id);
-    setWizardTools(prev.tools.length > 0 ? prev.tools : DEFAULT_MCP_TOOLS);
-    setWizardWorkflow(prev.workflow.join(", ") || "inspect, analyze, summarize");
+
+    const trigs =
+      prev.triggers && prev.triggers.length > 0
+        ? prev.triggers.join(", ")
+        : `${cleanId}, ${cleanId.replace(/[-_]/g, " ")}`;
+    setWizardTriggers(trigs);
+
+    setWizardTools(prev.tools && prev.tools.length > 0 ? prev.tools : DEFAULT_MCP_TOOLS);
+
+    setWizardWorkflow(
+      prev.workflow && prev.workflow.length > 0
+        ? prev.workflow.join(", ")
+        : "inspect_target, analyze_behavior, summarize_findings"
+    );
   };
 
   const loadFolderPreview = async (folderPath: string, sub?: string) => {
@@ -439,6 +546,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
       }
 
       if (result.success && result.skill) {
+        setImportSuccess(true);
         onSuccess(result.skill);
         onClose();
       } else {
@@ -485,6 +593,175 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
     e.preventDefault();
     const yaml = buildWizardYaml();
     handleImport(wizardOverwrite, yaml);
+  };
+
+  const importState = computeImportState({
+    importSuccess,
+    importing,
+    previewLoading,
+    previewError,
+    importError,
+    sourcePath,
+    zipBase64,
+    preview,
+    selectedSubPath,
+    showWizard,
+    roundTripValid: roundTrip.valid,
+  });
+
+  const handleContinue = () => {
+    if (selectedSourceType === "folder" && sourcePath) {
+      loadFolderPreview(sourcePath, selectedSubPath);
+    } else if (selectedSourceType === "zip" && (sourcePath || zipBase64)) {
+      loadZipPreview(
+        { path: sourcePath || undefined, base64: zipBase64 || undefined },
+        selectedSubPath
+      );
+    }
+  };
+
+  const handleConfirmCandidate = () => {
+    handleContinue();
+  };
+
+  const renderPrimaryCTA = () => {
+    switch (importState) {
+      case "idle":
+        return (
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed shadow-none"
+          >
+            <span>{t.skills.importButton}</span>
+          </button>
+        );
+
+      case "source_selected":
+        return (
+          <button
+            type="button"
+            disabled={previewLoading}
+            onClick={handleContinue}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition disabled:opacity-50"
+          >
+            {previewLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>{language === "zh-CN" ? "继续" : "Continue"}</span>
+          </button>
+        );
+
+      case "candidate_selected":
+        return (
+          <button
+            type="button"
+            onClick={handleConfirmCandidate}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition"
+          >
+            <span>{language === "zh-CN" ? "确认候选" : "Confirm Candidate"}</span>
+          </button>
+        );
+
+      case "needs_setup":
+        return (
+          <button
+            type="button"
+            onClick={() => setShowWizard(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>{t.skills.configureAndImport}</span>
+          </button>
+        );
+
+      case "configuring":
+        return (
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed shadow-none"
+            title={roundTrip.errors.join("; ") || t.skills.completeConfig}
+          >
+            <span>{t.skills.completeConfig}</span>
+          </button>
+        );
+
+      case "preview_valid":
+        if (preview?.hasConflict && !preview.isBuiltinConflict) {
+          return (
+            <button
+              type="button"
+              onClick={() =>
+                handleImport(true, showWizard ? buildWizardYaml() : undefined)
+              }
+              disabled={importing}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white shadow-xs transition"
+            >
+              {importing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>{t.skills.replaceButton}</span>
+            </button>
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={() =>
+              handleImport(wizardOverwrite, showWizard ? buildWizardYaml() : undefined)
+            }
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition"
+          >
+            {importing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>{t.skills.importButton}</span>
+          </button>
+        );
+
+      case "importing":
+        return (
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 text-white opacity-70 cursor-not-allowed shadow-none"
+          >
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{language === "zh-CN" ? "正在导入..." : "Importing..."}</span>
+          </button>
+        );
+
+      case "success":
+        return (
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>{language === "zh-CN" ? "完成" : "Done"}</span>
+          </button>
+        );
+
+      case "invalid":
+        return (
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed shadow-none"
+            title={preview?.validationErrors?.join("; ") || "Invalid skill"}
+          >
+            <span>{t.skills.importButton}</span>
+          </button>
+        );
+
+      case "error":
+        return (
+          <button
+            type="button"
+            disabled
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 cursor-not-allowed shadow-none"
+          >
+            <span>{t.skills.importButton}</span>
+          </button>
+        );
+    }
   };
 
   const displayName = preview
@@ -823,17 +1100,25 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
                 <span className="flex items-center gap-1">
                   <Workflow className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                   <span>
-                    {preview.workflowStepsCount} {t.skills.workflowSteps}
+                    {preview.validationStatus === "needs_setup" && !showWizard
+                      ? t.skills.workflowPending
+                      : showWizard
+                      ? `${wizardWorkflow.split(/[,，\n]/).filter(Boolean).length} ${t.skills.workflowSteps}`
+                      : `${preview.workflowStepsCount} ${t.skills.workflowSteps}`}
                   </span>
                 </span>
                 <span className="flex items-center gap-1">
                   <Wrench className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                   <span>
-                    {preview.toolsCount} {t.skills.toolsCount}
+                    {preview.validationStatus === "needs_setup" && !showWizard
+                      ? t.skills.toolsPending
+                      : showWizard
+                      ? `${wizardTools.length} ${t.skills.toolsCount}`
+                      : `${preview.toolsCount} ${t.skills.toolsCount}`}
                   </span>
                 </span>
                 <span className="uppercase text-[10px] px-2 py-0.5 rounded font-semibold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  {preview.risk} Risk
+                  {showWizard ? wizardRisk : preview.risk} Risk
                 </span>
               </div>
 
@@ -843,19 +1128,21 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="font-bold text-sky-900 dark:text-sky-200 flex items-center gap-1.5">
                       <Settings className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                      <span>未发现 Nexus skill.yaml</span>
+                      <span>{language === "zh-CN" ? "未发现 Nexus skill.yaml" : "Nexus skill.yaml not found"}</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setShowWizard(!showWizard)}
-                      className="px-3 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white font-semibold text-[11px] shadow-2xs transition flex items-center gap-1"
+                      className="text-[11px] text-sky-700 dark:text-sky-400 hover:text-sky-900 dark:hover:text-sky-200 hover:underline flex items-center gap-1 font-medium transition"
                     >
-                      <span>{showWizard ? "收起向导" : "转换为 Nexus Skill"}</span>
+                      <span>{showWizard ? t.skills.hideConfig : t.skills.viewConfig}</span>
                       {showWizard ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                   <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
-                    此外部包包含说明文档（SKILL.md / README.md），你可以通过配置向导快速为其生成 Nexus 声明式定义并安装。
+                    {language === "zh-CN"
+                      ? "需要生成声明式配置后才能导入。点击下方「配置并导入」开始配置。"
+                      : "Declarative configuration must be generated before importing. Click 'Configure & Import' below to proceed."}
                   </p>
                 </div>
               )}
@@ -1186,7 +1473,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
           </div>
         </div>
 
-        {/* Section 6: Modal Footer with Visible Disabled Button */}
+        {/* Section 6: Modal Footer with Single Primary CTA Driven by importState */}
         <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-3 bg-slate-50/70 dark:bg-slate-900/30">
           <button
             type="button"
@@ -1197,33 +1484,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
             {t.common.cancel}
           </button>
 
-          {preview && preview.hasConflict && !preview.isBuiltinConflict ? (
-            <button
-              type="button"
-              onClick={() => handleImport(true)}
-              disabled={importing || !preview.valid}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white shadow-xs transition disabled:opacity-65 disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:border disabled:border-slate-200 dark:disabled:border-slate-700 disabled:shadow-none"
-            >
-              {importing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{t.skills.replaceButton}</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => handleImport(false)}
-              disabled={
-                importing ||
-                !preview ||
-                (!preview.valid && preview.validationStatus !== "warning") ||
-                preview.isBuiltinConflict ||
-                preview.validationStatus === "needs_setup"
-              }
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition disabled:opacity-65 disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-500 disabled:border disabled:border-slate-200 dark:disabled:border-slate-700 disabled:shadow-none"
-            >
-              {importing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{t.skills.importButton}</span>
-            </button>
-          )}
+          {renderPrimaryCTA()}
         </div>
       </div>
     </div>

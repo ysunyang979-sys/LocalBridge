@@ -45,6 +45,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
 
   // Modals & Drawer State
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [highlightedSkillId, setHighlightedSkillId] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
 
   // Toast State
@@ -113,7 +114,12 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       imported.name["en-US"] ||
       imported.id;
     showToast(t.skills.importSuccess, `${name} (${imported.id})`);
+    setSourceFilter("user");
+    setHighlightedSkillId(imported.id);
     loadSkills();
+    setTimeout(() => {
+      setHighlightedSkillId(null);
+    }, 4000);
   };
 
   const getRiskBadge = (risk: string) => {
@@ -381,7 +387,9 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                 key={skill.id}
                 onClick={() => setSelectedSkillId(skill.id)}
                 className={`group p-4 rounded-xl bg-white dark:bg-[#0d1320] border transition-all cursor-pointer flex flex-col justify-between hover:shadow-md ${
-                  !skill.enabled
+                  skill.id === highlightedSkillId
+                    ? "ring-2 ring-sky-500 border-sky-500 bg-sky-50/30 dark:bg-sky-950/30 shadow-lg scale-[1.01]"
+                    : !skill.enabled
                     ? "opacity-60 border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40"
                     : isConflict || isInvalid
                     ? "border-rose-300 dark:border-rose-800/60 hover:border-rose-500"

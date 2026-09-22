@@ -1070,6 +1070,12 @@ export interface I18nDictionary {
     userSection: string;
     projectSection: string;
     importButton: string;
+    configureAndImport: string;
+    completeConfig: string;
+    viewConfig: string;
+    hideConfig: string;
+    workflowPending: string;
+    toolsPending: string;
     importModalTitle: string;
     importModalSubtitle: string;
     dragDropTitle: string;
