@@ -756,4 +756,59 @@ export interface SkillListFilter {
   enabledOnly?: boolean;
 }
 
+export interface SkillImportPreview {
+  valid: boolean;
+  id: string;
+  version: string | number;
+  name: Record<string, string>;
+  description: Record<string, string>;
+  category: SkillCategory;
+  risk: SkillRisk;
+  toolsCount: number;
+  workflowStepsCount: number;
+  tools: string[];
+  workflow: string[];
+  triggers: string[];
+  validationStatus: SkillValidationStatus;
+  validationErrors: string[];
+  securityWarning?: string;
+  hasConflict: boolean;
+  existingVersion?: string | number;
+  existingSource?: SkillSource;
+  isBuiltinConflict: boolean;
+  executableFilesFound?: string[];
+  rawYaml?: string;
+  markdownContent?: string;
+}
+
+export interface SkillImportParams {
+  sourceType: "folder" | "zip";
+  sourcePath?: string;
+  zipBase64?: string;
+  target: "user" | "project";
+  projectId?: string;
+  projectRoot?: string;
+  overwrite?: boolean;
+}
+
+export interface SkillImportResult {
+  success: boolean;
+  skill?: SkillMetadata;
+  error?: string;
+  validationErrors?: string[];
+}
+
+export interface SkillDeleteResult {
+  success: boolean;
+  skillId: string;
+  removedPath?: string;
+  error?: string;
+}
+
+export interface SkillRawContentResult {
+  skillId: string;
+  rawYaml: string;
+  markdownContent: string;
+}
+
 

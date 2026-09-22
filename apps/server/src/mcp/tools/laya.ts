@@ -21,7 +21,7 @@ export function registerLayaTools(server: McpServer, context: McpContext): void 
       inputSchema: toMcpSchema(LayaMcpStatusParamsSchema),
       annotations: TOOL_ANNOTATIONS.localbridge_laya_status,
     },
-    async (args: any) => {
+    async (_args: any) => {
       const startTime = Date.now();
       try {
         context.logAudit("mcp_tool_started", {

@@ -1164,6 +1164,155 @@ fn skills_match(
 }
 
 #[tauri::command]
+fn skills_preview_import(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    source_type: String,
+    source_path: Option<String>,
+    zip_base64: Option<String>,
+    target: Option<String>,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "sourceType": source_type,
+        "target": target.unwrap_or_else(|| "user".to_string()),
+    });
+    if let Some(sp) = source_path {
+        payload["sourcePath"] = serde_json::Value::String(sp);
+    }
+    if let Some(zb) = zip_base64 {
+        payload["zipBase64"] = serde_json::Value::String(zb);
+    }
+    if let Some(pid) = project_id {
+        payload["projectId"] = serde_json::Value::String(pid);
+    }
+    desktop_management_call(state, "POST".into(), "/api/skills/preview".into(), Some(payload))
+}
+
+#[tauri::command]
+fn skills_import_folder(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    source_path: String,
+    target: String,
+    project_id: Option<String>,
+    project_root: Option<String>,
+    overwrite: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "sourceType": "folder",
+        "sourcePath": source_path,
+        "target": target,
+        "overwrite": overwrite.unwrap_or(false),
+    });
+    if let Some(pid) = project_id {
+        payload["projectId"] = serde_json::Value::String(pid);
+    }
+    if let Some(pr) = project_root {
+        payload["projectRoot"] = serde_json::Value::String(pr);
+    }
+    desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload))
+}
+
+#[tauri::command]
+fn skills_import_zip(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    source_path: Option<String>,
+    zip_base64: Option<String>,
+    target: String,
+    project_id: Option<String>,
+    project_root: Option<String>,
+    overwrite: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "sourceType": "zip",
+        "target": target,
+        "overwrite": overwrite.unwrap_or(false),
+    });
+    if let Some(sp) = source_path {
+        payload["sourcePath"] = serde_json::Value::String(sp);
+    }
+    if let Some(zb) = zip_base64 {
+        payload["zipBase64"] = serde_json::Value::String(zb);
+    }
+    if let Some(pid) = project_id {
+        payload["projectId"] = serde_json::Value::String(pid);
+    }
+    if let Some(pr) = project_root {
+        payload["projectRoot"] = serde_json::Value::String(pr);
+    }
+    desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload))
+}
+
+#[tauri::command]
+fn skills_delete(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    skill_id: String,
+    target: Option<String>,
+    project_id: Option<String>,
+    project_root: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut qs = Vec::new();
+    if let Some(t) = target {
+        qs.push(format!("target={}", t));
+    }
+    if let Some(pid) = project_id {
+        qs.push(format!("projectId={}", pid));
+    }
+    if let Some(pr) = project_root {
+        qs.push(format!("projectRoot={}", pr));
+    }
+    let query_str = if qs.is_empty() {
+        "".to_string()
+    } else {
+        format!("?{}", qs.join("&"))
+    };
+    let path = format!("/api/skills/{}{}", skill_id, query_str);
+    desktop_management_call(state, "DELETE".into(), path, None)
+}
+
+#[tauri::command]
+fn skills_get_raw(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    skill_id: String,
+    project_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let path = match project_id {
+        Some(p) => format!("/api/skills/{}/raw?projectId={}", skill_id, p),
+        None => format!("/api/skills/{}/raw", skill_id),
+    };
+    desktop_management_call(state, "GET".into(), path, None)
+}
+
+#[tauri::command]
+fn skills_open_source_folder(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() || !p.is_dir() {
+        return Err("Directory does not exist".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(p)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(p)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(p)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn desktop_list_jobs(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     project_id: Option<String>,
@@ -2402,6 +2551,12 @@ fn main() {
             skills_reload,
             skills_toggle,
             skills_match,
+            skills_preview_import,
+            skills_import_folder,
+            skills_import_zip,
+            skills_delete,
+            skills_get_raw,
+            skills_open_source_folder,
             quit_nexus
         ])
         .setup(move |app| {

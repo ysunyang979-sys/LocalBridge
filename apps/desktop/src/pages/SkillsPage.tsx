@@ -8,6 +8,9 @@ import {
   Workflow,
   Wrench,
   ChevronRight,
+  Upload,
+  CheckCircle2,
+  X,
 } from "lucide-react";
 import type {
   SkillMetadata,
@@ -17,15 +20,18 @@ import type {
 import { useTranslation } from "../i18n/useTranslation.js";
 import { bridge } from "../api/bridge.js";
 import { SkillDetailDrawer } from "../components/skills/SkillDetailDrawer.js";
+import { ImportSkillModal } from "../components/skills/ImportSkillModal.js";
 
 interface SkillsPageProps {
   uxMode: UserExperienceMode;
   projectId?: string;
+  projectRoot?: string;
 }
 
 export const SkillsPage: React.FC<SkillsPageProps> = ({
   uxMode,
   projectId,
+  projectRoot,
 }) => {
   const { t, language } = useTranslation();
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
@@ -36,10 +42,24 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<"all" | SkillSource>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
-  // Selected Skill for Drawer
+  // Modals & Drawer State
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+
+  // Toast State
+  const [toastMessage, setToastMessage] = useState<{
+    title: string;
+    description?: string;
+    type: "success" | "error";
+  } | null>(null);
+
+  const showToast = (title: string, description?: string, type: "success" | "error" = "success") => {
+    setToastMessage({ title, description, type });
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
 
   const loadSkills = useCallback(async () => {
     setLoading(true);
@@ -63,8 +83,10 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
     try {
       const res = await bridge.reloadSkills();
       setSkills(res.skills || []);
+      showToast(t.skills.reloadSuccess);
     } catch (err: any) {
-      setError(err?.message || "Failed to reload skills");
+      setError(err?.message || t.skills.reloadError);
+      showToast(t.skills.reloadError, err?.message, "error");
     } finally {
       setReloading(false);
     }
@@ -76,14 +98,22 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       const res = await bridge.toggleSkill(skill.id, !skill.enabled);
       if (res.success) {
         setSkills((prev) =>
-          prev.map((s) =>
-            s.id === skill.id ? { ...s, enabled: !skill.enabled } : s
-          )
+          prev.map((s) => (s.id === skill.id ? { ...s, enabled: !skill.enabled } : s))
         );
       }
     } catch (err: any) {
       alert(err?.message || "Failed to toggle skill");
     }
+  };
+
+  const handleImportSuccess = (imported: SkillMetadata) => {
+    const name =
+      imported.name[language] ||
+      imported.name["zh-CN"] ||
+      imported.name["en-US"] ||
+      imported.id;
+    showToast(t.skills.importSuccess, `${name} (${imported.id})`);
+    loadSkills();
   };
 
   const getRiskBadge = (risk: string) => {
@@ -126,10 +156,6 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       if (sourceFilter !== "all" && skill.source !== sourceFilter) {
         return false;
       }
-      // Category filter
-      if (categoryFilter !== "all" && skill.category !== categoryFilter) {
-        return false;
-      }
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -138,9 +164,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         const descZh = (skill.description["zh-CN"] || "").toLowerCase();
         const descEn = (skill.description["en-US"] || "").toLowerCase();
         const idMatch = skill.id.toLowerCase().includes(q);
-        const triggerMatch = skill.triggers.some((t) =>
-          t.toLowerCase().includes(q)
-        );
+        const triggerMatch = skill.triggers.some((t) => t.toLowerCase().includes(q));
         const toolMatch = skill.tools.some((tl) => tl.toLowerCase().includes(q));
 
         return (
@@ -155,82 +179,121 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       }
       return true;
     });
-  }, [skills, sourceFilter, categoryFilter, searchQuery]);
+  }, [skills, sourceFilter, searchQuery]);
+
+  // Check if active source filter is empty specifically
+  const isUserFilterEmpty = sourceFilter === "user" && filteredSkills.length === 0;
+  const isProjectFilterEmpty = sourceFilter === "project" && filteredSkills.length === 0;
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-y-auto p-6 space-y-6">
-      {/* Top Controls: Search, Filters, Reload Button */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-        {/* Search Bar */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t.skills.searchPlaceholder}
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-theme-card border border-theme-subtle text-xs text-theme-primary placeholder-theme-muted focus:outline-none focus:border-sky-500 transition"
-          />
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 p-4 rounded-xl shadow-xl bg-theme-base border border-theme-subtle animate-in slide-in-from-bottom-4 duration-200 max-w-sm">
+          {toastMessage.type === "success" ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-semibold text-theme-primary">
+              {toastMessage.title}
+            </div>
+            {toastMessage.description && (
+              <div className="text-[11px] text-theme-muted mt-0.5 break-words">
+                {toastMessage.description}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="p-1 rounded text-theme-muted hover:text-theme-primary transition"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
+      )}
 
-        {/* Source Filter Tabs */}
-        <div className="flex items-center gap-1.5 p-1 rounded-lg bg-theme-card border border-theme-subtle">
-          {(
-            [
-              { id: "all", label: t.skills.filterAll },
-              { id: "builtin", label: t.skills.filterBuiltin },
-              { id: "user", label: t.skills.filterUser },
-              { id: "project", label: t.skills.filterProject },
-            ] as const
-          ).map((tab) => (
+      {/* Top Header & Action Row */}
+      <div className="flex flex-col gap-4 pb-2 border-b border-theme-subtle">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-theme-primary flex items-center gap-2.5">
+              <Sparkles className="w-5 h-5 text-sky-500" />
+              <span>{t.skills.title}</span>
+            </h1>
+            <p className="text-xs text-theme-muted mt-1">
+              {t.skills.subtitle}
+            </p>
+          </div>
+
+          {/* Primary & Secondary Action Buttons */}
+          <div className="flex items-center gap-2.5 self-end sm:self-auto">
             <button
-              key={tab.id}
-              onClick={() => setSourceFilter(tab.id)}
-              className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                sourceFilter === tab.id
-                  ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold shadow-xs"
-                  : "text-theme-secondary hover:text-theme-primary"
-              }`}
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-sky-500 text-white hover:bg-sky-600 text-xs font-semibold shadow-xs transition active:scale-95"
             >
-              {tab.label}
+              <Upload className="w-3.5 h-3.5" />
+              <span>{t.skills.importButton}</span>
             </button>
-          ))}
+
+            <button
+              onClick={handleReload}
+              disabled={reloading}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-theme-card border border-theme-subtle hover:bg-theme-card-hover text-xs font-medium text-theme-secondary hover:text-theme-primary transition disabled:opacity-50"
+              title={t.skills.reloadButton}
+            >
+              <RotateCw
+                className={`w-3.5 h-3.5 ${reloading ? "animate-spin text-sky-500" : ""}`}
+              />
+              <span>{reloading ? t.skills.reloading : t.skills.reloadButton}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Category Filter Dropdown */}
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          aria-label="Category filter"
-          className="px-2.5 py-1.5 rounded-lg bg-theme-card border border-theme-subtle text-xs text-theme-secondary focus:outline-none focus:border-sky-500 transition cursor-pointer"
-        >
-          <option value="all">{t.skills.filterAll} ({t.common.all})</option>
-          <option value="inspection">{t.skills.categoryInspection}</option>
-          <option value="debugging">{t.skills.categoryDebugging}</option>
-          <option value="testing">{t.skills.categoryTesting}</option>
-          <option value="refactoring">{t.skills.categoryRefactoring}</option>
-          <option value="review">{t.skills.categoryReview}</option>
-          <option value="runtime">{t.skills.categoryRuntime}</option>
-          <option value="maintenance">{t.skills.categoryMaintenance}</option>
-        </select>
+        {/* Search & Source Filter Tabs */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+          {/* Search Bar */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t.skills.searchPlaceholder}
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-theme-card border border-theme-subtle text-xs text-theme-primary placeholder-theme-muted focus:outline-none focus:border-sky-500 transition shadow-2xs"
+            />
+          </div>
 
-        {/* Reload Action */}
-        <button
-          onClick={handleReload}
-          disabled={reloading}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-theme-card border border-theme-subtle hover:bg-theme-card-hover text-xs font-medium text-theme-secondary hover:text-theme-primary transition disabled:opacity-50"
-          title={t.skills.reloadButton}
-        >
-          <RotateCw
-            className={`w-3.5 h-3.5 ${reloading ? "animate-spin text-sky-500" : ""}`}
-          />
-          <span>{reloading ? t.skills.reloading : t.skills.reloadButton}</span>
-        </button>
+          {/* Clean Source Filter Tabs (All / Builtin / User / Project) */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-theme-card border border-theme-subtle shadow-2xs">
+            {(
+              [
+                { id: "all", label: t.skills.filterAll },
+                { id: "builtin", label: t.skills.filterBuiltin },
+                { id: "user", label: t.skills.filterUser },
+                { id: "project", label: t.skills.filterProject },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setSourceFilter(tab.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  sourceFilter === tab.id
+                    ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold shadow-xs"
+                    : "text-theme-secondary hover:text-theme-primary"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Error state */}
+      {/* Error Banner */}
       {error && (
-        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2.5">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -238,25 +301,64 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
 
       {/* Loading state */}
       {loading && (
-        <div className="py-20 text-center text-sm text-theme-muted">
-          {t.common.loading}
+        <div className="py-24 text-center text-sm text-theme-muted">
+          {t.common.loading}...
         </div>
       )}
 
-      {/* Empty State */}
+      {/* Empty States */}
       {!loading && filteredSkills.length === 0 && (
-        <div className="py-20 flex flex-col items-center justify-center text-center p-6 rounded-2xl bg-theme-card/30 border border-theme-subtle border-dashed">
-          <Sparkles className="w-10 h-10 text-theme-muted/40 mb-3" />
-          <h3 className="text-sm font-semibold text-theme-primary mb-1">
-            {t.skills.emptySkills}
-          </h3>
-          <p className="text-xs text-theme-muted max-w-sm">
-            {t.skills.emptySkillsDesc}
-          </p>
+        <div className="py-20 flex flex-col items-center justify-center text-center p-8 rounded-2xl bg-theme-card/40 border border-theme-subtle border-dashed">
+          <div className="p-3.5 rounded-full bg-sky-500/10 text-sky-500 mb-3">
+            <Sparkles className="w-8 h-8" />
+          </div>
+
+          {isUserFilterEmpty ? (
+            <>
+              <h3 className="text-sm font-semibold text-theme-primary mb-1.5">
+                {t.skills.emptyUserSkills}
+              </h3>
+              <p className="text-xs text-theme-muted max-w-sm mb-5 leading-relaxed">
+                {t.skills.emptyUserSkillsDesc}
+              </p>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 text-white hover:bg-sky-600 text-xs font-semibold shadow-xs transition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>{t.skills.importButton}</span>
+              </button>
+            </>
+          ) : isProjectFilterEmpty ? (
+            <>
+              <h3 className="text-sm font-semibold text-theme-primary mb-1.5">
+                {t.skills.emptyProjectSkills}
+              </h3>
+              <p className="text-xs text-theme-muted max-w-sm mb-5 leading-relaxed">
+                {t.skills.emptyProjectSkillsDesc}
+              </p>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 text-white hover:bg-sky-600 text-xs font-semibold shadow-xs transition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>{t.skills.importButton}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <h3 className="text-sm font-semibold text-theme-primary mb-1">
+                {t.skills.emptySkills}
+              </h3>
+              <p className="text-xs text-theme-muted max-w-sm">
+                {t.skills.emptySkillsDesc}
+              </p>
+            </>
+          )}
         </div>
       )}
 
-      {/* Skills Grid */}
+      {/* Skills Cards Grid */}
       {!loading && filteredSkills.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredSkills.map((skill) => {
@@ -294,7 +396,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                 <div>
                   {/* Card Header */}
                   <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <div className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-500 shrink-0">
                         <Sparkles className="w-4 h-4" />
                       </div>
@@ -327,7 +429,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                     </button>
                   </div>
 
-                  {/* Badges strip */}
+                  {/* Clean Badges strip */}
                   <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
                     <span
                       className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border font-semibold ${getRiskBadge(
@@ -342,15 +444,15 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                     </span>
 
                     {isBuiltin ? (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium">
                         {t.skills.sourceBuiltin}
                       </span>
                     ) : skill.source === "project" ? (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-500 border border-purple-500/20">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-medium">
                         {t.skills.sourceProject}
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">
                         {t.skills.sourceUser}
                       </span>
                     )}
@@ -422,7 +524,19 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       <SkillDetailDrawer
         skillId={selectedSkillId}
         projectId={projectId}
+        projectRoot={projectRoot}
         onClose={() => setSelectedSkillId(null)}
+        onReload={loadSkills}
+        initialMode={uxMode}
+      />
+
+      {/* Import Skill Modal */}
+      <ImportSkillModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={handleImportSuccess}
+        projectId={projectId}
+        projectRoot={projectRoot}
       />
     </div>
   );

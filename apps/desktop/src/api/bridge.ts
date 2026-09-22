@@ -36,6 +36,10 @@ import type {
   SkillDefinition,
   SkillMatchResult,
   SkillSource,
+  SkillImportPreview,
+  SkillImportResult,
+  SkillDeleteResult,
+  SkillRawContentResult,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -732,6 +736,25 @@ class ApiBridge {
     return null;
   }
 
+  async selectZipFile(): Promise<string | null> {
+    if (isTauri()) {
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({
+          directory: false,
+          multiple: false,
+          filters: [{ name: "ZIP Archive", extensions: ["zip"] }],
+          title: "Select Skill ZIP Archive",
+        });
+        if (typeof selected === "string") return selected;
+        return null;
+      } catch (err) {
+        console.warn("Tauri dialog error:", err);
+      }
+    }
+    return null;
+  }
+
   // Skills Management
   async listSkills(params?: {
     projectId?: string;
@@ -816,6 +839,127 @@ class ApiBridge {
       method: "POST",
       body: JSON.stringify({ query, projectId }),
     });
+  }
+
+  async previewSkillImport(params: {
+    sourceType: "folder" | "zip";
+    sourcePath?: string;
+    zipBase64?: string;
+    target?: "user" | "project";
+    projectId?: string;
+  }): Promise<SkillImportPreview> {
+    if (isTauri()) {
+      return invoke<SkillImportPreview>("skills_preview_import", {
+        sourceType: params.sourceType,
+        sourcePath: params.sourcePath ?? null,
+        zipBase64: params.zipBase64 ?? null,
+        target: params.target ?? null,
+        projectId: params.projectId ?? null,
+      });
+    }
+    return this.fetchJson<SkillImportPreview>("/api/skills/preview", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+  }
+
+  async importSkillFolder(params: {
+    sourcePath: string;
+    target: "user" | "project";
+    projectId?: string;
+    projectRoot?: string;
+    overwrite?: boolean;
+  }): Promise<SkillImportResult> {
+    if (isTauri()) {
+      return invoke<SkillImportResult>("skills_import_folder", {
+        sourcePath: params.sourcePath,
+        target: params.target,
+        projectId: params.projectId ?? null,
+        projectRoot: params.projectRoot ?? null,
+        overwrite: params.overwrite ?? false,
+      });
+    }
+    return this.fetchJson<SkillImportResult>("/api/skills/import", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceType: "folder",
+        ...params,
+      }),
+    });
+  }
+
+  async importSkillZip(params: {
+    sourcePath?: string;
+    zipBase64?: string;
+    target: "user" | "project";
+    projectId?: string;
+    projectRoot?: string;
+    overwrite?: boolean;
+  }): Promise<SkillImportResult> {
+    if (isTauri()) {
+      return invoke<SkillImportResult>("skills_import_zip", {
+        sourcePath: params.sourcePath ?? null,
+        zipBase64: params.zipBase64 ?? null,
+        target: params.target,
+        projectId: params.projectId ?? null,
+        projectRoot: params.projectRoot ?? null,
+        overwrite: params.overwrite ?? false,
+      });
+    }
+    return this.fetchJson<SkillImportResult>("/api/skills/import", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceType: "zip",
+        ...params,
+      }),
+    });
+  }
+
+  async deleteSkill(
+    skillId: string,
+    target?: "user" | "project",
+    projectId?: string,
+    projectRoot?: string
+  ): Promise<SkillDeleteResult> {
+    if (isTauri()) {
+      return invoke<SkillDeleteResult>("skills_delete", {
+        skillId,
+        target: target ?? null,
+        projectId: projectId ?? null,
+        projectRoot: projectRoot ?? null,
+      });
+    }
+    const qs = new URLSearchParams();
+    if (target) qs.set("target", target);
+    if (projectId) qs.set("projectId", projectId);
+    if (projectRoot) qs.set("projectRoot", projectRoot);
+    const qsStr = qs.toString() ? `?${qs.toString()}` : "";
+    return this.fetchJson<SkillDeleteResult>(
+      `/api/skills/${encodeURIComponent(skillId)}${qsStr}`,
+      { method: "DELETE" }
+    );
+  }
+
+  async getSkillRawContent(
+    skillId: string,
+    projectId?: string
+  ): Promise<SkillRawContentResult> {
+    if (isTauri()) {
+      return invoke<SkillRawContentResult>("skills_get_raw", {
+        skillId,
+        projectId: projectId ?? null,
+      });
+    }
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return this.fetchJson<SkillRawContentResult>(
+      `/api/skills/${encodeURIComponent(skillId)}/raw${qs}`
+    );
+  }
+
+  async openSkillSourceFolder(path: string): Promise<void> {
+    if (isTauri()) {
+      return invoke<void>("skills_open_source_folder", { path });
+    }
   }
 
   // Secure MCP Tunnel

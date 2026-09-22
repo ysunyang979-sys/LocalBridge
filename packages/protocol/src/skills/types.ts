@@ -47,6 +47,8 @@ export interface SkillMatchResult {
   matchedSkill: SkillMetadata | null;
   confidence: number;
   reason: string;
+  matchedTriggers?: string[];
+  matchedIntent?: string;
 }
 
 export interface SkillListFilter {
@@ -76,4 +78,58 @@ export interface SkillGetResult {
 export interface SkillMatchParams {
   query: string;
   projectId?: string;
+}
+
+export interface SkillImportPreview {
+  valid: boolean;
+  id: string;
+  version: string | number;
+  name: SkillI18nText;
+  description: SkillI18nText;
+  category: SkillCategory;
+  risk: SkillRisk;
+  toolsCount: number;
+  workflowStepsCount: number;
+  tools: string[];
+  workflow: string[];
+  triggers: string[];
+  validationStatus: SkillValidationStatus;
+  validationErrors: string[];
+  securityWarning?: string;
+  hasConflict: boolean;
+  existingVersion?: string | number;
+  existingSource?: SkillSource;
+  isBuiltinConflict: boolean;
+  executableFilesFound?: string[];
+  rawYaml?: string;
+  markdownContent?: string;
+}
+
+export interface SkillImportParams {
+  sourceType: "folder" | "zip";
+  sourcePath?: string;
+  zipBase64?: string;
+  target: "user" | "project";
+  projectId?: string;
+  overwrite?: boolean;
+}
+
+export interface SkillImportResult {
+  success: boolean;
+  skill?: SkillMetadata;
+  error?: string;
+  validationErrors?: string[];
+}
+
+export interface SkillDeleteResult {
+  success: boolean;
+  skillId: string;
+  removedPath?: string;
+  error?: string;
+}
+
+export interface SkillRawContentResult {
+  skillId: string;
+  rawYaml: string;
+  markdownContent: string;
 }

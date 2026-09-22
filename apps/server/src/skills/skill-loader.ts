@@ -18,6 +18,7 @@ export interface SkillLoaderOptions {
 export class SkillLoader {
   private readonly builtinDir: string;
   private readonly userDir: string;
+  private readonly defaultProjectDirs: Array<{ projectId: string; rootPath: string }>;
 
   constructor(
     private readonly validator: SkillValidator,
@@ -30,6 +31,8 @@ export class SkillLoader {
     this.userDir =
       options.userDir ||
       this.resolveDefaultUserDir();
+
+    this.defaultProjectDirs = options.projectDirs || [];
   }
 
   private resolveDefaultBuiltinDir(): string {
@@ -82,7 +85,8 @@ export class SkillLoader {
     skills.push(...this.loadFromDirectory(this.userDir, "user"));
 
     // 3. Load Project skills
-    for (const proj of projectDirs) {
+    const activeProjectDirs = projectDirs.length > 0 ? projectDirs : this.defaultProjectDirs;
+    for (const proj of activeProjectDirs) {
       const projSkillDir = path.join(proj.rootPath, ".nexus", "skills");
       skills.push(...this.loadFromDirectory(projSkillDir, "project", proj.projectId));
     }
@@ -182,7 +186,9 @@ export class SkillLoader {
     }
 
     // Run validator
-    const validation = this.validator.validate(skillDir, parsedYaml, markdownContent);
+    const validation = this.validator.validate(skillDir, parsedYaml, markdownContent, {
+      isBuiltin: source === "builtin",
+    });
     const combinedErrors = [...yamlErrors, ...validation.errors];
 
     const finalStatus = combinedErrors.length > 0 ? "invalid" : validation.status;

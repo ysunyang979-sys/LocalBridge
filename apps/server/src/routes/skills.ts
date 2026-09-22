@@ -123,4 +123,178 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
     const result = mcpContext.skillRegistry.matchSkills(query, projectId);
     return reply.status(200).send(result);
   });
+
+  // POST /api/skills/preview - Preview skill before importing
+  fastify.post<{
+    Body: {
+      sourceType: "folder" | "zip";
+      sourcePath?: string;
+      zipBase64?: string;
+      target?: "user" | "project";
+      projectId?: string;
+    };
+  }>("/skills/preview", async (request, reply) => {
+    const { sourceType, sourcePath, zipBase64, target = "user", projectId } = request.body || {};
+
+    if (!sourceType || (sourceType !== "folder" && sourceType !== "zip")) {
+      return reply.status(400).send({
+        code: "INVALID_ARGUMENT",
+        message: "Field 'sourceType' must be 'folder' or 'zip'",
+      });
+    }
+
+    try {
+      if (sourceType === "folder") {
+        if (!sourcePath) {
+          return reply.status(400).send({
+            code: "INVALID_ARGUMENT",
+            message: "Field 'sourcePath' is required when sourceType is 'folder'",
+          });
+        }
+        const preview = await mcpContext.skillImporter.previewFolder(sourcePath, target, projectId);
+        return reply.status(200).send(preview);
+      } else {
+        let zipInput: Buffer | string;
+        if (zipBase64) {
+          zipInput = Buffer.from(zipBase64, "base64");
+        } else if (sourcePath) {
+          zipInput = sourcePath;
+        } else {
+          return reply.status(400).send({
+            code: "INVALID_ARGUMENT",
+            message: "Either 'sourcePath' or 'zipBase64' is required for ZIP preview",
+          });
+        }
+        const preview = await mcpContext.skillImporter.previewZip(zipInput, target, projectId);
+        return reply.status(200).send(preview);
+      }
+    } catch (err: any) {
+      return reply.status(500).send({
+        code: "PREVIEW_ERROR",
+        message: err.message || String(err),
+      });
+    }
+  });
+
+  // POST /api/skills/import - Import skill from folder or zip
+  fastify.post<{
+    Body: {
+      sourceType: "folder" | "zip";
+      sourcePath?: string;
+      zipBase64?: string;
+      target: "user" | "project";
+      projectId?: string;
+      projectRoot?: string;
+      overwrite?: boolean;
+    };
+  }>("/skills/import", async (request, reply) => {
+    const { sourceType, sourcePath, zipBase64, target = "user", projectId, projectRoot, overwrite } =
+      request.body || {};
+
+    if (!sourceType || (sourceType !== "folder" && sourceType !== "zip")) {
+      return reply.status(400).send({
+        code: "INVALID_ARGUMENT",
+        message: "Field 'sourceType' must be 'folder' or 'zip'",
+      });
+    }
+
+    if (target === "project" && !projectRoot) {
+      return reply.status(400).send({
+        code: "INVALID_ARGUMENT",
+        message: "Field 'projectRoot' is required for project-scoped skill import",
+      });
+    }
+
+    try {
+      if (sourceType === "folder") {
+        if (!sourcePath) {
+          return reply.status(400).send({
+            code: "INVALID_ARGUMENT",
+            message: "Field 'sourcePath' is required when sourceType is 'folder'",
+          });
+        }
+        const result = await mcpContext.skillImporter.importFolder({
+          sourcePath,
+          target,
+          projectId,
+          projectRoot,
+          overwrite,
+        });
+
+        if (!result.success) {
+          return reply.status(400).send(result);
+        }
+        return reply.status(200).send(result);
+      } else {
+        let zipInput: Buffer | string;
+        if (zipBase64) {
+          zipInput = Buffer.from(zipBase64, "base64");
+        } else if (sourcePath) {
+          zipInput = sourcePath;
+        } else {
+          return reply.status(400).send({
+            code: "INVALID_ARGUMENT",
+            message: "Either 'sourcePath' or 'zipBase64' is required for ZIP import",
+          });
+        }
+        const result = await mcpContext.skillImporter.importZip({
+          zipBufferOrPath: zipInput,
+          target,
+          projectId,
+          projectRoot,
+          overwrite,
+        });
+
+        if (!result.success) {
+          return reply.status(400).send(result);
+        }
+        return reply.status(200).send(result);
+      }
+    } catch (err: any) {
+      return reply.status(500).send({
+        success: false,
+        error: err.message || String(err),
+      });
+    }
+  });
+
+  // DELETE /api/skills/:id - Delete a user or project skill
+  fastify.delete<{
+    Params: { id: string };
+    Querystring: { target?: "user" | "project"; projectId?: string; projectRoot?: string };
+  }>("/skills/:id", async (request, reply) => {
+    const { id } = request.params;
+    const { target, projectId, projectRoot } = request.query;
+
+    const result = await mcpContext.skillImporter.deleteSkill({
+      skillId: id,
+      target,
+      projectId,
+      projectRoot,
+    });
+
+    if (!result.success) {
+      return reply.status(400).send(result);
+    }
+    return reply.status(200).send(result);
+  });
+
+  // GET /api/skills/:id/raw - Get raw skill.yaml and SKILL.md content
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { projectId?: string };
+  }>("/skills/:id/raw", async (request, reply) => {
+    const { id } = request.params;
+    const { projectId } = request.query;
+
+    try {
+      const raw = mcpContext.skillImporter.getRawContent(id, projectId);
+      return reply.status(200).send(raw);
+    } catch (err: any) {
+      return reply.status(404).send({
+        code: "SKILL_NOT_FOUND",
+        message: err.message || `Skill "${id}" not found`,
+      });
+    }
+  });
 };

@@ -8,7 +8,18 @@ export interface SkillValidationResult {
   securityWarning?: string;
 }
 
-const EXECUTABLE_FILE_REGEX = /\.(sh|bash|zsh|ps1|bat|cmd|exe|com|msi|vbs|vbe|js|mjs|cjs|py|rb|pl)$/i;
+const EXECUTABLE_FILE_REGEX =
+  /\.(sh|bash|zsh|ps1|bat|cmd|exe|com|msi|vbs|vbe|js|mjs|cjs|py|rb|pl|dll|node|jar|bin|app|so|dylib)$/i;
+
+const FORBIDDEN_MANIFEST_EXEC_FIELDS = [
+  "script",
+  "command",
+  "entrypoint",
+  "hook",
+  "execute",
+  "exec",
+  "runner",
+];
 
 const DANGEROUS_PATTERNS = [
   {
@@ -43,12 +54,25 @@ export class SkillValidator {
   validate(
     skillDir: string,
     parsedYaml: unknown,
-    markdownContent?: string
+    markdownContent?: string,
+    options?: { isBuiltin?: boolean }
   ): SkillValidationResult {
     const errors: string[] = [];
     let securityWarning: string | undefined;
 
-    // 1. Validate YAML structure with Zod schema
+    // 1. Check for forbidden executable manifest fields
+    if (parsedYaml && typeof parsedYaml === "object") {
+      const record = parsedYaml as Record<string, unknown>;
+      for (const field of FORBIDDEN_MANIFEST_EXEC_FIELDS) {
+        if (field in record && record[field] !== undefined) {
+          errors.push(
+            `Declarative only: executable manifest field '${field}' is strictly forbidden in skills`
+          );
+        }
+      }
+    }
+
+    // 2. Validate YAML structure with Zod schema
     const parseRes = SkillYamlSchema.safeParse(parsedYaml);
     if (!parseRes.success) {
       for (const issue of parseRes.error.issues) {
@@ -63,20 +87,26 @@ export class SkillValidator {
 
     const yaml = parseRes.data;
 
-    // 2. Validate declared tools against active MCP tool registry
+    // 3. Built-in namespace protection for non-builtin skills
+    if (options?.isBuiltin === false && yaml.id.startsWith("nexus.")) {
+      errors.push("nexus.* 命名空间仅供 Nexus 官方内置技能使用。");
+    }
+
+    // 4. Validate declared tools against active MCP tool registry
     for (const toolName of yaml.tools) {
       if (!this.validMcpTools.has(toolName)) {
-        errors.push(`Declared tool '${toolName}' is not registered in the MCP Tool Registry`);
+        errors.push(`未知 MCP Tool: ${toolName}`);
       }
     }
 
-    // 3. Scan directory for forbidden executable code
+    // 5. Scan directory for forbidden executable code
     if (fs.existsSync(skillDir)) {
       try {
-        const entries = fs.readdirSync(skillDir);
-        for (const file of entries) {
-          if (EXECUTABLE_FILE_REGEX.test(file)) {
-            errors.push(`Executable files are strictly forbidden in skills: ${file}`);
+        const entries = fs.readdirSync(skillDir, { recursive: true });
+        for (const entry of entries) {
+          const fileName = typeof entry === "string" ? entry : (entry as any).name;
+          if (EXECUTABLE_FILE_REGEX.test(fileName)) {
+            errors.push(`Executable files are strictly forbidden in skills: ${fileName}`);
           }
         }
       } catch (err: any) {
