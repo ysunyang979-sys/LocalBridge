@@ -116,8 +116,6 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  if (!isOpen) return null;
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -535,6 +533,8 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
       </span>
     );
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/65 backdrop-blur-sm p-4 animate-in fade-in duration-150">
