@@ -79,11 +79,19 @@ describe("Skill Validator & Security Guard", () => {
         enabled: true,
       };
 
-      const result = validator.validate(tmpDir, validYaml, "# Instructions");
-      expect(result.valid).toBe(false);
-      expect(result.status).toBe("invalid");
-      expect(result.errors.some((e) => e.includes("exploit.sh"))).toBe(true);
-      expect(result.errors.some((e) => e.includes("backdoor.py"))).toBe(true);
+      // Under strict mode, rejects with errors
+      const strictResult = validator.validate(tmpDir, validYaml, "# Instructions", { strictExecutables: true });
+      expect(strictResult.valid).toBe(false);
+      expect(strictResult.status).toBe("invalid");
+      expect(strictResult.errors.some((e) => e.includes("exploit.sh"))).toBe(true);
+      expect(strictResult.errors.some((e) => e.includes("backdoor.py"))).toBe(true);
+
+      // Under default compatibility mode, warns and records executable files for declarative sanitization
+      const warnResult = validator.validate(tmpDir, validYaml, "# Instructions");
+      expect(warnResult.valid).toBe(true);
+      expect(warnResult.status).toBe("warning");
+      expect(warnResult.executableFilesFound).toBeDefined();
+      expect(warnResult.executableFilesFound?.length).toBe(2);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

@@ -847,6 +847,7 @@ class ApiBridge {
     zipBase64?: string;
     target?: "user" | "project";
     projectId?: string;
+    subPath?: string;
   }): Promise<SkillImportPreview> {
     if (isTauri()) {
       return invoke<SkillImportPreview>("skills_preview_import", {
@@ -855,6 +856,7 @@ class ApiBridge {
         zipBase64: params.zipBase64 ?? null,
         target: params.target ?? null,
         projectId: params.projectId ?? null,
+        subPath: params.subPath ?? null,
       });
     }
     return this.fetchJson<SkillImportPreview>("/api/skills/preview", {
@@ -869,6 +871,8 @@ class ApiBridge {
     projectId?: string;
     projectRoot?: string;
     overwrite?: boolean;
+    customYaml?: string;
+    subPath?: string;
   }): Promise<SkillImportResult> {
     if (isTauri()) {
       return invoke<SkillImportResult>("skills_import_folder", {
@@ -877,6 +881,8 @@ class ApiBridge {
         projectId: params.projectId ?? null,
         projectRoot: params.projectRoot ?? null,
         overwrite: params.overwrite ?? false,
+        customYaml: params.customYaml ?? null,
+        subPath: params.subPath ?? null,
       });
     }
     return this.fetchJson<SkillImportResult>("/api/skills/import", {
@@ -895,6 +901,8 @@ class ApiBridge {
     projectId?: string;
     projectRoot?: string;
     overwrite?: boolean;
+    customYaml?: string;
+    subPath?: string;
   }): Promise<SkillImportResult> {
     if (isTauri()) {
       return invoke<SkillImportResult>("skills_import_zip", {
@@ -904,6 +912,8 @@ class ApiBridge {
         projectId: params.projectId ?? null,
         projectRoot: params.projectRoot ?? null,
         overwrite: params.overwrite ?? false,
+        customYaml: params.customYaml ?? null,
+        subPath: params.subPath ?? null,
       });
     }
     return this.fetchJson<SkillImportResult>("/api/skills/import", {

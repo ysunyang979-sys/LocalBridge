@@ -1171,6 +1171,7 @@ fn skills_preview_import(
     zip_base64: Option<String>,
     target: Option<String>,
     project_id: Option<String>,
+    sub_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let mut payload = serde_json::json!({
         "sourceType": source_type,
@@ -1185,6 +1186,9 @@ fn skills_preview_import(
     if let Some(pid) = project_id {
         payload["projectId"] = serde_json::Value::String(pid);
     }
+    if let Some(sub) = sub_path {
+        payload["subPath"] = serde_json::Value::String(sub);
+    }
     desktop_management_call(state, "POST".into(), "/api/skills/preview".into(), Some(payload))
 }
 
@@ -1196,6 +1200,8 @@ fn skills_import_folder(
     project_id: Option<String>,
     project_root: Option<String>,
     overwrite: Option<bool>,
+    custom_yaml: Option<String>,
+    sub_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let mut payload = serde_json::json!({
         "sourceType": "folder",
@@ -1209,6 +1215,12 @@ fn skills_import_folder(
     if let Some(pr) = project_root {
         payload["projectRoot"] = serde_json::Value::String(pr);
     }
+    if let Some(cy) = custom_yaml {
+        payload["customYaml"] = serde_json::Value::String(cy);
+    }
+    if let Some(sub) = sub_path {
+        payload["subPath"] = serde_json::Value::String(sub);
+    }
     desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload))
 }
 
@@ -1221,6 +1233,8 @@ fn skills_import_zip(
     project_id: Option<String>,
     project_root: Option<String>,
     overwrite: Option<bool>,
+    custom_yaml: Option<String>,
+    sub_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let mut payload = serde_json::json!({
         "sourceType": "zip",
@@ -1238,6 +1252,12 @@ fn skills_import_zip(
     }
     if let Some(pr) = project_root {
         payload["projectRoot"] = serde_json::Value::String(pr);
+    }
+    if let Some(cy) = custom_yaml {
+        payload["customYaml"] = serde_json::Value::String(cy);
+    }
+    if let Some(sub) = sub_path {
+        payload["subPath"] = serde_json::Value::String(sub);
     }
     desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload))
 }

@@ -12,7 +12,15 @@ export type SkillCategory =
   | "maintenance"
   | "general";
 
-export type SkillValidationStatus = "valid" | "invalid" | "conflict" | "warning";
+export type SkillValidationStatus = "valid" | "invalid" | "conflict" | "warning" | "needs_setup";
+
+export interface SkillCandidate {
+  id: string;
+  name: string;
+  path: string;
+  hasManifest: boolean;
+  docPath?: string;
+}
 
 export interface SkillI18nText {
   "zh-CN": string;
@@ -103,6 +111,12 @@ export interface SkillImportPreview {
   executableFilesFound?: string[];
   rawYaml?: string;
   markdownContent?: string;
+  importMode?: "native" | "compatible";
+  detectedRoot?: string;
+  manifestFound?: boolean;
+  skillDocFound?: boolean;
+  candidateSkills?: SkillCandidate[];
+  excludedFilesCount?: number;
 }
 
 export interface SkillImportParams {
@@ -111,7 +125,10 @@ export interface SkillImportParams {
   zipBase64?: string;
   target: "user" | "project";
   projectId?: string;
+  projectRoot?: string;
   overwrite?: boolean;
+  customYaml?: string;
+  subPath?: string;
 }
 
 export interface SkillImportResult {

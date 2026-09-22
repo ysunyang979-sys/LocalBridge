@@ -6,6 +6,7 @@ export interface SkillValidationResult {
   status: SkillValidationStatus;
   errors: string[];
   securityWarning?: string;
+  executableFilesFound?: string[];
 }
 
 const EXECUTABLE_FILE_REGEX =
@@ -19,6 +20,11 @@ const FORBIDDEN_MANIFEST_EXEC_FIELDS = [
   "execute",
   "exec",
   "runner",
+  "run_script",
+  "shell",
+  "postinstall",
+  "preinstall",
+  "runtime",
 ];
 
 const DANGEROUS_PATTERNS = [
@@ -55,12 +61,13 @@ export class SkillValidator {
     skillDir: string,
     parsedYaml: unknown,
     markdownContent?: string,
-    options?: { isBuiltin?: boolean }
+    options?: { isBuiltin?: boolean; strictExecutables?: boolean }
   ): SkillValidationResult {
     const errors: string[] = [];
+    const executableFilesFound: string[] = [];
     let securityWarning: string | undefined;
 
-    // 1. Check for forbidden executable manifest fields
+    // 1. Check for forbidden executable manifest fields (declarative only)
     if (parsedYaml && typeof parsedYaml === "object") {
       const record = parsedYaml as Record<string, unknown>;
       for (const field of FORBIDDEN_MANIFEST_EXEC_FIELDS) {
@@ -99,14 +106,17 @@ export class SkillValidator {
       }
     }
 
-    // 5. Scan directory for forbidden executable code
+    // 5. Scan directory for forbidden or auxiliary executable code
     if (fs.existsSync(skillDir)) {
       try {
         const entries = fs.readdirSync(skillDir, { recursive: true });
         for (const entry of entries) {
           const fileName = typeof entry === "string" ? entry : (entry as any).name;
           if (EXECUTABLE_FILE_REGEX.test(fileName)) {
-            errors.push(`Executable files are strictly forbidden in skills: ${fileName}`);
+            executableFilesFound.push(fileName);
+            if (options?.strictExecutables) {
+              errors.push(`Executable files are strictly forbidden in skills: ${fileName}`);
+            }
           }
         }
       } catch (err: any) {
@@ -114,13 +124,17 @@ export class SkillValidator {
       }
     }
 
-    // 4. Prompt Injection & Dangerous Instruction Scanning
+    // 6. Prompt Injection & Dangerous Instruction Scanning
     const combinedContent = `${JSON.stringify(yaml)}\n${markdownContent || ""}`;
     for (const pattern of DANGEROUS_PATTERNS) {
       if (pattern.regex.test(combinedContent)) {
         securityWarning = `Potential unsafe instructions: ${pattern.message}`;
         break;
       }
+    }
+
+    if (executableFilesFound.length > 0 && !options?.strictExecutables && !securityWarning) {
+      securityWarning = `发现 ${executableFilesFound.length} 个可执行资源。出于安全原因，这些文件不会被导入或执行。`;
     }
 
     const valid = errors.length === 0;
@@ -135,6 +149,7 @@ export class SkillValidator {
       status,
       errors,
       securityWarning,
+      executableFilesFound: executableFilesFound.length > 0 ? executableFilesFound : undefined,
     };
   }
 }

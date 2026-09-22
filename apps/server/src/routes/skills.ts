@@ -132,9 +132,11 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
       zipBase64?: string;
       target?: "user" | "project";
       projectId?: string;
+      subPath?: string;
     };
   }>("/skills/preview", async (request, reply) => {
-    const { sourceType, sourcePath, zipBase64, target = "user", projectId } = request.body || {};
+    const { sourceType, sourcePath, zipBase64, target = "user", projectId, subPath } =
+      request.body || {};
 
     if (!sourceType || (sourceType !== "folder" && sourceType !== "zip")) {
       return reply.status(400).send({
@@ -151,7 +153,12 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
             message: "Field 'sourcePath' is required when sourceType is 'folder'",
           });
         }
-        const preview = await mcpContext.skillImporter.previewFolder(sourcePath, target, projectId);
+        const preview = await mcpContext.skillImporter.previewFolder(
+          sourcePath,
+          target,
+          projectId,
+          subPath
+        );
         return reply.status(200).send(preview);
       } else {
         let zipInput: Buffer | string;
@@ -165,7 +172,12 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
             message: "Either 'sourcePath' or 'zipBase64' is required for ZIP preview",
           });
         }
-        const preview = await mcpContext.skillImporter.previewZip(zipInput, target, projectId);
+        const preview = await mcpContext.skillImporter.previewZip(
+          zipInput,
+          target,
+          projectId,
+          subPath
+        );
         return reply.status(200).send(preview);
       }
     } catch (err: any) {
@@ -186,10 +198,21 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
       projectId?: string;
       projectRoot?: string;
       overwrite?: boolean;
+      customYaml?: string;
+      subPath?: string;
     };
   }>("/skills/import", async (request, reply) => {
-    const { sourceType, sourcePath, zipBase64, target = "user", projectId, projectRoot, overwrite } =
-      request.body || {};
+    const {
+      sourceType,
+      sourcePath,
+      zipBase64,
+      target = "user",
+      projectId,
+      projectRoot,
+      overwrite,
+      customYaml,
+      subPath,
+    } = request.body || {};
 
     if (!sourceType || (sourceType !== "folder" && sourceType !== "zip")) {
       return reply.status(400).send({
@@ -219,6 +242,8 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
           projectId,
           projectRoot,
           overwrite,
+          customYaml,
+          subPath,
         });
 
         if (!result.success) {
@@ -243,6 +268,8 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
           projectId,
           projectRoot,
           overwrite,
+          customYaml,
+          subPath,
         });
 
         if (!result.success) {

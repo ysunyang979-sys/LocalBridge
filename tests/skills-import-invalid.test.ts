@@ -37,25 +37,41 @@ describe("Skills Import: Invalid Skills Rejection", () => {
     } catch {}
   });
 
-  it("rejects import when skill.yaml is missing", async () => {
-    const invalidDir = path.join(tmpRoot, "no-yaml");
-    fs.mkdirSync(invalidDir, { recursive: true });
-    fs.writeFileSync(path.join(invalidDir, "SKILL.md"), "# Skill Without YAML");
+  it("returns needs_setup and blocks direct import when skill.yaml is missing", async () => {
+    const noYamlDir = path.join(tmpRoot, "no-yaml");
+    fs.mkdirSync(noYamlDir, { recursive: true });
+    fs.writeFileSync(path.join(noYamlDir, "SKILL.md"), "# Skill Without YAML");
 
-    const preview = await importer.previewFolder(invalidDir, "user");
+    const preview = await importer.previewFolder(noYamlDir, "user");
     expect(preview.valid).toBe(false);
-    expect(preview.validationStatus).toBe("invalid");
-    expect(preview.validationErrors.some((e) => e.includes("skill.yaml"))).toBe(true);
+    expect(preview.validationStatus).toBe("needs_setup");
+    expect(preview.manifestFound).toBe(false);
+    expect(preview.skillDocFound).toBe(true);
 
     const result = await importer.importFolder({
-      sourcePath: invalidDir,
+      sourcePath: noYamlDir,
       target: "user",
     });
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/skill\.yaml/i);
   });
 
-  it("rejects import when SKILL.md is missing", async () => {
+  it("rejects import when both skill.yaml and documentation are missing", async () => {
+    const emptyDir = path.join(tmpRoot, "empty-invalid");
+    fs.mkdirSync(emptyDir, { recursive: true });
+
+    const preview = await importer.previewFolder(emptyDir, "user");
+    expect(preview.valid).toBe(false);
+    expect(preview.validationStatus).toBe("invalid");
+    expect(preview.validationErrors.some((e) => e.includes("no documentation"))).toBe(true);
+
+    const result = await importer.importFolder({
+      sourcePath: emptyDir,
+      target: "user",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects import when SKILL.md is missing in native skill", async () => {
     const invalidDir = path.join(tmpRoot, "no-md");
     fs.mkdirSync(invalidDir, { recursive: true });
     fs.writeFileSync(
@@ -83,14 +99,14 @@ workflow: ["step1"]
     expect(result.success).toBe(false);
   });
 
-  it("rejects folder containing executable files (.exe, .ps1, .sh, .py, .js)", async () => {
+  it("warns about executable files and excludes them from install directory", async () => {
     const dangerousDir = path.join(tmpRoot, "with-exec");
     fs.mkdirSync(dangerousDir, { recursive: true });
     fs.writeFileSync(
       path.join(dangerousDir, "skill.yaml"),
-      `id: custom.dangerous-exec
+      `id: custom.sanitized-exec
 version: 1.0.0
-name: { zh-CN: 危险技能, en-US: Dangerous Skill }
+name: { zh-CN: 净化技能, en-US: Sanitized Skill }
 description: { zh-CN: 描述, en-US: Description }
 category: general
 risk: high
@@ -99,21 +115,28 @@ tools: ["localbridge_project_list"]
 workflow: ["step1"]
 `
     );
-    fs.writeFileSync(path.join(dangerousDir, "SKILL.md"), "# Dangerous");
+    fs.writeFileSync(path.join(dangerousDir, "SKILL.md"), "# Sanitized");
     fs.writeFileSync(path.join(dangerousDir, "payload.exe"), "MZ BINARY EXECUTABLE");
     fs.writeFileSync(path.join(dangerousDir, "script.ps1"), "Write-Host 'hack'");
 
     const preview = await importer.previewFolder(dangerousDir, "user");
-    expect(preview.valid).toBe(false);
-    expect(preview.executableFilesFound?.length).toBeGreaterThan(0);
-    expect(preview.validationErrors.some((e) => e.includes("Executable files are strictly forbidden"))).toBe(true);
+    expect(preview.valid).toBe(true);
+    expect(preview.validationStatus).toBe("warning");
+    expect(preview.executableFilesFound?.length).toBe(2);
+    expect(preview.securityWarning).toMatch(/可执行资源|executable/i);
 
     const result = await importer.importFolder({
       sourcePath: dangerousDir,
       target: "user",
     });
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Executable files/i);
+    expect(result.success).toBe(true);
+
+    // Verify sanitization: executables must NOT be installed
+    const targetDir = path.join(userDir, "custom.sanitized-exec");
+    expect(fs.existsSync(path.join(targetDir, "payload.exe"))).toBe(false);
+    expect(fs.existsSync(path.join(targetDir, "script.ps1"))).toBe(false);
+    expect(fs.existsSync(path.join(targetDir, "skill.yaml"))).toBe(true);
+    expect(fs.existsSync(path.join(targetDir, "SKILL.md"))).toBe(true);
   });
 
   it("rejects manifest declaring forbidden executable fields (script, command, entrypoint, hook, execute)", async () => {
