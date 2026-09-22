@@ -339,3 +339,54 @@ export function evaluateCandidateQuality(options: {
     isHtmlHeavy,
   };
 }
+
+/**
+ * Resolve Raw Skill Name based on strict priority:
+ * 1. SKILL.md H1 (or frontmatter name)
+ * 2. README.md H1 (or frontmatter name)
+ * 3. Folder Name
+ * 4. ZIP Name
+ * Filters out generic headings like About, Overview, Introduction.
+ */
+export function resolveRawSkillName(options: {
+  skillMdContent?: string;
+  readmeContent?: string;
+  folderName?: string;
+  zipName?: string;
+}): string {
+  // 1. Try SKILL.md
+  if (options.skillMdContent) {
+    const meta = extractMarkdownMetadata(options.skillMdContent);
+    if (meta.title && !meta.isGenericTitle && !isGenericHeading(meta.title)) {
+      return meta.title;
+    }
+  }
+
+  // 2. Try README.md
+  if (options.readmeContent) {
+    const meta = extractMarkdownMetadata(options.readmeContent);
+    if (meta.title && !meta.isGenericTitle && !isGenericHeading(meta.title)) {
+      return meta.title;
+    }
+  }
+
+  // 3. Folder Name
+  if (options.folderName && options.folderName.trim()) {
+    const cleanFolder = options.folderName.trim().replace(/[/\\]+$/, "");
+    const base = cleanFolder.split(/[/\\]/).pop();
+    if (base && base.trim() && !isGenericHeading(base)) {
+      return base.trim();
+    }
+  }
+
+  // 4. ZIP Name
+  if (options.zipName && options.zipName.trim()) {
+    const cleanZip = options.zipName.trim().replace(/\.zip$/i, "");
+    if (cleanZip && !isGenericHeading(cleanZip)) {
+      return cleanZip;
+    }
+  }
+
+  return options.folderName || options.zipName || "Custom Skill";
+}
+

@@ -93,6 +93,14 @@ export function registerSkillTools(server: McpServer, context: McpContext): void
 
         return formatToolSuccess({
           skill,
+          id: skill.id,
+          name: typeof skill.name === "string" ? skill.name : (skill.name?.["zh-CN"] || skill.name?.["en-US"] || skill.id),
+          type: skill.type || "nexus",
+          source: skill.source,
+          primaryDocument: skill.primaryDocument || "SKILL.md",
+          content: skill.instructions,
+          availableDocuments: skill.availableDocuments || (skill.primaryDocument ? [skill.primaryDocument] : ["SKILL.md"]),
+          documents: skill.documents || skill.availableDocuments || [],
         });
       } catch (error) {
         context.logAudit("mcp_tool_failed", {

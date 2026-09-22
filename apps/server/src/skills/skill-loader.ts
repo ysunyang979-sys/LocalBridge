@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import type { SkillDefinition, SkillSource } from "@localbridge/protocol";
+import { resolveRawSkillName, type SkillDefinition, type SkillSource } from "@localbridge/protocol";
 import type { SkillValidator } from "./skill-validator.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -156,12 +156,18 @@ export class SkillLoader {
     projectId?: string
   ): SkillDefinition | null {
     const yamlPath = path.join(skillDir, "skill.yaml");
+    const ymlPath = path.join(skillDir, "skill.yml");
+    const activeYamlPath = fs.existsSync(yamlPath)
+      ? yamlPath
+      : fs.existsSync(ymlPath)
+      ? ymlPath
+      : null;
     const mdPath = path.join(skillDir, "SKILL.md");
 
     const dirName = path.basename(skillDir);
 
-    if (!fs.existsSync(yamlPath)) {
-      return null;
+    if (!activeYamlPath) {
+      return this.loadRawSkillFromPath(skillDir, source, projectId);
     }
 
     let parsedYaml: any = null;
@@ -169,7 +175,7 @@ export class SkillLoader {
     let markdownContent = "";
 
     try {
-      const rawYaml = fs.readFileSync(yamlPath, "utf-8");
+      const rawYaml = fs.readFileSync(activeYamlPath, "utf-8");
       parsedYaml = YAML.parse(rawYaml);
     } catch (err: any) {
       yamlErrors.push(`Failed to parse skill.yaml: ${err?.message || String(err)}`);
@@ -211,6 +217,138 @@ export class SkillLoader {
       validationStatus: finalStatus,
       validationErrors: combinedErrors.length > 0 ? combinedErrors : undefined,
       securityWarning: validation.securityWarning,
+      type: "nexus",
+      primaryDocument: "SKILL.md",
+    };
+  }
+
+  loadRawSkillFromPath(
+    skillDir: string,
+    source: SkillSource,
+    projectId?: string
+  ): SkillDefinition | null {
+    const rawJsonPath = path.join(skillDir, "raw-skill.json");
+    let rawMeta: any = null;
+    if (fs.existsSync(rawJsonPath)) {
+      try {
+        rawMeta = JSON.parse(fs.readFileSync(rawJsonPath, "utf-8"));
+      } catch {}
+    }
+
+    const dirName = path.basename(skillDir);
+    const skillId = rawMeta?.id || (dirName.startsWith("user.") ? dirName : `user.${dirName}`);
+
+    // Discover documents in skillDir
+    const docFiles: string[] = [];
+    let primaryDoc = rawMeta?.primaryDocument;
+    let markdownContent = "";
+    let skillMdContent = "";
+    let readmeContent = "";
+
+    try {
+      const scanDocs = (dir: string, relPrefix = "") => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            if (["references", "docs", "doc", "examples", "agents", "skills"].includes(entry.name.toLowerCase())) {
+              scanDocs(path.join(dir, entry.name), relPath);
+            }
+          } else if (entry.isFile() && /\.(md|txt)$/i.test(entry.name)) {
+            docFiles.push(relPath);
+            if (entry.name.toLowerCase() === "skill.md") {
+              try {
+                skillMdContent = fs.readFileSync(path.join(dir, entry.name), "utf-8");
+              } catch {}
+            } else if (entry.name.toLowerCase() === "readme.md") {
+              try {
+                readmeContent = fs.readFileSync(path.join(dir, entry.name), "utf-8");
+              } catch {}
+            }
+          }
+        }
+      };
+      scanDocs(skillDir);
+    } catch {}
+
+    if (!primaryDoc) {
+      if (docFiles.some((f) => f.toLowerCase() === "skill.md")) {
+        primaryDoc = docFiles.find((f) => f.toLowerCase() === "skill.md")!;
+      } else if (docFiles.some((f) => f.toLowerCase() === "readme.md")) {
+        primaryDoc = docFiles.find((f) => f.toLowerCase() === "readme.md")!;
+      } else if (docFiles.length > 0) {
+        primaryDoc = docFiles[0];
+      }
+    }
+
+    if (primaryDoc) {
+      const fullDocPath = path.join(skillDir, primaryDoc);
+      if (fs.existsSync(fullDocPath)) {
+        try {
+          markdownContent = fs.readFileSync(fullDocPath, "utf-8");
+        } catch {}
+      }
+    }
+
+    if (!primaryDoc && !markdownContent && docFiles.length === 0) {
+      return null;
+    }
+
+    // Determine Title / Name
+    let skillName = rawMeta?.name;
+    if (!skillName) {
+      const titleFromDoc = resolveRawSkillName({
+        skillMdContent,
+        readmeContent,
+        folderName: dirName.replace(/^user\./, ""),
+      });
+      skillName = titleFromDoc || dirName.replace(/^user\./, "");
+    }
+    const nameObj = typeof skillName === "string" ? { "zh-CN": skillName, "en-US": skillName } : skillName;
+
+    const validation = this.validator.validateRaw(skillDir, {
+      id: skillId,
+      name: nameObj,
+      markdownContent,
+    }, { isBuiltin: source === "builtin" });
+
+    // Build keywords/triggers for matching
+    const baseSlug = skillId.replace(/^user\./, "");
+    const triggers = Array.from(new Set([
+      skillId,
+      baseSlug,
+      baseSlug.replace(/[-_]/g, " "),
+      typeof skillName === "string" ? skillName : skillName["zh-CN"],
+      typeof skillName === "string" ? skillName : skillName["en-US"],
+    ].filter(Boolean)));
+
+    return {
+      id: skillId,
+      version: rawMeta?.version || "1.0.0",
+      name: nameObj,
+      description: {
+        "zh-CN": rawMeta?.description?.["zh-CN"] || (markdownContent ? markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim() : ""),
+        "en-US": rawMeta?.description?.["en-US"] || (markdownContent ? markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim() : ""),
+      },
+      category: "general",
+      risk: "low",
+      triggers,
+      tools: [],
+      workflow: [],
+      enabled: validation.status !== "invalid",
+      source,
+      sourcePath: skillDir,
+      projectId,
+      instructions: markdownContent,
+      validationStatus: validation.status,
+      validationErrors: validation.errors.length > 0 ? validation.errors : undefined,
+      securityWarning: validation.securityWarning,
+      type: "raw",
+      primaryDocument: primaryDoc,
+      availableDocuments: docFiles,
+      documents: docFiles,
+      importedAt: rawMeta?.importedAt || new Date().toISOString(),
+      filesCount: docFiles.length,
     };
   }
 }

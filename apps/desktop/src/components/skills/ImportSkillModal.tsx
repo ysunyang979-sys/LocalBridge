@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Settings,
   ShieldAlert,
+  FileText,
 } from "lucide-react";
 import type {
   SkillImportPreview,
@@ -1096,31 +1097,48 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
               )}
 
               {/* Metrics Strip */}
-              <div className="flex items-center gap-4 text-xs font-mono text-slate-600 dark:text-slate-400 pt-2.5 border-t border-slate-200 dark:border-slate-800">
-                <span className="flex items-center gap-1">
-                  <Workflow className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                  <span>
-                    {preview.validationStatus === "needs_setup" && !showWizard
-                      ? t.skills.workflowPending
-                      : showWizard
-                      ? `${wizardWorkflow.split(/[,，\n]/).filter(Boolean).length} ${t.skills.workflowSteps}`
-                      : `${preview.workflowStepsCount} ${t.skills.workflowSteps}`}
+              {preview.skillType === "raw" ? (
+                <div className="flex items-center gap-4 text-xs font-mono text-slate-600 dark:text-slate-400 pt-2.5 border-t border-slate-200 dark:border-slate-800">
+                  <span className="flex items-center gap-1.5 font-medium text-fuchsia-600 dark:text-fuchsia-400">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>主文档: {preview.primaryDocument || "SKILL.md"}</span>
                   </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <Wrench className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                  <span>
-                    {preview.validationStatus === "needs_setup" && !showWizard
-                      ? t.skills.toolsPending
-                      : showWizard
-                      ? `${wizardTools.length} ${t.skills.toolsCount}`
-                      : `${preview.toolsCount} ${t.skills.toolsCount}`}
+                  {preview.filesCount !== undefined && preview.filesCount > 1 && (
+                    <span className="text-slate-500">
+                      {preview.filesCount} 篇关联文档
+                    </span>
+                  )}
+                  <span className="uppercase text-[10px] px-2 py-0.5 rounded font-semibold bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-300 border border-fuchsia-200 dark:border-fuchsia-800">
+                    用户 Skill (Raw)
                   </span>
-                </span>
-                <span className="uppercase text-[10px] px-2 py-0.5 rounded font-semibold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  {showWizard ? wizardRisk : preview.risk} Risk
-                </span>
-              </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-4 text-xs font-mono text-slate-600 dark:text-slate-400 pt-2.5 border-t border-slate-200 dark:border-slate-800">
+                  <span className="flex items-center gap-1">
+                    <Workflow className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    <span>
+                      {preview.validationStatus === "needs_setup" && !showWizard
+                        ? t.skills.workflowPending
+                        : showWizard
+                        ? `${wizardWorkflow.split(/[,，\n]/).filter(Boolean).length} ${t.skills.workflowSteps}`
+                        : `${preview.workflowStepsCount} ${t.skills.workflowSteps}`}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Wrench className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                    <span>
+                      {preview.validationStatus === "needs_setup" && !showWizard
+                        ? t.skills.toolsPending
+                        : showWizard
+                        ? `${wizardTools.length} ${t.skills.toolsCount}`
+                        : `${preview.toolsCount} ${t.skills.toolsCount}`}
+                    </span>
+                  </span>
+                  <span className="uppercase text-[10px] px-2 py-0.5 rounded font-semibold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    {showWizard ? wizardRisk : preview.risk} Risk
+                  </span>
+                </div>
+              )}
 
               {/* Needs Setup Conversion Prompt */}
               {preview.validationStatus === "needs_setup" && (

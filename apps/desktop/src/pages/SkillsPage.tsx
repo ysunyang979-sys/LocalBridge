@@ -11,6 +11,7 @@ import {
   Upload,
   CheckCircle2,
   X,
+  FileText,
 } from "lucide-react";
 import type {
   SkillMetadata,
@@ -462,6 +463,12 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                       </span>
                     )}
 
+                    {skill.type === "raw" && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200 dark:bg-fuchsia-950/40 dark:text-fuchsia-400 dark:border-fuchsia-800/60 font-semibold">
+                        RAW
+                      </span>
+                    )}
+
                     {isConflict && (
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/60 font-semibold">
                         {t.skills.statusConflict}
@@ -503,20 +510,34 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
 
                 {/* Card Footer */}
                 <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <div className="flex items-center gap-3 font-mono text-[11px]">
-                    <span className="flex items-center gap-1">
-                      <Workflow className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                      <span>
-                        {skill.workflow.length} {t.skills.workflowSteps}
+                  {skill.type === "raw" ? (
+                    <div className="flex items-center gap-3 font-mono text-[11px]">
+                      <span className="flex items-center gap-1 text-fuchsia-600 dark:text-fuchsia-400 font-medium">
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>{skill.primaryDocument || "SKILL.md"}</span>
                       </span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Wrench className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                      <span>
-                        {skill.tools.length} {t.skills.toolsCount}
+                      {skill.documents && skill.documents.length > 1 && (
+                        <span className="text-slate-400">
+                          {skill.documents.length} 篇文档
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 font-mono text-[11px]">
+                      <span className="flex items-center gap-1">
+                        <Workflow className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                        <span>
+                          {skill.workflow.length} {t.skills.workflowSteps}
+                        </span>
                       </span>
-                    </span>
-                  </div>
+                      <span className="flex items-center gap-1">
+                        <Wrench className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                        <span>
+                          {skill.tools.length} {t.skills.toolsCount}
+                        </span>
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-1 text-sky-600 dark:text-sky-400 group-hover:translate-x-0.5 transition-transform text-[11px] font-semibold">
                     <span>{t.skills.viewDetails}</span>

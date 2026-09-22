@@ -32,6 +32,8 @@ export interface SkillI18nText {
   [lang: string]: string;
 }
 
+export type SkillType = "nexus" | "raw";
+
 export interface SkillMetadata {
   id: string;
   version: string | number;
@@ -49,6 +51,12 @@ export interface SkillMetadata {
   validationStatus: SkillValidationStatus;
   validationErrors?: string[];
   securityWarning?: string;
+  type?: SkillType;
+  primaryDocument?: string;
+  availableDocuments?: string[];
+  documents?: string[];
+  importedAt?: string;
+  filesCount?: number;
 }
 
 export interface SkillDefinition extends SkillMetadata {
@@ -85,6 +93,14 @@ export interface SkillGetParams {
 
 export interface SkillGetResult {
   skill: SkillDefinition;
+  id?: string;
+  name?: string | SkillI18nText;
+  type?: SkillType;
+  source?: SkillSource;
+  primaryDocument?: string;
+  content?: string;
+  availableDocuments?: string[];
+  documents?: string[];
 }
 
 export interface SkillMatchParams {
@@ -115,7 +131,12 @@ export interface SkillImportPreview {
   executableFilesFound?: string[];
   rawYaml?: string;
   markdownContent?: string;
-  importMode?: "native" | "compatible";
+  importMode?: "native" | "compatible" | "raw";
+  skillType?: SkillType;
+  primaryDocument?: string;
+  availableDocuments?: string[];
+  documents?: string[];
+  filesCount?: number;
   detectedRoot?: string;
   manifestFound?: boolean;
   skillDocFound?: boolean;

@@ -152,4 +152,64 @@ export class SkillValidator {
       executableFilesFound: executableFilesFound.length > 0 ? executableFilesFound : undefined,
     };
   }
+
+  validateRaw(
+    skillDir: string,
+    metadata: { id: string; name: string | { "zh-CN": string; "en-US": string }; markdownContent?: string },
+    options?: { isBuiltin?: boolean; strictExecutables?: boolean }
+  ): SkillValidationResult {
+    const errors: string[] = [];
+    const executableFilesFound: string[] = [];
+    let securityWarning: string | undefined;
+
+    // 1. Built-in namespace protection
+    if (options?.isBuiltin === false && metadata.id.startsWith("nexus.")) {
+      errors.push("nexus.* 命名空间仅供 Nexus 官方内置技能使用。");
+    }
+
+    // 2. Safe ID check (avoid path traversal)
+    if (!/^[a-zA-Z0-9._-]+$/.test(metadata.id) || metadata.id.includes("..")) {
+      errors.push(`Invalid skill ID '${metadata.id}'. Only alphanumeric characters, '.', '_', and '-' are allowed.`);
+    }
+
+    // 3. Scan directory for executable files
+    if (fs.existsSync(skillDir)) {
+      try {
+        const entries = fs.readdirSync(skillDir, { recursive: true });
+        for (const entry of entries) {
+          const fileName = typeof entry === "string" ? entry : (entry as any).name;
+          if (EXECUTABLE_FILE_REGEX.test(fileName)) {
+            executableFilesFound.push(fileName);
+            if (options?.strictExecutables) {
+              errors.push(`Executable files are strictly forbidden in skills: ${fileName}`);
+            }
+          }
+        }
+      } catch (err: any) {
+        errors.push(`Failed to read skill directory: ${err?.message || String(err)}`);
+      }
+    }
+
+    // 4. Prompt Injection & Dangerous Instruction Scanning
+    const nameStr = typeof metadata.name === "string" ? metadata.name : (metadata.name?.["zh-CN"] || metadata.name?.["en-US"] || "");
+    const combinedContent = `${nameStr}\n${metadata.markdownContent || ""}`;
+    for (const pattern of DANGEROUS_PATTERNS) {
+      if (pattern.regex.test(combinedContent)) {
+        securityWarning = `Potential unsafe instructions: ${pattern.message}`;
+        break;
+      }
+    }
+
+    if (executableFilesFound.length > 0 && !options?.strictExecutables && !securityWarning) {
+      securityWarning = `发现 ${executableFilesFound.length} 个外部脚本或二进制资源，导入时声明式排除，不影响 Skill 文档阅读。`;
+    }
+
+    return {
+      valid: errors.length === 0,
+      status: errors.length === 0 ? (securityWarning ? "warning" : "valid") : "invalid",
+      errors,
+      securityWarning,
+      executableFilesFound: executableFilesFound.length > 0 ? executableFilesFound : undefined,
+    };
+  }
 }

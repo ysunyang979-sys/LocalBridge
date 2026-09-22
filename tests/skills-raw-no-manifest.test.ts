@@ -7,22 +7,22 @@ import { SkillLoader } from "../apps/server/src/skills/skill-loader.js";
 import { SkillRegistry } from "../apps/server/src/skills/skill-registry.js";
 import { SkillImporter } from "../apps/server/src/skills/skill-importer.js";
 import { MCP_TOOL_SCOPE } from "../apps/server/src/mcp/scope-policy.js";
-import { createZip } from "../apps/server/src/skills/zip-util.js";
 
-describe("Skills Compatible: Missing Manifest Detection", () => {
+describe("skills-raw-no-manifest: Import without skill.yaml Does Not Require Manifest", () => {
   let tmpRoot: string;
   let userDir: string;
   let importer: SkillImporter;
+  let registry: SkillRegistry;
   const activeTools = new Set(Object.keys(MCP_TOOL_SCOPE));
 
   beforeEach(() => {
-    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-compat-missing-manifest-"));
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-raw-no-manifest-"));
     userDir = path.join(tmpRoot, "user-skills");
     fs.mkdirSync(userDir, { recursive: true });
 
     const validator = new SkillValidator(activeTools);
     const loader = new SkillLoader(validator, { userDir });
-    const registry = new SkillRegistry(loader);
+    registry = new SkillRegistry(loader);
     importer = new SkillImporter({
       validator,
       loader,
@@ -37,25 +37,30 @@ describe("Skills Compatible: Missing Manifest Detection", () => {
     } catch {}
   });
 
-  it("yields needs_setup status instead of invalid when SKILL.md exists but skill.yaml is missing", async () => {
-    const zip = createZip([
-      { path: "my-skill/SKILL.md", data: "# Intelligent Triage\nDiagnose issues in project." },
-    ]);
+  it("does not reject folder lacking skill.yaml with MANIFEST_MISSING", async () => {
+    const srcFolder = path.join(tmpRoot, "no-manifest-skill");
+    fs.mkdirSync(srcFolder, { recursive: true });
+    fs.writeFileSync(
+      path.join(srcFolder, "SKILL.md"),
+      "# No Manifest Needed\n\nDirect Markdown instructions for LLM."
+    );
 
-    const preview = await importer.previewZip(zip, "user");
+    // Make sure skill.yaml does NOT exist
+    expect(fs.existsSync(path.join(srcFolder, "skill.yaml"))).toBe(false);
+
+    const preview = await importer.previewFolder(srcFolder, "user");
     expect(preview.valid).toBe(true);
-    expect(["valid", "needs_setup"]).toContain(preview.validationStatus);
-    expect(preview.id).toMatch(/^user\./);
-    expect(preview.name["zh-CN"]).toContain("Intelligent Triage");
-  });
+    expect(preview.manifestFound).toBe(false);
+    expect(preview.skillType).toBe("raw");
 
-  it("yields valid when only README.md is present", async () => {
-    const zip = createZip([
-      { path: "my-tool-repo/README.md", data: "# Tool Repo\nHelpful debugging tools." },
-    ]);
+    const result = await importer.importFolder({
+      sourcePath: srcFolder,
+      target: "user",
+    });
 
-    const preview = await importer.previewZip(zip, "user");
-    expect(["valid", "needs_setup"]).toContain(preview.validationStatus);
-    expect(preview.skillDocFound).toBe(true);
+    expect(result.success).toBe(true);
+    expect(result.code).toBeUndefined();
+    expect(result.skill?.id).toBe("user.no-manifest-skill");
+    expect(result.skill?.type).toBe("raw");
   });
 });

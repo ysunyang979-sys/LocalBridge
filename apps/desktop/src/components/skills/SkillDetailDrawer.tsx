@@ -703,10 +703,14 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
 
                       <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-2xs">
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-1">
-                          {language === "zh-CN" ? "工作流步数" : "Workflow"}
+                          {skill.type === "raw"
+                            ? (language === "zh-CN" ? "主文档" : "Primary Doc")
+                            : (language === "zh-CN" ? "工作流步数" : "Workflow")}
                         </div>
                         <div className="text-xs font-bold text-slate-900 dark:text-slate-100 font-mono">
-                          {skill.workflow.length} {t.skills.workflowSteps}
+                          {skill.type === "raw"
+                            ? (skill.primaryDocument || "SKILL.md")
+                            : `${skill.workflow.length} ${t.skills.workflowSteps}`}
                         </div>
                       </div>
                     </div>

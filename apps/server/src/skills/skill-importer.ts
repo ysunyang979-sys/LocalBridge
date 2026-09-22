@@ -14,6 +14,7 @@ import {
   type SkillCandidate,
   extractMarkdownMetadata,
   evaluateCandidateQuality,
+  resolveRawSkillName,
 } from "@localbridge/protocol";
 import type { SkillValidator } from "./skill-validator.js";
 import type { SkillLoader } from "./skill-loader.js";
@@ -379,19 +380,48 @@ export class SkillImporter {
       });
     }
 
-    // Case 2: No skill.yaml manifest, but documentation exists -> Needs Setup
+    // Case 2: No skill.yaml manifest, but documentation exists -> Raw User Skill
     if (activeDocPath) {
-      const meta = extractMarkdownMetadata(markdownContent, folderName);
       const isRoot = !subPath || subPath === "" || subPath === "/";
-      const hasSkillMd = Boolean(
-        activeDocPath.toLowerCase().endsWith("/skill.md") ||
-          activeDocPath.toLowerCase().endsWith("\\skill.md")
-      );
-      const quality = evaluateCandidateQuality({
-        isRoot,
-        hasSkillMd,
-        hasManifest: false,
-        content: markdownContent,
+      const candidateDocs: string[] = [];
+      try {
+        const scan = (d: string, prefix = "") => {
+          for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+            const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+            if (ent.isDirectory()) {
+              if (["references", "docs", "doc", "examples", "agents", "skills"].includes(ent.name.toLowerCase())) {
+                scan(path.join(d, ent.name), rel);
+              }
+            } else if (ent.isFile() && /\.(md|txt)$/i.test(ent.name)) {
+              candidateDocs.push(rel);
+            }
+          }
+        };
+        scan(activeFolder);
+      } catch {}
+
+      const primaryDocName = path.basename(activeDocPath);
+      let skillMdText = "";
+      let readmeText = "";
+      if (primaryDocName.toLowerCase() === "skill.md") {
+        skillMdText = markdownContent;
+      } else {
+        readmeText = markdownContent;
+      }
+
+      const otherSkillMd = path.join(activeFolder, "SKILL.md");
+      const otherReadme = path.join(activeFolder, "README.md");
+      if (!skillMdText && fs.existsSync(otherSkillMd)) {
+        try { skillMdText = fs.readFileSync(otherSkillMd, "utf-8"); } catch {}
+      }
+      if (!readmeText && fs.existsSync(otherReadme)) {
+        try { readmeText = fs.readFileSync(otherReadme, "utf-8"); } catch {}
+      }
+
+      const resolvedName = resolveRawSkillName({
+        skillMdContent: skillMdText,
+        readmeContent: readmeText,
+        folderName,
       });
 
       const tentativeId = "user." + slugify(folderName);
@@ -404,33 +434,42 @@ export class SkillImporter {
       }
 
       let rootNotice: string | undefined;
-      if (isRoot && !quality.isValidCandidate && candidateSkills.length > 0) {
-        rootNotice = "该仓库根目录不是一个明确的 Skill。检测到包含多个子技能候选，请从下方选择具体的 Skill 目录导入。";
+      if (isRoot && candidateSkills.length > 0) {
+        rootNotice = "该仓库包含多个子技能候选，你可以直接导入或从下方选择具体技能。";
       }
 
-      const finalDesc = isRoot && !quality.isValidCandidate ? "" : meta.desc;
+      const rawValidation = this.validator.validateRaw(activeFolder, {
+        id: tentativeId,
+        name: resolvedName,
+        markdownContent,
+      });
 
       return this.buildPreview({
         id: tentativeId,
         version: "1.0.0",
         parsedYaml: {
-          name: { "zh-CN": meta.title, "en-US": meta.title },
-          description: { "zh-CN": finalDesc, "en-US": finalDesc },
+          name: { "zh-CN": resolvedName, "en-US": resolvedName },
+          description: { "zh-CN": markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim(), "en-US": markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim() },
           category: "general",
-          risk: "medium",
-          triggers: [folderName, folderName.replace(/[-_]/g, " ")],
+          risk: "low",
+          triggers: [folderName, folderName.replace(/[-_]/g, " "), resolvedName],
           tools: [],
           workflow: [],
         },
         markdownContent,
         rawYaml: "",
-        errors: ["未发现 Nexus Skill Manifest (skill.yaml)。你可以将此包转换为 Nexus 声明式 Skill。"],
-        securityWarning: secWarning,
+        errors: [],
+        securityWarning: secWarning || rawValidation.securityWarning,
         executableFilesFound,
         target,
         projectId,
-        validationStatus: "needs_setup",
-        importMode: "compatible",
+        validationStatus: secWarning ? "warning" : "valid",
+        importMode: "raw",
+        skillType: "raw",
+        primaryDocument: primaryDocName,
+        availableDocuments: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+        documents: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+        filesCount: candidateDocs.length,
         detectedRoot: folderName,
         manifestFound: false,
         skillDocFound: true,
@@ -438,8 +477,6 @@ export class SkillImporter {
         archiveTotalExecutables,
         candidateExecutablesCount,
         rootQualityNotice: rootNotice,
-        candidateQualityScore: quality.score,
-        candidateQualityReasons: quality.reasons,
       });
     }
 
@@ -594,23 +631,45 @@ export class SkillImporter {
       });
     }
 
-    // Case 2: No skill.yaml manifest, but documentation exists -> Needs Setup
+    // Case 2: No skill.yaml manifest, but documentation exists -> Raw User Skill
     if (mdEntry) {
-      const meta = extractMarkdownMetadata(markdownContent, pkgName);
       const isRoot = !subPath || subPath === "" || subPath === "/";
-      const hasSkillMd = Boolean(
-        entries.some(
-          (e) =>
-            !e.isDirectory &&
-            (e.name === `${rootPrefix}SKILL.md` ||
-              e.name.toLowerCase() === `${rootPrefix}skill.md`)
-        )
+      const candidateDocs: string[] = [];
+      for (const e of entries) {
+        if (!e.name.startsWith(rootPrefix) || e.isDirectory) continue;
+        const rel = e.name.slice(rootPrefix.length);
+        if (/\.(md|txt)$/i.test(rel)) {
+          candidateDocs.push(rel);
+        }
+      }
+
+      let skillMdText = "";
+      let readmeText = "";
+      const primaryDocName = path.basename(mdEntry.name);
+      if (primaryDocName.toLowerCase() === "skill.md") {
+        skillMdText = markdownContent;
+      } else {
+        readmeText = markdownContent;
+      }
+
+      const otherSkillMdEntry = entries.find(
+        (e) => !e.isDirectory && (e.name === `${rootPrefix}SKILL.md` || e.name.toLowerCase() === `${rootPrefix}skill.md`)
       );
-      const quality = evaluateCandidateQuality({
-        isRoot,
-        hasSkillMd,
-        hasManifest: false,
-        content: markdownContent,
+      const otherReadmeEntry = entries.find(
+        (e) => !e.isDirectory && (e.name === `${rootPrefix}README.md` || e.name.toLowerCase() === `${rootPrefix}readme.md`)
+      );
+      if (!skillMdText && otherSkillMdEntry) {
+        try { skillMdText = otherSkillMdEntry.data.toString("utf-8"); } catch {}
+      }
+      if (!readmeText && otherReadmeEntry) {
+        try { readmeText = otherReadmeEntry.data.toString("utf-8"); } catch {}
+      }
+
+      const resolvedName = resolveRawSkillName({
+        skillMdContent: skillMdText,
+        readmeContent: readmeText,
+        folderName: pkgName,
+        zipName: typeof zipBufferOrPath === "string" ? path.basename(zipBufferOrPath) : undefined,
       });
 
       const tentativeId = "user." + slugify(pkgName);
@@ -623,33 +682,36 @@ export class SkillImporter {
       }
 
       let rootNotice: string | undefined;
-      if (isRoot && !quality.isValidCandidate && candidateSkills.length > 0) {
-        rootNotice = "该仓库根目录不是一个明确的 Skill。检测到包含多个子技能候选，请从下方选择具体的 Skill 目录导入。";
+      if (isRoot && candidateSkills.length > 0) {
+        rootNotice = "该仓库包含多个子技能候选，你可以直接导入或从下方选择具体技能。";
       }
-
-      const finalDesc = isRoot && !quality.isValidCandidate ? "" : meta.desc;
 
       return this.buildPreview({
         id: tentativeId,
         version: "1.0.0",
         parsedYaml: {
-          name: { "zh-CN": meta.title, "en-US": meta.title },
-          description: { "zh-CN": finalDesc, "en-US": finalDesc },
+          name: { "zh-CN": resolvedName, "en-US": resolvedName },
+          description: { "zh-CN": markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim(), "en-US": markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim() },
           category: "general",
-          risk: "medium",
-          triggers: [pkgName, pkgName.replace(/[-_]/g, " ")],
+          risk: "low",
+          triggers: [pkgName, pkgName.replace(/[-_]/g, " "), resolvedName],
           tools: [],
           workflow: [],
         },
         markdownContent,
         rawYaml: "",
-        errors: ["未发现 Nexus Skill Manifest (skill.yaml)。你可以将此包转换为 Nexus 声明式 Skill。"],
+        errors: [],
         securityWarning: secWarning,
         executableFilesFound: candidateExecutables,
         target,
         projectId,
-        validationStatus: "needs_setup",
-        importMode: "compatible",
+        validationStatus: secWarning ? "warning" : "valid",
+        importMode: "raw",
+        skillType: "raw",
+        primaryDocument: primaryDocName,
+        availableDocuments: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+        documents: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+        filesCount: candidateDocs.length,
         detectedRoot: singleRoot || pkgName,
         manifestFound: false,
         skillDocFound: true,
@@ -657,8 +719,6 @@ export class SkillImporter {
         archiveTotalExecutables,
         candidateExecutablesCount,
         rootQualityNotice: rootNotice,
-        candidateQualityScore: quality.score,
-        candidateQualityReasons: quality.reasons,
       });
     }
 
@@ -758,12 +818,192 @@ export class SkillImporter {
         : null;
 
       if (!activeYaml) {
+        // Raw User Skill import flow
+        const candidateDocs: string[] = [];
+        try {
+          const scan = (d: string, prefix = "") => {
+            for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+              const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+              if (ent.isDirectory()) {
+                if (["references", "docs", "doc", "examples", "agents", "skills"].includes(ent.name.toLowerCase())) {
+                  scan(path.join(d, ent.name), rel);
+                }
+              } else if (ent.isFile() && /\.(md|txt)$/i.test(ent.name)) {
+                candidateDocs.push(rel);
+              }
+            }
+          };
+          scan(stagingDir);
+        } catch {}
+
+        const mdPath = path.join(stagingDir, "SKILL.md");
+        const lowerMdPath = path.join(stagingDir, "skill.md");
+        const readmePath = path.join(stagingDir, "README.md");
+        const readmeZhPath = path.join(stagingDir, "README_zh.md");
+        const activeDocPath = fs.existsSync(mdPath)
+          ? mdPath
+          : fs.existsSync(lowerMdPath)
+          ? lowerMdPath
+          : fs.existsSync(readmePath)
+          ? readmePath
+          : fs.existsSync(readmeZhPath)
+          ? readmeZhPath
+          : candidateDocs.length > 0
+          ? path.join(stagingDir, candidateDocs[0])
+          : null;
+
+        if (!activeDocPath) {
+          return {
+            success: false,
+            code: "DOCUMENTATION_MISSING",
+            stage: "staging_validation",
+            message: "未发现有效文档 (SKILL.md 或 README.md)",
+            error: "未发现有效文档 (SKILL.md 或 README.md)",
+            validationErrors: ["Missing documentation file (SKILL.md or README.md)"],
+          };
+        }
+
+        const primaryDocName = path.relative(stagingDir, activeDocPath).replace(/\\/g, "/");
+        let markdownContent = "";
+        try {
+          markdownContent = fs.readFileSync(activeDocPath, "utf-8");
+        } catch {}
+
+        let skillMdText = "";
+        let readmeText = "";
+        if (primaryDocName.toLowerCase() === "skill.md") {
+          skillMdText = markdownContent;
+        } else {
+          readmeText = markdownContent;
+        }
+        if (!skillMdText && (fs.existsSync(mdPath) || fs.existsSync(lowerMdPath))) {
+          try { skillMdText = fs.readFileSync(fs.existsSync(mdPath) ? mdPath : lowerMdPath, "utf-8"); } catch {}
+        }
+        if (!readmeText && (fs.existsSync(readmePath) || fs.existsSync(readmeZhPath))) {
+          try { readmeText = fs.readFileSync(fs.existsSync(readmePath) ? readmePath : readmeZhPath, "utf-8"); } catch {}
+        }
+
+        const candidateName = params.subPath
+          ? path.basename(params.subPath.replace(/[\\/]+$/, ""))
+          : path.basename(normSrc);
+        const folderName = candidateName;
+
+        const resolvedName = resolveRawSkillName({
+          skillMdContent: skillMdText,
+          readmeContent: readmeText,
+          folderName,
+        });
+
+        const skillId = "user." + slugify(folderName);
+
+        // Namespace protection
+        if (skillId.startsWith("nexus.")) {
+          return {
+            success: false,
+            code: "RESERVED_BUILTIN_NAMESPACE",
+            stage: "conflict_check",
+            message: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+            error: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+            validationErrors: ["nexus.* 命名空间仅供 Nexus 官方内置技能使用。"],
+          };
+        }
+
+        // Existing skill conflict check
+        const existing = this.registry.getSkill(skillId, params.projectId);
+        if (existing && !params.overwrite) {
+          return {
+            success: false,
+            code: "SKILL_ALREADY_EXISTS",
+            stage: "conflict_check",
+            message: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+            error: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+          };
+        }
+
+        // Validate raw skill
+        const rawVal = this.validator.validateRaw(stagingDir, {
+          id: skillId,
+          name: resolvedName,
+          markdownContent,
+        });
+
+        if (!rawVal.valid) {
+          return {
+            success: false,
+            code: "SKILL_IMPORT_VALIDATION_FAILED",
+            stage: "staging_validation",
+            message: rawVal.errors.join("; "),
+            error: `Raw Skill 校验失败: ${rawVal.errors.join("; ")}`,
+            validationErrors: rawVal.errors,
+          };
+        }
+
+        // Write raw-skill.json into staging
+        const rawSkillManifest = {
+          id: skillId,
+          name: resolvedName,
+          type: "raw",
+          version: "1.0.0",
+          description: markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim(),
+          primaryDocument: primaryDocName,
+          availableDocuments: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+          documents: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+          importedAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(
+          path.join(stagingDir, "raw-skill.json"),
+          JSON.stringify(rawSkillManifest, null, 2),
+          "utf-8"
+        );
+
+        // Atomic Install from Staging to Destination
+        const targetDir = this.resolveTargetDir(
+          skillId,
+          params.target,
+          params.projectId,
+          params.projectRoot
+        );
+
+        if (fs.existsSync(targetDir)) {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(targetDir, { recursive: true });
+
+        this.copyDirRecursive(stagingDir, targetDir);
+        this.sanitizeTargetDir(targetDir);
+
+        if (!fs.existsSync(path.join(targetDir, "raw-skill.json")) && !fs.existsSync(path.join(targetDir, primaryDocName))) {
+          return {
+            success: false,
+            code: "FILESYSTEM_COMMIT_FAILED",
+            stage: "filesystem_commit",
+            message: "安装提交失败：目标目录缺少关键文件",
+            error: "安装提交失败：目标目录缺少关键文件",
+          };
+        }
+
+        // Registry reload
+        const projectDirs =
+          params.projectId && params.projectRoot
+            ? [{ projectId: params.projectId, rootPath: params.projectRoot }]
+            : [];
+        this.registry.reload(projectDirs);
+
+        const skill = this.registry.getSkill(skillId, params.projectId);
+        if (!skill) {
+          return {
+            success: false,
+            code: "REGISTRY_RELOAD_FAILED",
+            stage: "registry_reload",
+            message: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
+            error: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
+          };
+        }
+
+        const { instructions: _unused, ...meta } = skill;
         return {
-          success: false,
-          code: "MANIFEST_MISSING",
-          stage: "manifest_injection",
-          message: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
-          error: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
+          success: true,
+          skill: meta,
         };
       }
 
@@ -1071,12 +1311,197 @@ export class SkillImporter {
         : null;
 
       if (!activeYaml) {
+        // Raw User Skill import flow for ZIP
+        const candidateDocs: string[] = [];
+        try {
+          const scan = (d: string, prefix = "") => {
+            for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+              const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+              if (ent.isDirectory()) {
+                if (["references", "docs", "doc", "examples", "agents", "skills"].includes(ent.name.toLowerCase())) {
+                  scan(path.join(d, ent.name), rel);
+                }
+              } else if (ent.isFile() && /\.(md|txt)$/i.test(ent.name)) {
+                candidateDocs.push(rel);
+              }
+            }
+          };
+          scan(stagingDir);
+        } catch {}
+
+        const mdPath = path.join(stagingDir, "SKILL.md");
+        const lowerMdPath = path.join(stagingDir, "skill.md");
+        const readmePath = path.join(stagingDir, "README.md");
+        const readmeZhPath = path.join(stagingDir, "README_zh.md");
+        const activeDocPath = fs.existsSync(mdPath)
+          ? mdPath
+          : fs.existsSync(lowerMdPath)
+          ? lowerMdPath
+          : fs.existsSync(readmePath)
+          ? readmePath
+          : fs.existsSync(readmeZhPath)
+          ? readmeZhPath
+          : candidateDocs.length > 0
+          ? path.join(stagingDir, candidateDocs[0])
+          : null;
+
+        if (!activeDocPath) {
+          return {
+            success: false,
+            code: "DOCUMENTATION_MISSING",
+            stage: "staging_validation",
+            message: "未发现有效文档 (SKILL.md 或 README.md)",
+            error: "未发现有效文档 (SKILL.md 或 README.md)",
+            validationErrors: ["Missing documentation file (SKILL.md or README.md) in ZIP archive"],
+          };
+        }
+
+        const primaryDocName = path.relative(stagingDir, activeDocPath).replace(/\\/g, "/");
+        let markdownContent = "";
+        try {
+          markdownContent = fs.readFileSync(activeDocPath, "utf-8");
+        } catch {}
+
+        let skillMdText = "";
+        let readmeText = "";
+        if (primaryDocName.toLowerCase() === "skill.md") {
+          skillMdText = markdownContent;
+        } else {
+          readmeText = markdownContent;
+        }
+        if (!skillMdText && (fs.existsSync(mdPath) || fs.existsSync(lowerMdPath))) {
+          try { skillMdText = fs.readFileSync(fs.existsSync(mdPath) ? mdPath : lowerMdPath, "utf-8"); } catch {}
+        }
+        if (!readmeText && (fs.existsSync(readmePath) || fs.existsSync(readmeZhPath))) {
+          try { readmeText = fs.readFileSync(fs.existsSync(readmePath) ? readmePath : readmeZhPath, "utf-8"); } catch {}
+        }
+
+        const singleRoot = detectZipRootPrefix(entries);
+        const pkgName = params.subPath
+          ? path.basename(params.subPath.replace(/[\\/]+$/, ""))
+          : singleRoot
+          ? singleRoot.replace(/\/$/, "")
+          : typeof params.zipBufferOrPath === "string"
+          ? path.basename(params.zipBufferOrPath, ".zip")
+          : "custom-skill";
+
+        const resolvedName = resolveRawSkillName({
+          skillMdContent: skillMdText,
+          readmeContent: readmeText,
+          folderName: pkgName,
+          zipName: typeof params.zipBufferOrPath === "string" ? path.basename(params.zipBufferOrPath) : undefined,
+        });
+
+        const skillId = "user." + slugify(pkgName);
+
+        // Namespace protection
+        if (skillId.startsWith("nexus.")) {
+          return {
+            success: false,
+            code: "RESERVED_BUILTIN_NAMESPACE",
+            stage: "conflict_check",
+            message: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+            error: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+            validationErrors: ["nexus.* 命名空间仅供 Nexus 官方内置技能使用。"],
+          };
+        }
+
+        // Existing skill conflict check
+        const existing = this.registry.getSkill(skillId, params.projectId);
+        if (existing && !params.overwrite) {
+          return {
+            success: false,
+            code: "SKILL_ALREADY_EXISTS",
+            stage: "conflict_check",
+            message: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+            error: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+          };
+        }
+
+        // Validate raw skill
+        const rawVal = this.validator.validateRaw(stagingDir, {
+          id: skillId,
+          name: resolvedName,
+          markdownContent,
+        });
+
+        if (!rawVal.valid) {
+          return {
+            success: false,
+            code: "SKILL_IMPORT_VALIDATION_FAILED",
+            stage: "staging_validation",
+            message: rawVal.errors.join("; "),
+            error: `Raw Skill 校验失败: ${rawVal.errors.join("; ")}`,
+            validationErrors: rawVal.errors,
+          };
+        }
+
+        // Write raw-skill.json into staging
+        const rawSkillManifest = {
+          id: skillId,
+          name: resolvedName,
+          type: "raw",
+          version: "1.0.0",
+          description: markdownContent.slice(0, 150).replace(/[#*`\n]/g, " ").trim(),
+          primaryDocument: primaryDocName,
+          availableDocuments: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+          documents: candidateDocs.length > 0 ? candidateDocs : [primaryDocName],
+          importedAt: new Date().toISOString(),
+        };
+        fs.writeFileSync(
+          path.join(stagingDir, "raw-skill.json"),
+          JSON.stringify(rawSkillManifest, null, 2),
+          "utf-8"
+        );
+
+        // Atomic Install from Staging to Destination
+        const targetDir = this.resolveTargetDir(
+          skillId,
+          params.target,
+          params.projectId,
+          params.projectRoot
+        );
+
+        if (fs.existsSync(targetDir)) {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(targetDir, { recursive: true });
+
+        this.copyDirRecursive(stagingDir, targetDir);
+        this.sanitizeTargetDir(targetDir);
+
+        if (!fs.existsSync(path.join(targetDir, "raw-skill.json")) && !fs.existsSync(path.join(targetDir, primaryDocName))) {
+          return {
+            success: false,
+            code: "FILESYSTEM_COMMIT_FAILED",
+            stage: "filesystem_commit",
+            message: "安装提交失败：目标目录缺少关键文件",
+            error: "安装提交失败：目标目录缺少关键文件",
+          };
+        }
+
+        // Registry reload
+        const projectDirs =
+          params.projectId && params.projectRoot
+            ? [{ projectId: params.projectId, rootPath: params.projectRoot }]
+            : [];
+        this.registry.reload(projectDirs);
+
+        const skill = this.registry.getSkill(skillId, params.projectId);
+        if (!skill) {
+          return {
+            success: false,
+            code: "REGISTRY_RELOAD_FAILED",
+            stage: "registry_reload",
+            message: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
+            error: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
+          };
+        }
+
+        const { instructions: _unused, ...meta } = skill;
         return {
-          success: false,
-          code: "MANIFEST_MISSING",
-          stage: "manifest_injection",
-          message: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
-          error: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
+          success: true,
+          skill: meta,
         };
       }
 
@@ -1447,7 +1872,12 @@ export class SkillImporter {
     target: "user" | "project";
     projectId?: string;
     validationStatus?: SkillValidationStatus;
-    importMode?: "native" | "compatible";
+    importMode?: "native" | "compatible" | "raw";
+    skillType?: "nexus" | "raw";
+    primaryDocument?: string;
+    availableDocuments?: string[];
+    documents?: string[];
+    filesCount?: number;
     detectedRoot?: string;
     manifestFound?: boolean;
     skillDocFound?: boolean;
@@ -1526,6 +1956,11 @@ export class SkillImporter {
       rawYaml: params.rawYaml,
       markdownContent: params.markdownContent,
       importMode: params.importMode || "native",
+      skillType: params.skillType || (params.manifestFound ? "nexus" : "raw"),
+      primaryDocument: params.primaryDocument || "SKILL.md",
+      availableDocuments: params.availableDocuments,
+      documents: params.documents || params.availableDocuments,
+      filesCount: params.filesCount,
       detectedRoot: params.detectedRoot,
       manifestFound: params.manifestFound ?? true,
       skillDocFound: params.skillDocFound ?? true,

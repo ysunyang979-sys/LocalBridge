@@ -37,14 +37,14 @@ describe("Skills Import: Invalid Skills Rejection", () => {
     } catch {}
   });
 
-  it("returns needs_setup and blocks direct import when skill.yaml is missing", async () => {
+  it("allows direct import as raw skill when skill.yaml is missing but SKILL.md exists", async () => {
     const noYamlDir = path.join(tmpRoot, "no-yaml");
     fs.mkdirSync(noYamlDir, { recursive: true });
     fs.writeFileSync(path.join(noYamlDir, "SKILL.md"), "# Skill Without YAML");
 
     const preview = await importer.previewFolder(noYamlDir, "user");
-    expect(preview.valid).toBe(false);
-    expect(preview.validationStatus).toBe("needs_setup");
+    expect(preview.valid).toBe(true);
+    expect(preview.skillType).toBe("raw");
     expect(preview.manifestFound).toBe(false);
     expect(preview.skillDocFound).toBe(true);
 
@@ -52,7 +52,8 @@ describe("Skills Import: Invalid Skills Rejection", () => {
       sourcePath: noYamlDir,
       target: "user",
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    expect(result.skill?.type).toBe("raw");
   });
 
   it("rejects import when both skill.yaml and documentation are missing", async () => {

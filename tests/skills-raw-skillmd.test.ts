@@ -8,7 +8,7 @@ import { SkillRegistry } from "../apps/server/src/skills/skill-registry.js";
 import { SkillImporter } from "../apps/server/src/skills/skill-importer.js";
 import { MCP_TOOL_SCOPE } from "../apps/server/src/mcp/scope-policy.js";
 
-describe("skills-compat-does-not-validate-source-as-native: Avoid Upfront Source Native Validation", () => {
+describe("skills-raw-skillmd: SKILL.md Priority as Primary Document", () => {
   let tmpRoot: string;
   let userDir: string;
   let importer: SkillImporter;
@@ -16,7 +16,7 @@ describe("skills-compat-does-not-validate-source-as-native: Avoid Upfront Source
   const activeTools = new Set(Object.keys(MCP_TOOL_SCOPE));
 
   beforeEach(() => {
-    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-upfront-val-test-"));
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-raw-skillmd-"));
     userDir = path.join(tmpRoot, "user-skills");
     fs.mkdirSync(userDir, { recursive: true });
 
@@ -37,42 +37,32 @@ describe("skills-compat-does-not-validate-source-as-native: Avoid Upfront Source
     } catch {}
   });
 
-  it("does not reject raw folder missing skill.yaml upfront; returns needs_setup on preview and succeeds on import with customYaml", async () => {
-    const rawFolder = path.join(tmpRoot, "raw-doc-only");
-    fs.mkdirSync(rawFolder, { recursive: true });
-    fs.writeFileSync(path.join(rawFolder, "README.md"), "# Document Only Project\n\nUseful reference docs.");
+  it("prioritizes SKILL.md over README.md for primary document and name resolution", async () => {
+    const srcFolder = path.join(tmpRoot, "priority-test");
+    fs.mkdirSync(srcFolder, { recursive: true });
+    fs.writeFileSync(
+      path.join(srcFolder, "SKILL.md"),
+      "# Primary Skill Title\n\nDetailed operational instructions from SKILL.md."
+    );
+    fs.writeFileSync(
+      path.join(srcFolder, "README.md"),
+      "# Secondary Readme Title\n\nGeneral overview from README.md."
+    );
 
-    const preview = await importer.previewFolder(rawFolder, "user");
-    expect(["valid", "needs_setup"]).toContain(preview.validationStatus);
-    expect(preview.manifestFound).toBe(false);
-    expect(preview.skillDocFound).toBe(true);
-
-    const customYaml = `id: user.doc-only-converted
-version: "1.0.0"
-name:
-  zh-CN: 文档转技能
-  en-US: Doc Only Converted
-description:
-  zh-CN: 成功转换
-  en-US: Successfully converted
-category: general
-risk: low
-triggers:
-  - doc-only
-tools:
-  - localbridge_file_read
-workflow:
-  - read_docs
-enabled: true
-`;
+    const preview = await importer.previewFolder(srcFolder, "user");
+    expect(preview.primaryDocument).toBe("SKILL.md");
+    expect(preview.name["zh-CN"]).toBe("Primary Skill Title");
+    expect(preview.markdownContent).toContain("Detailed operational instructions from SKILL.md.");
 
     const result = await importer.importFolder({
-      sourcePath: rawFolder,
+      sourcePath: srcFolder,
       target: "user",
-      customYaml,
     });
 
     expect(result.success).toBe(true);
-    expect(result.skill?.id).toBe("user.doc-only-converted");
+    const skill = registry.getSkill("user.priority-test");
+    expect(skill).toBeDefined();
+    expect(skill?.primaryDocument).toBe("SKILL.md");
+    expect(skill?.instructions).toContain("Detailed operational instructions from SKILL.md.");
   });
 });
