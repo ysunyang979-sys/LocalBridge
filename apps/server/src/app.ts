@@ -70,6 +70,7 @@ export async function buildApp(
   const app = Fastify({
     loggerInstance: logger,
     disableRequestLogging: !enableLogging,
+    bodyLimit: 50 * 1024 * 1024,
   });
 
   // CORS

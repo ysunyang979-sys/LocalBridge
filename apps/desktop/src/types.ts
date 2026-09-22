@@ -793,6 +793,8 @@ export interface SkillImportPreview {
   skillDocFound?: boolean;
   candidateSkills?: SkillCandidate[];
   excludedFilesCount?: number;
+  archiveTotalExecutables?: number;
+  candidateExecutablesCount?: number;
 }
 
 export interface SkillImportParams {
@@ -811,6 +813,10 @@ export interface SkillImportResult {
   success: boolean;
   skill?: SkillMetadata;
   error?: string;
+  code?: string;
+  stage?: string;
+  message?: string;
+  details?: any;
   validationErrors?: string[];
 }
 

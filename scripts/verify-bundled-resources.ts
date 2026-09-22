@@ -109,7 +109,7 @@ async function verifyBundledServerMcpSchema() {
     }
 
     // Check /api/skills endpoint on bundled server
-    const skillsRes = await fetch(`http://127.0.0.1:${testPort}/api/skills`, {
+    const skillsRes = await fetch(`http://127.0.0.1:${testPort}/api/skills?source=builtin`, {
       headers: { authorization: `Bearer ${mgmtToken}` },
     });
     if (skillsRes.status !== 200) {

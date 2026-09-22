@@ -44,6 +44,30 @@ const DEFAULT_MCP_TOOLS = [
   "localbridge_job_start",
 ];
 
+interface StructuredImportError {
+  stage?: string;
+  code?: string;
+  message: string;
+  details?: any;
+}
+
+function formatStageName(stage?: string, lang: string = "zh-CN"): string {
+  if (!stage) return "";
+  const map: Record<string, { zh: string; en: string }> = {
+    resolve_subpath: { zh: "候选路径解析 (resolve_subpath)", en: "Candidate Path Resolution (resolve_subpath)" },
+    staging_init: { zh: "临时工作区初始化 (staging_init)", en: "Staging Initialization (staging_init)" },
+    declarative_sanitization: { zh: "可执行资源净化 (declarative_sanitization)", en: "Declarative Sanitization (declarative_sanitization)" },
+    manifest_injection: { zh: "配置向导清单注入 (manifest_injection)", en: "Manifest Injection (manifest_injection)" },
+    staging_validation: { zh: "声明式配置校验 (staging_validation)", en: "Staging Validation (staging_validation)" },
+    conflict_check: { zh: "命名空间与版本冲突检查 (conflict_check)", en: "Conflict Check (conflict_check)" },
+    filesystem_commit: { zh: "文件系统写入 (filesystem_commit)", en: "Filesystem Commit (filesystem_commit)" },
+    registry_reload: { zh: "技能注册表重载 (registry_reload)", en: "Registry Reload (registry_reload)" },
+  };
+  const item = map[stage];
+  if (!item) return stage;
+  return lang === "zh-CN" ? item.zh : item.en;
+}
+
 export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
   isOpen,
   onClose,
@@ -66,6 +90,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
 
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importErrorData, setImportErrorData] = useState<StructuredImportError | null>(null);
 
   // Excluded files collapsible state
   const [showExcludedFiles, setShowExcludedFiles] = useState(false);
@@ -82,6 +107,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
   const [wizardTriggers, setWizardTriggers] = useState("");
   const [wizardTools, setWizardTools] = useState<string[]>(DEFAULT_MCP_TOOLS);
   const [wizardWorkflow, setWizardWorkflow] = useState("inspect, analyze, summarize");
+  const [wizardOverwrite, setWizardOverwrite] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -140,6 +166,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
     setPreviewLoading(true);
     setPreviewError(null);
     setImportError(null);
+    setImportErrorData(null);
     setShowWizard(false);
     try {
       const prev = await bridge.previewSkillImport({
@@ -163,6 +190,7 @@ export const ImportSkillModal: React.FC<ImportSkillModalProps> = ({
     setPreviewLoading(true);
     setPreviewError(null);
     setImportError(null);
+    setImportErrorData(null);
     setShowWizard(false);
     try {
       const prev = await bridge.previewSkillImport({
@@ -333,16 +361,18 @@ enabled: true
     if (!preview && !customYaml) return;
     setImporting(true);
     setImportError(null);
+    setImportErrorData(null);
 
     try {
       let result;
+      const effectiveOverwrite = overwrite || wizardOverwrite;
       if (selectedSourceType === "folder") {
         result = await bridge.importSkillFolder({
           sourcePath,
           target: selectedTarget,
           projectId,
           projectRoot,
-          overwrite,
+          overwrite: effectiveOverwrite,
           customYaml,
           subPath: selectedSubPath || undefined,
         });
@@ -353,7 +383,7 @@ enabled: true
           target: selectedTarget,
           projectId,
           projectRoot,
-          overwrite,
+          overwrite: effectiveOverwrite,
           customYaml,
           subPath: selectedSubPath || undefined,
         });
@@ -363,11 +393,40 @@ enabled: true
         onSuccess(result.skill);
         onClose();
       } else {
-        const errMsg = result.error || result.validationErrors?.join("; ") || t.skills.importFailed;
+        const errMsg = result.error || result.message || result.validationErrors?.join("; ") || t.skills.importFailed;
         setImportError(errMsg);
+        setImportErrorData({
+          stage: result.stage,
+          code: result.code,
+          message: errMsg,
+          details: result.details || result.validationErrors,
+        });
       }
     } catch (err: any) {
-      setImportError(err?.message || "Failed to import skill");
+      let stage: string | undefined;
+      let code: string | undefined;
+      let message = "Failed to import skill";
+      let details: any;
+
+      if (typeof err === "string") {
+        try {
+          const parsed = JSON.parse(err);
+          stage = parsed.stage;
+          code = parsed.code;
+          message = parsed.error || parsed.message || err;
+          details = parsed.details || parsed.validationErrors;
+        } catch {
+          message = err;
+        }
+      } else if (err && typeof err === "object") {
+        stage = err.stage || err.data?.stage;
+        code = err.code || err.data?.code;
+        message = err.error || err.message || err.data?.error || err.data?.message || String(err);
+        details = err.details || err.data?.details || err.validationErrors || err.data?.validationErrors;
+      }
+
+      setImportError(message);
+      setImportErrorData({ stage, code, message, details });
     } finally {
       setImporting(false);
     }
@@ -376,7 +435,7 @@ enabled: true
   const handleWizardSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const yaml = buildWizardYaml();
-    handleImport(false, yaml);
+    handleImport(wizardOverwrite, yaml);
   };
 
   const displayName = preview
@@ -634,14 +693,38 @@ enabled: true
             </div>
           )}
 
-          {/* Import Error Banner */}
-          {importError && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold">{t.skills.importFailed}: </span>
-                <span>{importError}</span>
+          {/* Structured Import Error Banner */}
+          {(importErrorData || importError) && (
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800/60 text-rose-800 dark:text-rose-200 text-xs space-y-2 shadow-xs animate-in fade-in duration-150">
+              <div className="flex items-center gap-2 font-bold text-rose-700 dark:text-rose-300">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{t.skills.importFailed}</span>
+                {importErrorData?.code && (
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300">
+                    {importErrorData.code}
+                  </span>
+                )}
               </div>
+
+              {importErrorData?.stage && (
+                <div className="text-[11px] text-rose-700 dark:text-rose-300">
+                  <span className="font-semibold">{language === "zh-CN" ? "阶段：" : "Stage: "}</span>
+                  <span>{formatStageName(importErrorData.stage, language)}</span>
+                </div>
+              )}
+
+              <div className="text-[11px] text-rose-800 dark:text-rose-200 leading-relaxed">
+                <span className="font-semibold">{language === "zh-CN" ? "原因：" : "Reason: "}</span>
+                <span>{importErrorData?.message || importError}</span>
+              </div>
+
+              {importErrorData?.details && Array.isArray(importErrorData.details) && importErrorData.details.length > 0 && (
+                <div className="mt-1 pt-1 border-t border-rose-200/60 dark:border-rose-800/40 text-[10px] font-mono space-y-0.5 text-rose-700 dark:text-rose-300 max-h-24 overflow-y-auto">
+                  {importErrorData.details.map((d: any, i: number) => (
+                    <div key={i}>• {String(d)}</div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -827,7 +910,17 @@ enabled: true
                     />
                   </div>
 
-                  <div className="pt-2 flex justify-end">
+                  <div className="flex items-center justify-between pt-2">
+                    <label className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400 select-none cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={wizardOverwrite}
+                        onChange={(e) => setWizardOverwrite(e.target.checked)}
+                        className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                      />
+                      <span>{language === "zh-CN" ? "若同名技能已存在则覆盖安装" : "Overwrite if skill already exists"}</span>
+                    </label>
+
                     <button
                       type="submit"
                       disabled={importing}
@@ -841,7 +934,45 @@ enabled: true
               )}
 
               {/* Excluded Executable Files Summary & Expander */}
-              {preview.executableFilesFound && preview.executableFilesFound.length > 0 && (
+              {(preview.archiveTotalExecutables !== undefined && preview.archiveTotalExecutables > 0) ? (
+                <div className="p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span className="font-semibold">
+                        {language === "zh-CN"
+                          ? `归档共发现 ${preview.archiveTotalExecutables} 个可执行资源，当前候选包含 ${preview.candidateExecutablesCount ?? 0} 个，导入时全部排除`
+                          : `Archive contains ${preview.archiveTotalExecutables} executables, candidate contains ${preview.candidateExecutablesCount ?? 0}, all excluded`}
+                      </span>
+                    </div>
+                    {preview.executableFilesFound && preview.executableFilesFound.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowExcludedFiles(!showExcludedFiles)}
+                        className="text-[11px] text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1"
+                      >
+                        <span>{showExcludedFiles ? "收起" : `查看候选文件 (${preview.executableFilesFound.length})`}</span>
+                        {showExcludedFiles ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-amber-700/90 dark:text-amber-300/80 leading-relaxed">
+                    {language === "zh-CN"
+                      ? "出于安全原因，任何外部脚本与二进制文件绝不进入 Nexus Skill 目录，且绝不被执行。技能仅作为纯声明式元数据导入。"
+                      : "For security, external scripts and binaries are excluded and never executed. The skill imports as declarative metadata only."}
+                  </p>
+
+                  {showExcludedFiles && preview.executableFilesFound && preview.executableFilesFound.length > 0 && (
+                    <div className="mt-2 max-h-32 overflow-y-auto p-2 rounded bg-amber-100/50 dark:bg-black/40 border border-amber-200 dark:border-amber-900/60 font-mono text-[10px] space-y-0.5 text-slate-800 dark:text-slate-300">
+                      {preview.executableFilesFound.map((file, i) => (
+                        <div key={i} className="truncate">
+                          ✕ {file}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (preview.executableFilesFound && preview.executableFilesFound.length > 0) ? (
                 <div className="p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-xs space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -873,7 +1004,7 @@ enabled: true
                     </div>
                   )}
                 </div>
-              )}
+              ) : null}
 
               {/* Conflict Alert */}
               {preview.isBuiltinConflict ? (

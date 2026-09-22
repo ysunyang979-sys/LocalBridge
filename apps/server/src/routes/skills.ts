@@ -228,6 +228,30 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
       });
     }
 
+function sanitizeSecretStrings<T>(input: T): T {
+  if (typeof input === "string") {
+    return input
+      .replace(/lm_[a-zA-Z0-9_\-]+/g, "lm_***")
+      .replace(/lb_[a-zA-Z0-9_\-]+/g, "lb_***")
+      .replace(/(token|secret|password|bearer)\s*[:=]\s*["']?[a-zA-Z0-9_\-\.]+["']?/gi, "$1=***") as unknown as T;
+  }
+  if (Array.isArray(input)) {
+    return input.map(sanitizeSecretStrings) as unknown as T;
+  }
+  if (input && typeof input === "object") {
+    const copy: Record<string, any> = {};
+    for (const [k, v] of Object.entries(input)) {
+      if (/token|secret|password/i.test(k) && typeof v === "string") {
+        copy[k] = "***";
+      } else {
+        copy[k] = sanitizeSecretStrings(v);
+      }
+    }
+    return copy as T;
+  }
+  return input;
+}
+
     try {
       if (sourceType === "folder") {
         if (!sourcePath) {
@@ -246,10 +270,11 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
           subPath,
         });
 
-        if (!result.success) {
-          return reply.status(400).send(result);
+        const sanitized = sanitizeSecretStrings(result);
+        if (!sanitized.success) {
+          return reply.status(400).send(sanitized);
         }
-        return reply.status(200).send(result);
+        return reply.status(200).send(sanitized);
       } else {
         let zipInput: Buffer | string;
         if (zipBase64) {
@@ -272,15 +297,20 @@ export const skillsRoutes: FastifyPluginAsync<SkillsRouteOptions> = async (
           subPath,
         });
 
-        if (!result.success) {
-          return reply.status(400).send(result);
+        const sanitized = sanitizeSecretStrings(result);
+        if (!sanitized.success) {
+          return reply.status(400).send(sanitized);
         }
-        return reply.status(200).send(result);
+        return reply.status(200).send(sanitized);
       }
     } catch (err: any) {
+      const sanitizedMsg = sanitizeSecretStrings(err.message || String(err));
       return reply.status(500).send({
         success: false,
-        error: err.message || String(err),
+        code: "UNEXPECTED_SERVER_ERROR",
+        stage: "filesystem_commit",
+        error: sanitizedMsg,
+        message: sanitizedMsg,
       });
     }
   });

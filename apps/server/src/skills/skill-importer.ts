@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import crypto from "node:crypto";
 import YAML from "yaml";
 import type {
   SkillImportPreview,
@@ -43,10 +45,10 @@ function extractMarkdownTitleAndDesc(md: string): { title: string; desc: string 
     if (!line) continue;
     if (!title && line.startsWith("#")) {
       title = line.replace(/^#+\s*/, "").trim();
-      continue;
+    } else if (!desc && !line.startsWith("#") && !line.startsWith("```") && line.length > 3) {
+      desc = line.replace(/^[*_`#>-]+\s*/, "").slice(0, 150).trim();
     }
-    if (title && !desc && !line.startsWith("#") && !line.startsWith("[![") && !line.startsWith("![")) {
-      desc = line;
+    if (title && desc) {
       break;
     }
   }
@@ -66,13 +68,37 @@ function detectZipRootPrefix(entries: ZipEntry[]): string {
   return "";
 }
 
+function resolveZipPrefix(entries: ZipEntry[], subPath?: string): string {
+  const singleRoot = detectZipRootPrefix(entries);
+  if (!subPath) return singleRoot;
+  const cleanSub = subPath.replace(/^\/+/, "").replace(/\/+$/, "");
+  // Check if cleanSub already matches entries directly
+  const directMatch = entries.some(
+    (e) => e.name.startsWith(cleanSub + "/") || e.name === cleanSub
+  );
+  if (directMatch) {
+    return cleanSub + "/";
+  }
+  // Check if singleRoot + cleanSub matches entries
+  if (singleRoot) {
+    const combined = (singleRoot + cleanSub).replace(/\/?$/, "/");
+    const combinedMatch = entries.some(
+      (e) => e.name.startsWith(combined) || e.name === combined.replace(/\/$/, "")
+    );
+    if (combinedMatch) {
+      return combined;
+    }
+  }
+  return singleRoot ? (singleRoot + cleanSub).replace(/\/?$/, "/") : cleanSub + "/";
+}
+
 function discoverSubCandidatesFromEntries(entries: ZipEntry[], rootPrefix: string): SkillCandidate[] {
   const candidates: SkillCandidate[] = [];
   const seenPaths = new Set<string>();
 
   for (const e of entries) {
-    if (!e.name.startsWith(rootPrefix)) continue;
-    const rel = e.name.slice(rootPrefix.length);
+    if (rootPrefix && !e.name.startsWith(rootPrefix)) continue;
+    const rel = rootPrefix ? e.name.slice(rootPrefix.length) : e.name;
     const lowerName = e.name.toLowerCase();
 
     if (
@@ -87,17 +113,18 @@ function discoverSubCandidatesFromEntries(entries: ZipEntry[], rootPrefix: strin
         if (!seenPaths.has(subRelPath)) {
           seenPaths.add(subRelPath);
           const name = parts[parts.length - 2] || subRelPath;
+          const candidatePrefix = rootPrefix ? `${rootPrefix}${subRelPath}/` : `${subRelPath}/`;
           const hasYaml = entries.some(
             (x) =>
               !x.isDirectory &&
-              (x.name === `${rootPrefix}${subRelPath}/skill.yaml` ||
-                x.name === `${rootPrefix}${subRelPath}/skill.yml`)
+              (x.name === `${candidatePrefix}skill.yaml` ||
+                x.name === `${candidatePrefix}skill.yml`)
           );
           const hasMd = entries.some(
             (x) =>
               !x.isDirectory &&
-              (x.name === `${rootPrefix}${subRelPath}/SKILL.md` ||
-                x.name.toLowerCase() === `${rootPrefix}${subRelPath}/skill.md`)
+              (x.name === `${candidatePrefix}SKILL.md` ||
+                x.name.toLowerCase() === `${candidatePrefix}skill.md`)
           );
 
           candidates.push({
@@ -118,41 +145,42 @@ function discoverSubCandidatesFromFolder(rootPath: string): SkillCandidate[] {
   const candidates: SkillCandidate[] = [];
   const seenPaths = new Set<string>();
 
-  function scanDir(currentPath: string, relPath: string, depth: number) {
-    if (depth > 2) return;
-    try {
-      const entries = fs.readdirSync(currentPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-          const nextRel = relPath ? `${relPath}/${entry.name}` : entry.name;
-          const nextFull = path.join(currentPath, entry.name);
+  try {
+    const entries = fs.readdirSync(rootPath, { withFileTypes: true, recursive: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const nameLower = entry.name.toLowerCase();
+        if (nameLower === "skill.yaml" || nameLower === "skill.yml" || nameLower === "skill.md") {
+          const entryFull = path.join(entry.parentPath || (entry as any).path || rootPath, entry.name);
+          const rel = path.relative(rootPath, entryFull).replace(/\\/g, "/");
+          const parts = rel.split("/");
+          if (parts.length >= 2 && parts.length <= 4) {
+            const subRelPath = parts.slice(0, parts.length - 1).join("/");
+            if (!seenPaths.has(subRelPath)) {
+              seenPaths.add(subRelPath);
+              const dirName = parts[parts.length - 2] || subRelPath;
+              const subFull = path.join(rootPath, subRelPath);
+              const hasYaml =
+                fs.existsSync(path.join(subFull, "skill.yaml")) ||
+                fs.existsSync(path.join(subFull, "skill.yml"));
+              const hasMd =
+                fs.existsSync(path.join(subFull, "SKILL.md")) ||
+                fs.existsSync(path.join(subFull, "skill.md"));
 
-          const hasYaml =
-            fs.existsSync(path.join(nextFull, "skill.yaml")) ||
-            fs.existsSync(path.join(nextFull, "skill.yml"));
-          const hasMd =
-            fs.existsSync(path.join(nextFull, "SKILL.md")) ||
-            fs.existsSync(path.join(nextFull, "skill.md"));
-
-          if ((hasYaml || hasMd) && !seenPaths.has(nextRel)) {
-            seenPaths.add(nextRel);
-            candidates.push({
-              id: `user.${slugify(entry.name)}`,
-              name: entry.name,
-              path: nextRel,
-              hasManifest: hasYaml,
-              docPath: hasMd ? `${nextRel}/SKILL.md` : undefined,
-            });
+              candidates.push({
+                id: `user.${slugify(dirName)}`,
+                name: dirName,
+                path: subRelPath,
+                hasManifest: hasYaml,
+                docPath: hasMd ? `${subRelPath}/SKILL.md` : undefined,
+              });
+            }
           }
-
-          scanDir(nextFull, nextRel, depth + 1);
         }
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
-  scanDir(rootPath, "", 1);
   return candidates;
 }
 
@@ -165,6 +193,32 @@ export class SkillImporter {
     this.validator = options.validator;
     this.loader = options.loader;
     this.registry = options.registry;
+  }
+
+  private createStagingDir(): string {
+    const baseTmp =
+      process.platform === "win32" && process.env.LOCALAPPDATA
+        ? path.join(process.env.LOCALAPPDATA, "LocalBridge", "tmp", "skill-staging")
+        : path.join(os.tmpdir(), "localbridge-skill-staging");
+    fs.mkdirSync(baseTmp, { recursive: true });
+    const stagingDir = path.join(baseTmp, crypto.randomUUID());
+    fs.mkdirSync(stagingDir, { recursive: true });
+    return stagingDir;
+  }
+
+  private findExecutableFilesInDir(dir: string): string[] {
+    const results: string[] = [];
+    if (!fs.existsSync(dir)) return results;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true, recursive: true });
+      for (const entry of entries) {
+        const name = typeof entry === "string" ? entry : (entry as any).name;
+        if (EXECUTABLE_FILE_REGEX.test(name)) {
+          results.push(name);
+        }
+      }
+    } catch {}
+    return results;
   }
 
   /**
@@ -191,7 +245,11 @@ export class SkillImporter {
       return this.createInvalidPreview("folder", `Specified sub-path does not exist: ${subPath}`);
     }
 
-    const folderName = path.basename(activeFolder);
+    const candidateName = subPath
+      ? path.basename(subPath.replace(/[\\/]+$/, ""))
+      : path.basename(activeFolder);
+    const folderName = candidateName;
+
     const yamlPath = path.join(activeFolder, "skill.yaml");
     const ymlPath = path.join(activeFolder, "skill.yml");
     const activeYamlPath = fs.existsSync(yamlPath) ? yamlPath : fs.existsSync(ymlPath) ? ymlPath : null;
@@ -210,7 +268,18 @@ export class SkillImporter {
       ? readmeZhPath
       : null;
 
-    // Scan for executable files in folder
+    // Scan for all executables in whole folder vs active subfolder
+    const totalFolderExecutables: string[] = [];
+    try {
+      const allEntries = fs.readdirSync(normPath, { recursive: true });
+      for (const entry of allEntries) {
+        const strEntry = typeof entry === "string" ? entry : (entry as any).name;
+        if (EXECUTABLE_FILE_REGEX.test(strEntry)) {
+          totalFolderExecutables.push(strEntry);
+        }
+      }
+    } catch {}
+
     const executableFilesFound: string[] = [];
     try {
       const entries = fs.readdirSync(activeFolder, { recursive: true });
@@ -221,6 +290,9 @@ export class SkillImporter {
         }
       }
     } catch {}
+
+    const archiveTotalExecutables = totalFolderExecutables.length;
+    const candidateExecutablesCount = executableFilesFound.length;
 
     const candidateSkills = discoverSubCandidatesFromFolder(normPath);
     let markdownContent = "";
@@ -253,8 +325,11 @@ export class SkillImporter {
       const allErrors = [...errors, ...valResult.errors];
 
       let secWarning = valResult.securityWarning;
-      if (executableFilesFound.length > 0 && !secWarning) {
-        secWarning = `发现 ${executableFilesFound.length} 个可执行资源。出于安全原因，这些文件不会被导入或执行。`;
+      if (archiveTotalExecutables > 0 && !secWarning) {
+        secWarning =
+          candidateExecutablesCount > 0
+            ? `文件夹共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 ${candidateExecutablesCount} 个，导入时全部排除。`
+            : `文件夹共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 0 个，导入时全部排除。`;
       }
 
       return this.buildPreview({
@@ -273,6 +348,8 @@ export class SkillImporter {
         manifestFound: true,
         skillDocFound: Boolean(activeDocPath),
         candidateSkills: candidateSkills.length > 0 ? candidateSkills : undefined,
+        archiveTotalExecutables,
+        candidateExecutablesCount,
       });
     }
 
@@ -281,8 +358,11 @@ export class SkillImporter {
       const { title, desc } = extractMarkdownTitleAndDesc(markdownContent);
       const tentativeId = "user." + slugify(folderName);
       let secWarning: string | undefined;
-      if (executableFilesFound.length > 0) {
-        secWarning = `发现 ${executableFilesFound.length} 个可执行资源。出于安全原因，这些文件不会被导入或执行。`;
+      if (archiveTotalExecutables > 0) {
+        secWarning =
+          candidateExecutablesCount > 0
+            ? `文件夹共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 ${candidateExecutablesCount} 个，导入时全部排除。`
+            : `文件夹共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 0 个，导入时全部排除。`;
       }
 
       return this.buildPreview({
@@ -293,7 +373,7 @@ export class SkillImporter {
           description: { "zh-CN": desc, "en-US": desc },
           category: "general",
           risk: "medium",
-          triggers: [folderName],
+          triggers: [folderName, folderName.replace(/[-_]/g, " ")],
           tools: [],
           workflow: [],
         },
@@ -310,6 +390,8 @@ export class SkillImporter {
         manifestFound: false,
         skillDocFound: true,
         candidateSkills: candidateSkills.length > 0 ? candidateSkills : undefined,
+        archiveTotalExecutables,
+        candidateExecutablesCount,
       });
     }
 
@@ -348,17 +430,20 @@ export class SkillImporter {
     }
 
     const singleRoot = detectZipRootPrefix(entries);
-    const rootPrefix = subPath
-      ? (singleRoot + subPath).replace(/\/?$/, "/")
-      : singleRoot;
+    const rootPrefix = resolveZipPrefix(entries, subPath);
 
-    // Scan for executable files in archive
-    const executableFilesFound: string[] = [];
+    // Scan for all executable files in entire archive
+    const allArchiveExecutables: string[] = [];
     for (const e of entries) {
       if (!e.isDirectory && EXECUTABLE_FILE_REGEX.test(e.name)) {
-        executableFilesFound.push(e.name);
+        allArchiveExecutables.push(e.name);
       }
     }
+
+    // Filter executables belonging to selected candidate
+    const candidateExecutables = subPath
+      ? allArchiveExecutables.filter((e) => e.startsWith(rootPrefix))
+      : allArchiveExecutables;
 
     const candidateSkills = discoverSubCandidatesFromEntries(entries, singleRoot);
 
@@ -399,7 +484,16 @@ export class SkillImporter {
       } catch {}
     }
 
-    const pkgName = singleRoot.replace(/\/$/, "") || (typeof zipBufferOrPath === "string" ? path.basename(zipBufferOrPath, ".zip") : "compatible-skill");
+    const candidateName = subPath
+      ? path.basename(subPath.replace(/[\\/]+$/, ""))
+      : singleRoot.replace(/\/$/, "") ||
+        (typeof zipBufferOrPath === "string"
+          ? path.basename(zipBufferOrPath, ".zip")
+          : "compatible-skill");
+
+    const pkgName = candidateName;
+    const archiveTotalExecutables = allArchiveExecutables.length;
+    const candidateExecutablesCount = candidateExecutables.length;
 
     // Case 1: Valid or invalid YAML manifest found
     if (yamlEntry) {
@@ -424,8 +518,11 @@ export class SkillImporter {
       const allErrors = [...errors, ...valResult.errors];
 
       let secWarning = valResult.securityWarning;
-      if (executableFilesFound.length > 0 && !secWarning) {
-        secWarning = `发现 ${executableFilesFound.length} 个可执行资源。出于安全原因，这些文件不会被导入或执行。`;
+      if (archiveTotalExecutables > 0 && !secWarning) {
+        secWarning =
+          candidateExecutablesCount > 0
+            ? `归档共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 ${candidateExecutablesCount} 个，导入时全部排除。`
+            : `归档共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 0 个，导入时全部排除。`;
       }
 
       return this.buildPreview({
@@ -436,7 +533,7 @@ export class SkillImporter {
         rawYaml,
         errors: allErrors,
         securityWarning: secWarning,
-        executableFilesFound,
+        executableFilesFound: candidateExecutables,
         target,
         projectId,
         importMode: singleRoot ? "compatible" : "native",
@@ -444,6 +541,8 @@ export class SkillImporter {
         manifestFound: true,
         skillDocFound: Boolean(mdEntry),
         candidateSkills: candidateSkills.length > 0 ? candidateSkills : undefined,
+        archiveTotalExecutables,
+        candidateExecutablesCount,
       });
     }
 
@@ -452,8 +551,11 @@ export class SkillImporter {
       const { title, desc } = extractMarkdownTitleAndDesc(markdownContent);
       const tentativeId = "user." + slugify(pkgName);
       let secWarning: string | undefined;
-      if (executableFilesFound.length > 0) {
-        secWarning = `发现 ${executableFilesFound.length} 个可执行资源。出于安全原因，这些文件不会被导入或执行。`;
+      if (archiveTotalExecutables > 0) {
+        secWarning =
+          candidateExecutablesCount > 0
+            ? `归档共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 ${candidateExecutablesCount} 个，导入时全部排除。`
+            : `归档共发现 ${archiveTotalExecutables} 个可执行资源，当前候选包含 0 个，导入时全部排除。`;
       }
 
       return this.buildPreview({
@@ -464,7 +566,7 @@ export class SkillImporter {
           description: { "zh-CN": desc, "en-US": desc },
           category: "general",
           risk: "medium",
-          triggers: [pkgName],
+          triggers: [pkgName, pkgName.replace(/[-_]/g, " ")],
           tools: [],
           workflow: [],
         },
@@ -472,7 +574,7 @@ export class SkillImporter {
         rawYaml: "",
         errors: ["未发现 Nexus Skill Manifest (skill.yaml)。你可以将此包转换为 Nexus 声明式 Skill。"],
         securityWarning: secWarning,
-        executableFilesFound,
+        executableFilesFound: candidateExecutables,
         target,
         projectId,
         validationStatus: "needs_setup",
@@ -481,6 +583,8 @@ export class SkillImporter {
         manifestFound: false,
         skillDocFound: true,
         candidateSkills: candidateSkills.length > 0 ? candidateSkills : undefined,
+        archiveTotalExecutables,
+        candidateExecutablesCount,
       });
     }
 
@@ -492,7 +596,7 @@ export class SkillImporter {
   }
 
   /**
-   * Import a skill folder.
+   * Import a skill folder via a secure Staging Directory transaction.
    */
   async importFolder(params: {
     sourcePath: string;
@@ -503,98 +607,191 @@ export class SkillImporter {
     customYaml?: string;
     subPath?: string;
   }): Promise<SkillImportResult> {
-    let parsedYaml: any = null;
-    let skillId = "";
+    const stagingDir = this.createStagingDir();
 
-    if (params.customYaml) {
+    try {
+      // Step 1: Resolve source and candidate path
+      const normSrc = path.resolve(params.sourcePath);
+      if (!fs.existsSync(normSrc)) {
+        return {
+          success: false,
+          code: "SOURCE_PATH_NOT_FOUND",
+          stage: "resolve_subpath",
+          message: `源目录不存在: ${params.sourcePath}`,
+          error: `源目录不存在: ${params.sourcePath}`,
+        };
+      }
+
+      const activeSrc = params.subPath ? path.resolve(normSrc, params.subPath) : normSrc;
+      if (!fs.existsSync(activeSrc)) {
+        return {
+          success: false,
+          code: "CANDIDATE_PATH_NOT_FOUND",
+          stage: "resolve_subpath",
+          message: `所选 candidate 路径不存在: ${params.subPath}`,
+          error: `所选 candidate 路径不存在: ${params.subPath}`,
+        };
+      }
+
+      // Step 2: Copy declarative safe content to staging (skipping executables)
+      this.copyDirRecursive(activeSrc, stagingDir);
+
+      // Step 3: Assert Executable Files = 0 in staging
+      this.sanitizeTargetDir(stagingDir);
+      const remainingExecutables = this.findExecutableFilesInDir(stagingDir);
+      if (remainingExecutables.length > 0) {
+        return {
+          success: false,
+          code: "EXECUTABLE_FILES_PERSISTED",
+          stage: "declarative_sanitization",
+          message: `Staging directory contains forbidden executable files after sanitization: ${remainingExecutables.join(", ")}`,
+          error: `Staging directory contains forbidden executable files after sanitization: ${remainingExecutables.join(", ")}`,
+        };
+      }
+
+      // Step 4: Inject customYaml or verify existing manifest in staging
+      if (params.customYaml) {
+        fs.writeFileSync(path.join(stagingDir, "skill.yaml"), params.customYaml, "utf-8");
+      }
+
+      const stagingYamlPath = path.join(stagingDir, "skill.yaml");
+      const stagingYmlPath = path.join(stagingDir, "skill.yml");
+      const activeYaml = fs.existsSync(stagingYamlPath)
+        ? stagingYamlPath
+        : fs.existsSync(stagingYmlPath)
+        ? stagingYmlPath
+        : null;
+
+      if (!activeYaml) {
+        return {
+          success: false,
+          code: "MANIFEST_MISSING",
+          stage: "manifest_injection",
+          message: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
+          error: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
+        };
+      }
+
+      let parsedYaml: any;
       try {
-        parsedYaml = YAML.parse(params.customYaml);
+        const rawYaml = fs.readFileSync(activeYaml, "utf-8");
+        parsedYaml = YAML.parse(rawYaml);
       } catch (err: any) {
         return {
           success: false,
-          error: `Failed to parse provided custom YAML: ${err.message}`,
+          code: "MANIFEST_PARSE_ERROR",
+          stage: "manifest_injection",
+          message: `Failed to parse skill.yaml manifest: ${err.message}`,
+          error: `Failed to parse skill.yaml manifest: ${err.message}`,
           validationErrors: [err.message],
         };
       }
-      const val = this.validator.validate("", parsedYaml, "", { isBuiltin: false });
-      if (!val.valid) {
+
+      // Preserve / ensure SKILL.md in staging
+      const stagingMdPath = path.join(stagingDir, "SKILL.md");
+      const stagingLowerMdPath = path.join(stagingDir, "skill.md");
+      const hasStagingMd = fs.existsSync(stagingMdPath) || fs.existsSync(stagingLowerMdPath);
+
+      if (!hasStagingMd) {
+        if (params.customYaml) {
+          const readme = path.join(stagingDir, "README.md");
+          const readmeZh = path.join(stagingDir, "README_zh.md");
+          if (fs.existsSync(readme)) {
+            fs.copyFileSync(readme, stagingMdPath);
+          } else if (fs.existsSync(readmeZh)) {
+            fs.copyFileSync(readmeZh, stagingMdPath);
+          } else {
+            fs.writeFileSync(
+              stagingMdPath,
+              `# ${parsedYaml?.id || "skill"}\n\n${parsedYaml?.name?.["zh-CN"] || ""}\n`,
+              "utf-8"
+            );
+          }
+        } else {
+          return {
+            success: false,
+            code: "SKILL_IMPORT_VALIDATION_FAILED",
+            stage: "staging_validation",
+            message: "Missing required SKILL.md instructions file",
+            error: "Missing required SKILL.md instructions file",
+            validationErrors: ["Missing required SKILL.md instructions file"],
+          };
+        }
+      }
+
+      const activeMd = fs.existsSync(stagingMdPath) ? stagingMdPath : stagingLowerMdPath;
+      const markdownContent = fs.readFileSync(activeMd, "utf-8");
+
+      // Step 5: Strict Validate STAGING DIRECTORY
+      const valResult = this.validator.validate(stagingDir, parsedYaml, markdownContent, {
+        isBuiltin: false,
+        strictExecutables: true,
+      });
+
+      if (!valResult.valid) {
         return {
           success: false,
-          error: `Validation failed for custom YAML: ${val.errors.join("; ")}`,
-          validationErrors: val.errors,
+          code: "SKILL_IMPORT_VALIDATION_FAILED",
+          stage: "staging_validation",
+          message: valResult.errors.join("; "),
+          error: `声明式配置校验失败: ${valResult.errors.join("; ")}`,
+          validationErrors: valResult.errors,
+          details: valResult.errors,
         };
       }
-      skillId = parsedYaml.id;
-    } else {
-      const preview = await this.previewFolder(params.sourcePath, params.target, params.projectId, params.subPath);
-      if (!preview.valid) {
+
+      const skillId = parsedYaml.id;
+
+      // Step 6: Namespace protection and conflict check
+      if (skillId.startsWith("nexus.")) {
         return {
           success: false,
-          error: `Validation failed: ${preview.validationErrors.join("; ")}`,
-          validationErrors: preview.validationErrors,
+          code: "RESERVED_BUILTIN_NAMESPACE",
+          stage: "conflict_check",
+          message: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+          error: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+          validationErrors: ["nexus.* 命名空间仅供 Nexus 官方内置技能使用。"],
         };
       }
-      skillId = preview.id;
-    }
 
-    if (skillId.startsWith("nexus.")) {
-      return {
-        success: false,
-        error: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
-        validationErrors: ["nexus.* 命名空间仅供 Nexus 官方内置技能使用。"],
-      };
-    }
+      const existing = this.registry.getSkill(skillId, params.projectId);
+      if (existing && !params.overwrite) {
+        return {
+          success: false,
+          code: "SKILL_ALREADY_EXISTS",
+          stage: "conflict_check",
+          message: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+          error: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+        };
+      }
 
-    const existing = this.registry.getSkill(skillId, params.projectId);
-    if (existing && !params.overwrite) {
-      return {
-        success: false,
-        error: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
-      };
-    }
+      // Step 7: Atomic Install from Staging to Destination
+      const targetDir = this.resolveTargetDir(
+        skillId,
+        params.target,
+        params.projectId,
+        params.projectRoot
+      );
 
-    const targetDir = this.resolveTargetDir(
-      skillId,
-      params.target,
-      params.projectId,
-      params.projectRoot
-    );
-
-    try {
       if (fs.existsSync(targetDir)) {
         fs.rmSync(targetDir, { recursive: true, force: true });
       }
       fs.mkdirSync(targetDir, { recursive: true });
 
-      const normSrc = path.resolve(params.sourcePath);
-      const activeSrc = params.subPath ? path.resolve(normSrc, params.subPath) : normSrc;
-
-      // Copy folder contents with declarative sanitization (excluding executables)
-      this.copyDirRecursive(activeSrc, targetDir);
-
-      // If custom YAML was supplied, write it as skill.yaml
-      if (params.customYaml) {
-        fs.writeFileSync(path.join(targetDir, "skill.yaml"), params.customYaml, "utf-8");
-      }
-
-      // If SKILL.md does not exist, check README.md fallback
-      const targetMd = path.join(targetDir, "SKILL.md");
-      if (!fs.existsSync(targetMd)) {
-        const readme = path.join(targetDir, "README.md");
-        const readmeZh = path.join(targetDir, "README_zh.md");
-        if (fs.existsSync(readme)) {
-          fs.copyFileSync(readme, targetMd);
-        } else if (fs.existsSync(readmeZh)) {
-          fs.copyFileSync(readmeZh, targetMd);
-        } else {
-          fs.writeFileSync(targetMd, `# ${skillId}\n\nImported compatible skill documentation.\n`, "utf-8");
-        }
-      }
-
-      // Strict post-install sanitization verification
+      this.copyDirRecursive(stagingDir, targetDir);
       this.sanitizeTargetDir(targetDir);
 
-      // Reload skills registry
+      if (!fs.existsSync(path.join(targetDir, "skill.yaml")) || !fs.existsSync(path.join(targetDir, "SKILL.md"))) {
+        return {
+          success: false,
+          code: "FILESYSTEM_COMMIT_FAILED",
+          stage: "filesystem_commit",
+          message: "安装提交失败：目标目录缺少关键文件",
+          error: "安装提交失败：目标目录缺少关键文件",
+        };
+      }
+
+      // Step 8: Registry Reload
       const projectDirs =
         params.projectId && params.projectRoot
           ? [{ projectId: params.projectId, rootPath: params.projectRoot }]
@@ -605,7 +802,10 @@ export class SkillImporter {
       if (!skill) {
         return {
           success: false,
-          error: "Skill imported to disk but failed to load into registry",
+          code: "REGISTRY_RELOAD_FAILED",
+          stage: "registry_reload",
+          message: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
+          error: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
         };
       }
 
@@ -617,13 +817,23 @@ export class SkillImporter {
     } catch (err: any) {
       return {
         success: false,
-        error: `Failed to import skill folder: ${err.message}`,
+        code: "UNEXPECTED_IMPORT_ERROR",
+        stage: "filesystem_commit",
+        message: err.message || String(err),
+        error: `导入失败: ${err.message || String(err)}`,
       };
+    } finally {
+      // Step 9: Clean up staging directory
+      try {
+        if (fs.existsSync(stagingDir)) {
+          fs.rmSync(stagingDir, { recursive: true, force: true });
+        }
+      } catch {}
     }
   }
 
   /**
-   * Import a skill ZIP archive.
+   * Import a skill ZIP archive via a secure Staging Directory transaction.
    */
   async importZip(params: {
     zipBufferOrPath: Buffer | string;
@@ -634,94 +844,63 @@ export class SkillImporter {
     customYaml?: string;
     subPath?: string;
   }): Promise<SkillImportResult> {
-    let parsedYaml: any = null;
-    let skillId = "";
+    const stagingDir = this.createStagingDir();
 
-    if (params.customYaml) {
+    try {
+      // Step 1: Read and parse zip
+      let buffer: Buffer;
+      if (typeof params.zipBufferOrPath === "string") {
+        const resolvedZip = path.resolve(params.zipBufferOrPath);
+        if (!fs.existsSync(resolvedZip)) {
+          return {
+            success: false,
+            code: "ZIP_NOT_FOUND",
+            stage: "resolve_subpath",
+            message: `ZIP 文件未找到: ${params.zipBufferOrPath}`,
+            error: `ZIP 文件未找到: ${params.zipBufferOrPath}`,
+          };
+        }
+        buffer = fs.readFileSync(resolvedZip);
+      } else {
+        buffer = params.zipBufferOrPath;
+      }
+
+      let entries: ZipEntry[];
       try {
-        parsedYaml = YAML.parse(params.customYaml);
+        entries = parseZip(buffer);
       } catch (err: any) {
         return {
           success: false,
-          error: `Failed to parse custom YAML: ${err.message}`,
-          validationErrors: [err.message],
+          code: "INVALID_ZIP_ARCHIVE",
+          stage: "staging_init",
+          message: `Failed to parse ZIP archive: ${err.message}`,
+          error: `Failed to parse ZIP archive: ${err.message}`,
         };
       }
-      const val = this.validator.validate("", parsedYaml, "", { isBuiltin: false });
-      if (!val.valid) {
-        return {
-          success: false,
-          error: `Validation failed for custom YAML: ${val.errors.join("; ")}`,
-          validationErrors: val.errors,
-        };
+
+      // Step 2: Resolve root prefix & subPath
+      const rootPrefix = resolveZipPrefix(entries, params.subPath);
+
+      // Verify subPath exists in zip entries if specified
+      if (params.subPath) {
+        const subExists = entries.some(
+          (e) => e.name.startsWith(rootPrefix) || e.name === rootPrefix.replace(/\/$/, "")
+        );
+        if (!subExists) {
+          return {
+            success: false,
+            code: "CANDIDATE_PATH_NOT_FOUND",
+            stage: "resolve_subpath",
+            message: `所选 candidate 路径不存在于 ZIP 归档中: ${params.subPath}`,
+            error: `所选 candidate 路径不存在于 ZIP 归档中: ${params.subPath}`,
+          };
+        }
       }
-      skillId = parsedYaml.id;
-    } else {
-      const preview = await this.previewZip(params.zipBufferOrPath, params.target, params.projectId, params.subPath);
-      if (!preview.valid) {
-        return {
-          success: false,
-          error: `Validation failed: ${preview.validationErrors.join("; ")}`,
-          validationErrors: preview.validationErrors,
-        };
-      }
-      skillId = preview.id;
-    }
 
-    if (skillId.startsWith("nexus.")) {
-      return {
-        success: false,
-        error: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
-        validationErrors: ["nexus.* 命名空间仅供 Nexus 官方内置技能使用。"],
-      };
-    }
-
-    const existing = this.registry.getSkill(skillId, params.projectId);
-    if (existing && !params.overwrite) {
-      return {
-        success: false,
-        error: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
-      };
-    }
-
-    const targetDir = this.resolveTargetDir(
-      skillId,
-      params.target,
-      params.projectId,
-      params.projectRoot
-    );
-
-    let buffer: Buffer;
-    if (typeof params.zipBufferOrPath === "string") {
-      buffer = fs.readFileSync(path.resolve(params.zipBufferOrPath));
-    } else {
-      buffer = params.zipBufferOrPath;
-    }
-
-    let entries: ZipEntry[];
-    try {
-      entries = parseZip(buffer);
-    } catch (err: any) {
-      return {
-        success: false,
-        error: `Failed to parse ZIP: ${err.message}`,
-      };
-    }
-
-    try {
-      if (fs.existsSync(targetDir)) {
-        fs.rmSync(targetDir, { recursive: true, force: true });
-      }
-      fs.mkdirSync(targetDir, { recursive: true });
-
-      const singleRoot = detectZipRootPrefix(entries);
-      const rootPrefix = params.subPath
-        ? (singleRoot + params.subPath).replace(/\/?$/, "/")
-        : singleRoot;
-
+      // Step 3: Extract safe declarative files into staging directory (Declarative Sanitization)
       for (const entry of entries) {
         if (!entry.name.startsWith(rootPrefix)) continue;
-        let relativeName = entry.name.slice(rootPrefix.length);
+        const relativeName = entry.name.slice(rootPrefix.length);
         if (!relativeName || relativeName === "/") continue;
 
         // Declarative Sanitization: Skip executable files
@@ -729,10 +908,16 @@ export class SkillImporter {
           continue;
         }
 
-        const outPath = path.join(targetDir, relativeName);
+        const outPath = path.join(stagingDir, relativeName);
         const resolvedOut = path.resolve(outPath);
-        if (!resolvedOut.startsWith(path.resolve(targetDir))) {
-          throw new Error(`Zip Slip detected: '${entry.name}' escapes target directory`);
+        if (!resolvedOut.startsWith(path.resolve(stagingDir))) {
+          return {
+            success: false,
+            code: "ZIP_SLIP_ATTEMPT",
+            stage: "declarative_sanitization",
+            message: `Zip Slip security violation: '${entry.name}' escapes staging directory`,
+            error: `Zip Slip security violation: '${entry.name}' escapes staging directory`,
+          };
         }
 
         if (entry.isDirectory) {
@@ -743,29 +928,162 @@ export class SkillImporter {
         }
       }
 
-      // If custom YAML was supplied, write it as skill.yaml
-      if (params.customYaml) {
-        fs.writeFileSync(path.join(targetDir, "skill.yaml"), params.customYaml, "utf-8");
+      // Step 4: Assert Executable Files = 0 in staging directory
+      this.sanitizeTargetDir(stagingDir);
+      const remainingExecutables = this.findExecutableFilesInDir(stagingDir);
+      if (remainingExecutables.length > 0) {
+        return {
+          success: false,
+          code: "EXECUTABLE_FILES_PERSISTED",
+          stage: "declarative_sanitization",
+          message: `Staging directory contains forbidden executable files after sanitization: ${remainingExecutables.join(", ")}`,
+          error: `Staging directory contains forbidden executable files after sanitization: ${remainingExecutables.join(", ")}`,
+        };
       }
 
-      // If SKILL.md does not exist, check README.md fallback
-      const targetMd = path.join(targetDir, "SKILL.md");
-      if (!fs.existsSync(targetMd)) {
-        const readme = path.join(targetDir, "README.md");
-        const readmeZh = path.join(targetDir, "README_zh.md");
-        if (fs.existsSync(readme)) {
-          fs.copyFileSync(readme, targetMd);
-        } else if (fs.existsSync(readmeZh)) {
-          fs.copyFileSync(readmeZh, targetMd);
+      // Step 5: Manifest Injection / Setup in Staging
+      if (params.customYaml) {
+        fs.writeFileSync(path.join(stagingDir, "skill.yaml"), params.customYaml, "utf-8");
+      }
+
+      const stagingYamlPath = path.join(stagingDir, "skill.yaml");
+      const stagingYmlPath = path.join(stagingDir, "skill.yml");
+      const activeYaml = fs.existsSync(stagingYamlPath)
+        ? stagingYamlPath
+        : fs.existsSync(stagingYmlPath)
+        ? stagingYmlPath
+        : null;
+
+      if (!activeYaml) {
+        return {
+          success: false,
+          code: "MANIFEST_MISSING",
+          stage: "manifest_injection",
+          message: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
+          error: "未发现 Nexus skill.yaml。请使用配置向导生成声明式配置。",
+        };
+      }
+
+      let parsedYaml: any;
+      try {
+        const rawYaml = fs.readFileSync(activeYaml, "utf-8");
+        parsedYaml = YAML.parse(rawYaml);
+      } catch (err: any) {
+        return {
+          success: false,
+          code: "MANIFEST_PARSE_ERROR",
+          stage: "manifest_injection",
+          message: `Failed to parse skill.yaml manifest: ${err.message}`,
+          error: `Failed to parse skill.yaml manifest: ${err.message}`,
+          validationErrors: [err.message],
+        };
+      }
+
+      // Preserve / ensure SKILL.md in staging
+      const stagingMdPath = path.join(stagingDir, "SKILL.md");
+      const stagingLowerMdPath = path.join(stagingDir, "skill.md");
+      const hasStagingMd = fs.existsSync(stagingMdPath) || fs.existsSync(stagingLowerMdPath);
+
+      if (!hasStagingMd) {
+        if (params.customYaml) {
+          const readme = path.join(stagingDir, "README.md");
+          const readmeZh = path.join(stagingDir, "README_zh.md");
+          if (fs.existsSync(readme)) {
+            fs.copyFileSync(readme, stagingMdPath);
+          } else if (fs.existsSync(readmeZh)) {
+            fs.copyFileSync(readmeZh, stagingMdPath);
+          } else {
+            fs.writeFileSync(
+              stagingMdPath,
+              `# ${parsedYaml?.id || "skill"}\n\n${parsedYaml?.name?.["zh-CN"] || ""}\n`,
+              "utf-8"
+            );
+          }
         } else {
-          fs.writeFileSync(targetMd, `# ${skillId}\n\nImported compatible skill documentation.\n`, "utf-8");
+          return {
+            success: false,
+            code: "SKILL_IMPORT_VALIDATION_FAILED",
+            stage: "staging_validation",
+            message: "Missing required SKILL.md instructions file in ZIP archive",
+            error: "Missing required SKILL.md instructions file in ZIP archive",
+            validationErrors: ["Missing required SKILL.md instructions file in ZIP archive"],
+          };
         }
       }
 
-      // Strict post-install sanitization verification
+      const activeMd = fs.existsSync(stagingMdPath) ? stagingMdPath : stagingLowerMdPath;
+      const markdownContent = fs.readFileSync(activeMd, "utf-8");
+
+      // Step 6: Strict Validate STAGING DIRECTORY
+      const valResult = this.validator.validate(stagingDir, parsedYaml, markdownContent, {
+        isBuiltin: false,
+        strictExecutables: true, // Strict mode on sanitized staging
+      });
+
+      if (!valResult.valid) {
+        return {
+          success: false,
+          code: "SKILL_IMPORT_VALIDATION_FAILED",
+          stage: "staging_validation",
+          message: valResult.errors.join("; "),
+          error: `声明式配置校验失败: ${valResult.errors.join("; ")}`,
+          validationErrors: valResult.errors,
+          details: valResult.errors,
+        };
+      }
+
+      const skillId = parsedYaml.id;
+
+      // Step 7: Check Namespace & Existing Conflict
+      if (skillId.startsWith("nexus.")) {
+        return {
+          success: false,
+          code: "RESERVED_BUILTIN_NAMESPACE",
+          stage: "conflict_check",
+          message: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+          error: "nexus.* 命名空间仅供 Nexus 官方内置技能使用，无法覆盖内置技能。",
+          validationErrors: ["nexus.* 命名空间仅供 Nexus 官方内置技能使用。"],
+        };
+      }
+
+      const existing = this.registry.getSkill(skillId, params.projectId);
+      if (existing && !params.overwrite) {
+        return {
+          success: false,
+          code: "SKILL_ALREADY_EXISTS",
+          stage: "conflict_check",
+          message: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+          error: `该 Skill (${skillId}) 已存在版本 ${existing.version}，请确认是否替换。`,
+        };
+      }
+
+      // Step 8: Atomic Install from Staging to Destination
+      const targetDir = this.resolveTargetDir(
+        skillId,
+        params.target,
+        params.projectId,
+        params.projectRoot
+      );
+
+      if (fs.existsSync(targetDir)) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      this.copyDirRecursive(stagingDir, targetDir);
       this.sanitizeTargetDir(targetDir);
 
-      // Reload registry
+      if (!fs.existsSync(path.join(targetDir, "skill.yaml")) || !fs.existsSync(path.join(targetDir, "SKILL.md"))) {
+        return {
+          success: false,
+          code: "FILESYSTEM_COMMIT_FAILED",
+          stage: "filesystem_commit",
+          message: "安装提交失败：目标目录缺少关键文件",
+          error: "安装提交失败：目标目录缺少关键文件",
+        };
+      }
+
+      // Step 9: Registry Reload
       const projectDirs =
         params.projectId && params.projectRoot
           ? [{ projectId: params.projectId, rootPath: params.projectRoot }]
@@ -776,7 +1094,10 @@ export class SkillImporter {
       if (!skill) {
         return {
           success: false,
-          error: "Skill extracted to disk but failed to load into registry",
+          code: "REGISTRY_RELOAD_FAILED",
+          stage: "registry_reload",
+          message: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
+          error: "Skill 已写入磁盘，但未能成功加载至技能注册表中",
         };
       }
 
@@ -788,8 +1109,18 @@ export class SkillImporter {
     } catch (err: any) {
       return {
         success: false,
-        error: `Failed to extract ZIP skill: ${err.message}`,
+        code: "UNEXPECTED_IMPORT_ERROR",
+        stage: "filesystem_commit",
+        message: err.message || String(err),
+        error: `导入失败: ${err.message || String(err)}`,
       };
+    } finally {
+      // Step 10: Clean up staging directory
+      try {
+        if (fs.existsSync(stagingDir)) {
+          fs.rmSync(stagingDir, { recursive: true, force: true });
+        }
+      } catch {}
     }
   }
 
@@ -1005,6 +1336,8 @@ export class SkillImporter {
     manifestFound?: boolean;
     skillDocFound?: boolean;
     candidateSkills?: SkillCandidate[];
+    archiveTotalExecutables?: number;
+    candidateExecutablesCount?: number;
   }): SkillImportPreview {
     const yaml = params.parsedYaml || {};
     const existing = this.registry.getSkill(params.id, params.projectId);
@@ -1018,14 +1351,12 @@ export class SkillImporter {
       params.errors.push("nexus.* 命名空间仅供 Nexus 官方内置技能使用。");
     }
 
-    const valid = params.validationStatus ? params.validationStatus === "valid" || params.validationStatus === "warning" : params.errors.length === 0;
-    const status: SkillValidationStatus = params.validationStatus || (
-      !valid
-        ? "invalid"
-        : params.securityWarning
-        ? "warning"
-        : "valid"
-    );
+    const valid = params.validationStatus
+      ? params.validationStatus === "valid" || params.validationStatus === "warning"
+      : params.errors.length === 0;
+    const status: SkillValidationStatus =
+      params.validationStatus ||
+      (!valid ? "invalid" : params.securityWarning ? "warning" : "valid");
 
     const nameText =
       yaml.name && typeof yaml.name === "object"
@@ -1044,6 +1375,11 @@ export class SkillImporter {
     const tools = Array.isArray(yaml.tools) ? yaml.tools : [];
     const workflow = Array.isArray(yaml.workflow) ? yaml.workflow : [];
     const triggers = Array.isArray(yaml.triggers) ? yaml.triggers : [];
+
+    const excludedCount =
+      params.candidateExecutablesCount !== undefined
+        ? params.candidateExecutablesCount
+        : params.executableFilesFound.length;
 
     return {
       valid,
@@ -1074,7 +1410,9 @@ export class SkillImporter {
       manifestFound: params.manifestFound ?? true,
       skillDocFound: params.skillDocFound ?? true,
       candidateSkills: params.candidateSkills,
-      excludedFilesCount: params.executableFilesFound.length,
+      excludedFilesCount: excludedCount,
+      archiveTotalExecutables: params.archiveTotalExecutables,
+      candidateExecutablesCount: params.candidateExecutablesCount,
     };
   }
 

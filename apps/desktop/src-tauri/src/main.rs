@@ -444,11 +444,15 @@ fn loopback_management_request(
         }
     } else {
         if let Ok(err_json) = serde_json::from_str::<serde_json::Value>(&clean_body) {
-            let msg = err_json.get("error")
-                .or_else(|| err_json.get("message"))
-                .and_then(|v| v.as_str())
-                .unwrap_or(&clean_body);
-            Err(msg.to_string())
+            if err_json.get("code").is_some() || err_json.get("success").is_some() {
+                Err(clean_body)
+            } else {
+                let msg = err_json.get("error")
+                    .or_else(|| err_json.get("message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&clean_body);
+                Err(msg.to_string())
+            }
         } else {
             Err(format!("HTTP {}: {}", status_code, clean_body))
         }
@@ -1221,7 +1225,17 @@ fn skills_import_folder(
     if let Some(sub) = sub_path {
         payload["subPath"] = serde_json::Value::String(sub);
     }
-    desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload))
+    match desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload)) {
+        Ok(v) => Ok(v),
+        Err(err_str) => {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&err_str) {
+                if v.get("success").and_then(|b| b.as_bool()) == Some(false) {
+                    return Ok(v);
+                }
+            }
+            Err(err_str)
+        }
+    }
 }
 
 #[tauri::command]
@@ -1259,7 +1273,17 @@ fn skills_import_zip(
     if let Some(sub) = sub_path {
         payload["subPath"] = serde_json::Value::String(sub);
     }
-    desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload))
+    match desktop_management_call(state, "POST".into(), "/api/skills/import".into(), Some(payload)) {
+        Ok(v) => Ok(v),
+        Err(err_str) => {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&err_str) {
+                if v.get("success").and_then(|b| b.as_bool()) == Some(false) {
+                    return Ok(v);
+                }
+            }
+            Err(err_str)
+        }
+    }
 }
 
 #[tauri::command]
