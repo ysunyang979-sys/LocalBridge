@@ -119,13 +119,13 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
   const getRiskBadge = (risk: string) => {
     switch (risk) {
       case "low":
-        return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
+        return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60";
       case "medium":
-        return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
+        return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60";
       case "high":
-        return "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20";
+        return "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/60";
       default:
-        return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20";
+        return "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
     }
   };
 
@@ -152,11 +152,9 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
 
   const filteredSkills = useMemo(() => {
     return skills.filter((skill) => {
-      // Source filter
       if (sourceFilter !== "all" && skill.source !== sourceFilter) {
         return false;
       }
-      // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const nameZh = (skill.name["zh-CN"] || "").toLowerCase();
@@ -181,7 +179,6 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
     });
   }, [skills, sourceFilter, searchQuery]);
 
-  // Check if active source filter is empty specifically
   const isUserFilterEmpty = sourceFilter === "user" && filteredSkills.length === 0;
   const isProjectFilterEmpty = sourceFilter === "project" && filteredSkills.length === 0;
 
@@ -189,25 +186,25 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
     <div className="flex-1 flex flex-col min-w-0 overflow-y-auto p-6 space-y-6">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 p-4 rounded-xl shadow-xl bg-theme-base border border-theme-subtle animate-in slide-in-from-bottom-4 duration-200 max-w-sm">
+        <div className="fixed bottom-6 right-6 z-50 flex items-start gap-3 p-4 rounded-xl shadow-2xl bg-white dark:bg-[#0d1320] border border-slate-200 dark:border-slate-800 animate-in slide-in-from-bottom-4 duration-200 max-w-sm">
           {toastMessage.type === "success" ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           ) : (
-            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
           )}
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-theme-primary">
+            <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
               {toastMessage.title}
             </div>
             {toastMessage.description && (
-              <div className="text-[11px] text-theme-muted mt-0.5 break-words">
+              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 break-words">
                 {toastMessage.description}
               </div>
             )}
           </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="p-1 rounded text-theme-muted hover:text-theme-primary transition"
+            className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -215,14 +212,14 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       )}
 
       {/* Top Header & Action Row */}
-      <div className="flex flex-col gap-4 pb-2 border-b border-theme-subtle">
+      <div className="flex flex-col gap-4 pb-3 border-b border-slate-200 dark:border-slate-800">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-theme-primary flex items-center gap-2.5">
-              <Sparkles className="w-5 h-5 text-sky-500" />
+            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2.5">
+              <Sparkles className="w-5 h-5 text-sky-600 dark:text-sky-400" />
               <span>{t.skills.title}</span>
             </h1>
-            <p className="text-xs text-theme-muted mt-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               {t.skills.subtitle}
             </p>
           </div>
@@ -231,7 +228,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
           <div className="flex items-center gap-2.5 self-end sm:self-auto">
             <button
               onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-sky-500 text-white hover:bg-sky-600 text-xs font-semibold shadow-xs transition active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-xs transition active:scale-95"
             >
               <Upload className="w-3.5 h-3.5" />
               <span>{t.skills.importButton}</span>
@@ -240,11 +237,11 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
             <button
               onClick={handleReload}
               disabled={reloading}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-theme-card border border-theme-subtle hover:bg-theme-card-hover text-xs font-medium text-theme-secondary hover:text-theme-primary transition disabled:opacity-50"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 transition shadow-2xs disabled:opacity-50"
               title={t.skills.reloadButton}
             >
               <RotateCw
-                className={`w-3.5 h-3.5 ${reloading ? "animate-spin text-sky-500" : ""}`}
+                className={`w-3.5 h-3.5 ${reloading ? "animate-spin text-sky-600 dark:text-sky-400" : "text-slate-500 dark:text-slate-400"}`}
               />
               <span>{reloading ? t.skills.reloading : t.skills.reloadButton}</span>
             </button>
@@ -255,18 +252,18 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
           {/* Search Bar */}
           <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-theme-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t.skills.searchPlaceholder}
-              className="w-full pl-9 pr-3 py-2 rounded-xl bg-theme-card border border-theme-subtle text-xs text-theme-primary placeholder-theme-muted focus:outline-none focus:border-sky-500 transition shadow-2xs"
+              className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-sky-500 transition shadow-2xs"
             />
           </div>
 
           {/* Clean Source Filter Tabs (All / Builtin / User / Project) */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-theme-card border border-theme-subtle shadow-2xs">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-2xs">
             {(
               [
                 { id: "all", label: t.skills.filterAll },
@@ -280,8 +277,8 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                 onClick={() => setSourceFilter(tab.id)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                   sourceFilter === tab.id
-                    ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold shadow-xs"
-                    : "text-theme-secondary hover:text-theme-primary"
+                    ? "bg-white dark:bg-[#121a2c] text-sky-600 dark:text-sky-400 font-semibold shadow-xs border border-slate-200/60 dark:border-slate-700"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                 }`}
               >
                 {tab.label}
@@ -293,37 +290,37 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
 
       {/* Error Banner */}
       {error && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2.5">
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2.5">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Loading state */}
+      {/* Loading State */}
       {loading && (
-        <div className="py-24 text-center text-sm text-theme-muted">
+        <div className="py-24 text-center text-sm text-slate-500 dark:text-slate-400">
           {t.common.loading}...
         </div>
       )}
 
       {/* Empty States */}
       {!loading && filteredSkills.length === 0 && (
-        <div className="py-20 flex flex-col items-center justify-center text-center p-8 rounded-2xl bg-theme-card/40 border border-theme-subtle border-dashed">
-          <div className="p-3.5 rounded-full bg-sky-500/10 text-sky-500 mb-3">
+        <div className="py-20 flex flex-col items-center justify-center text-center p-8 rounded-2xl bg-white/60 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 border-dashed shadow-2xs">
+          <div className="p-3.5 rounded-full bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 mb-3 shadow-2xs">
             <Sparkles className="w-8 h-8" />
           </div>
 
           {isUserFilterEmpty ? (
             <>
-              <h3 className="text-sm font-semibold text-theme-primary mb-1.5">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1.5">
                 {t.skills.emptyUserSkills}
               </h3>
-              <p className="text-xs text-theme-muted max-w-sm mb-5 leading-relaxed">
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mb-5 leading-relaxed">
                 {t.skills.emptyUserSkillsDesc}
               </p>
               <button
                 onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 text-white hover:bg-sky-600 text-xs font-semibold shadow-xs transition"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-xs transition"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>{t.skills.importButton}</span>
@@ -331,15 +328,15 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
             </>
           ) : isProjectFilterEmpty ? (
             <>
-              <h3 className="text-sm font-semibold text-theme-primary mb-1.5">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1.5">
                 {t.skills.emptyProjectSkills}
               </h3>
-              <p className="text-xs text-theme-muted max-w-sm mb-5 leading-relaxed">
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mb-5 leading-relaxed">
                 {t.skills.emptyProjectSkillsDesc}
               </p>
               <button
                 onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 text-white hover:bg-sky-600 text-xs font-semibold shadow-xs transition"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-xs transition"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>{t.skills.importButton}</span>
@@ -347,10 +344,10 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
             </>
           ) : (
             <>
-              <h3 className="text-sm font-semibold text-theme-primary mb-1">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
                 {t.skills.emptySkills}
               </h3>
-              <p className="text-xs text-theme-muted max-w-sm">
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
                 {t.skills.emptySkillsDesc}
               </p>
             </>
@@ -383,29 +380,29 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
               <div
                 key={skill.id}
                 onClick={() => setSelectedSkillId(skill.id)}
-                className={`group p-4 rounded-xl bg-theme-card border transition-all cursor-pointer flex flex-col justify-between hover:shadow-md ${
+                className={`group p-4 rounded-xl bg-white dark:bg-[#0d1320] border transition-all cursor-pointer flex flex-col justify-between hover:shadow-md ${
                   !skill.enabled
-                    ? "opacity-60 border-theme-subtle bg-theme-card-muted/30"
+                    ? "opacity-60 border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40"
                     : isConflict || isInvalid
-                    ? "border-red-500/30 hover:border-red-500/50"
+                    ? "border-rose-300 dark:border-rose-800/60 hover:border-rose-500"
                     : hasWarning
-                    ? "border-amber-500/30 hover:border-amber-500/50"
-                    : "border-theme-subtle hover:border-sky-500/30"
+                    ? "border-amber-300 dark:border-amber-800/60 hover:border-amber-500"
+                    : "border-slate-200 dark:border-slate-800 hover:border-sky-500/50"
                 }`}
               >
                 <div>
                   {/* Card Header */}
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-500 shrink-0">
+                      <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800/60 text-sky-600 dark:text-sky-400 shrink-0">
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-theme-primary truncate group-hover:text-sky-500 transition">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate group-hover:text-sky-600 dark:group-hover:text-sky-400 transition">
                           {displayName}
                         </h3>
                         {uxMode === "advanced" && (
-                          <div className="text-[10px] font-mono text-theme-muted truncate">
+                          <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">
                             {skill.id}
                           </div>
                         )}
@@ -417,19 +414,19 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                       onClick={(e) => handleToggle(skill, e)}
                       disabled={isConflict || isInvalid}
                       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed ${
-                        skill.enabled ? "bg-sky-500" : "bg-slate-400 dark:bg-slate-700"
+                        skill.enabled ? "bg-sky-600 dark:bg-sky-500" : "bg-slate-300 dark:bg-slate-700"
                       }`}
                       title={skill.enabled ? t.common.disable : t.common.enable}
                     >
                       <span
-                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
                           skill.enabled ? "translate-x-4" : "translate-x-0"
                         }`}
                       />
                     </button>
                   </div>
 
-                  {/* Clean Badges strip */}
+                  {/* Clean Badges Strip */}
                   <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
                     <span
                       className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border font-semibold ${getRiskBadge(
@@ -439,56 +436,56 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                       {skill.risk} {t.skills.riskLow.split(" ")[1] || "Risk"}
                     </span>
 
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-theme-card-muted border border-theme-subtle text-theme-secondary">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium">
                       {getCategoryLabel(skill.category)}
                     </span>
 
                     {isBuiltin ? (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800/60 font-semibold">
                         {t.skills.sourceBuiltin}
                       </span>
                     ) : skill.source === "project" ? (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-medium">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-800/60 font-semibold">
                         {t.skills.sourceProject}
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-800/60 font-semibold">
                         {t.skills.sourceUser}
                       </span>
                     )}
 
                     {isConflict && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 border border-red-500/20">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/60 font-semibold">
                         {t.skills.statusConflict}
                       </span>
                     )}
 
                     {hasWarning && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1">
-                        <ShieldAlert className="w-3 h-3" />
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60 font-semibold flex items-center gap-1">
+                        <ShieldAlert className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                         {t.skills.statusWarning}
                       </span>
                     )}
                   </div>
 
                   {/* Description */}
-                  <p className="text-xs text-theme-secondary line-clamp-2 leading-relaxed mb-3">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed mb-3">
                     {displayDesc}
                   </p>
 
-                  {/* Triggers preview */}
+                  {/* Triggers Preview */}
                   {skill.triggers.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap mb-3">
                       {skill.triggers.slice(0, 3).map((trigger, i) => (
                         <span
                           key={i}
-                          className="text-[11px] px-2 py-0.5 rounded bg-theme-card-muted text-theme-muted border border-theme-subtle truncate max-w-[140px]"
+                          className="text-[11px] px-2 py-0.5 rounded bg-slate-100/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 truncate max-w-[140px]"
                         >
                           {trigger}
                         </span>
                       ))}
                       {skill.triggers.length > 3 && (
-                        <span className="text-[10px] text-theme-muted font-mono">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                           +{skill.triggers.length - 3}
                         </span>
                       )}
@@ -497,19 +494,23 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                 </div>
 
                 {/* Card Footer */}
-                <div className="pt-3 border-t border-theme-subtle flex items-center justify-between text-xs text-theme-muted">
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <div className="flex items-center gap-3 font-mono text-[11px]">
                     <span className="flex items-center gap-1">
-                      <Workflow className="w-3 h-3 text-sky-500" />
-                      {skill.workflow.length} {t.skills.workflowSteps}
+                      <Workflow className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                      <span>
+                        {skill.workflow.length} {t.skills.workflowSteps}
+                      </span>
                     </span>
                     <span className="flex items-center gap-1">
-                      <Wrench className="w-3 h-3 text-sky-500" />
-                      {skill.tools.length} {t.skills.toolsCount}
+                      <Wrench className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                      <span>
+                        {skill.tools.length} {t.skills.toolsCount}
+                      </span>
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1 text-sky-500 group-hover:translate-x-0.5 transition-transform text-[11px] font-medium">
+                  <div className="flex items-center gap-1 text-sky-600 dark:text-sky-400 group-hover:translate-x-0.5 transition-transform text-[11px] font-semibold">
                     <span>{t.skills.viewDetails}</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>

@@ -66,8 +66,8 @@
   --border: #D7DFEA;
   --border-strong: #C2CCD9;
 
-  --text-primary: #111827;
-  --text-secondary: #475569;
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
   --text-muted: #64748B;
   --text-subtle: #7C8A9D;
   --text-inverse: #F8FAFC;
@@ -139,6 +139,8 @@ input:disabled, textarea:disabled, select:disabled {
 
 /* Semantic Theme Helpers */
 .bg-theme-bg { background-color: var(--bg); }
+.bg-theme-base { background-color: var(--surface); }
+.bg-theme-panel { background-color: var(--surface); }
 .bg-theme-surface { background-color: var(--surface); }
 .bg-theme-surface-muted { background-color: var(--surface-muted); }
 .bg-theme-surface-elevated { background-color: var(--surface-elevated); }
