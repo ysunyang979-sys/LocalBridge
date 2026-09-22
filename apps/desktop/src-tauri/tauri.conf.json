@@ -28,6 +28,8 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
+    "publisher": "Nexus",
+    "copyright": "Copyright © 2026 Nexus",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

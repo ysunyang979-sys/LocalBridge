@@ -2702,6 +2702,11 @@ fn main() {
                                     wParam: usize,
                                     lParam: isize,
                                 ) -> isize;
+                                fn SetClassLongPtrW(
+                                    hWnd: HwndPtr,
+                                    nIndex: i32,
+                                    dwNewLong: isize,
+                                ) -> isize;
                                 fn GetSystemMetrics(nIndex: i32) -> i32;
                             }
 
@@ -2728,9 +2733,11 @@ fn main() {
 
                             if !hicon_big.is_null() {
                                 SendMessageW(hwnd.0 as _, 0x007F /* WM_SETICON */, 1 /* ICON_BIG */, hicon_big as isize);
+                                SetClassLongPtrW(hwnd.0 as _, -14 /* GCLP_HICON */, hicon_big as isize);
                             }
                             if !hicon_small.is_null() {
                                 SendMessageW(hwnd.0 as _, 0x007F /* WM_SETICON */, 0 /* ICON_SMALL */, hicon_small as isize);
+                                SetClassLongPtrW(hwnd.0 as _, -34 /* GCLP_HICONSM */, hicon_small as isize);
                             }
                         }
                     }

@@ -5,6 +5,14 @@ description = "Nexus Desktop Control Center"
 authors = ["Nexus Team"]
 edition = "2021"
 
+[package.metadata.tauri-winres]
+OriginalFilename = "localbridge-desktop.exe"
+InternalName = "Nexus Control Center"
+FileDescription = "Nexus"
+ProductName = "Nexus"
+CompanyName = "Nexus"
+LegalCopyright = "Copyright © 2026 Nexus"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

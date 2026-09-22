@@ -8,15 +8,11 @@ import {
   Server,
   Info,
   Radio,
-  KeyRound,
   Play,
-  Square,
   RefreshCw,
-  Trash2,
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
-  ChevronDown,
   Activity,
   Shield,
   User,
@@ -28,8 +24,6 @@ import {
   Download,
   DownloadCloud,
   FolderOpen,
-  Sparkles,
-  Terminal,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -43,6 +37,7 @@ import {
 } from "../i18n/intelligence-map.js";
 import nexusLogo from "../assets/nexus.png";
 import { ChatGPTConnection } from "../components/connections/ChatGPTConnection.js";
+import { ConnectionCenterErrorBoundary } from "../components/common/AppErrorBoundary.js";
 import type {
   Project,
   ProjectTrustPolicy,
@@ -51,7 +46,6 @@ import type {
   ProtectedFilesPolicy,
   ProjectCustomRules,
   ApprovalRoutingMode,
-  TunnelNetworkMode,
   IntelligenceStatusDto,
   DecisionAdvice,
   ModelStatusDto,
@@ -71,8 +65,6 @@ export type SettingsRoute =
   | { page: "appearance" }
   | { page: "intelligence" }
   | { page: "connections" }
-  | { page: "connection-detail"; id: string }
-  | { page: "secure-mcp" }
   | { page: "security" }
   | { page: "advanced" }
   | { page: "about" };
@@ -84,8 +76,7 @@ export type SettingsTab =
   | "connections"
   | "security"
   | "advanced"
-  | "about"
-  | "tunnel";
+  | "about";
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   tunnelStatus,
@@ -97,39 +88,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const isZh = language === "zh-CN";
   const { themeMode, setThemeMode } = useTheme();
   const [route, setRoute] = useState<SettingsRoute>({ page: "general" });
-  const activeTab: SettingsTab =
-    route.page === "secure-mcp"
-      ? "tunnel"
-      : route.page === "connection-detail"
-      ? "connections"
-      : (route.page as SettingsTab);
+  const activeTab: SettingsTab = route.page;
 
   // Server URL State
   const [serverUrl, setServerUrl] = useState(bridge.getBaseUrl());
   const [saved, setSaved] = useState(false);
 
-  // Tunnel Config State
-  const [tunnelId, setTunnelId] = useState(tunnelStatus?.tunnel_id || "");
-  const [runtimeApiKey, setRuntimeApiKey] = useState("");
-  const [mcpToken, setMcpToken] = useState("");
-  const [isEditingKey, setIsEditingKey] = useState(!tunnelStatus?.has_api_key);
-  const [isEditingToken, setIsEditingToken] = useState(!tunnelStatus?.has_mcp_token);
-  const [autoReconnect, setAutoReconnect] = useState(tunnelStatus?.auto_reconnect ?? true);
-  const [networkMode, setNetworkMode] = useState<TunnelNetworkMode>(
-    tunnelStatus?.network_mode || "system"
-  );
-  const [customProxyUrl, setCustomProxyUrl] = useState(
-    tunnelStatus?.custom_proxy_url || ""
-  );
-  const [tokenScopes, setTokenScopes] = useState<string[]>(["read", "write"]);
-  const [tunnelBusy, setTunnelBusy] = useState(false);
-  const [tunnelSuccessMsg, setTunnelSuccessMsg] = useState<string | null>(null);
-  const [tunnelErrorMsg, setTunnelErrorMsg] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
+
 
   const defaultCustomRules: ProjectCustomRules = {
     files: {
@@ -667,35 +632,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
-  // Diagnostic secret redaction helper
-  const redactSecrets = (text: string | null | undefined): string => {
-    if (!text) return "";
-    return text
-      .replace(/\b(lb_[a-zA-Z0-9_-]{3})[a-zA-Z0-9_-]*/g, "$1***")
-      .replace(/\b(lbr_[a-zA-Z0-9_-]{3})[a-zA-Z0-9_-]*/g, "$1***")
-      .replace(/\b(lm_[a-zA-Z0-9_-]{3})[a-zA-Z0-9_-]*/g, "$1***")
-      .replace(/Bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
-      .replace(/(Authorization:\s*)[^\r\n]+/gi, "$1[REDACTED]")
-      .replace(/(api[-_]?key[=:\s]+)[a-zA-Z0-9._~+/-]+/gi, "$1[REDACTED]");
-  };
 
-  useEffect(() => {
-    if (tunnelStatus?.tunnel_id && !tunnelId) {
-      setTunnelId(tunnelStatus.tunnel_id);
-    }
-    if (tunnelStatus?.has_api_key && !runtimeApiKey) {
-      setIsEditingKey(false);
-    }
-    if (tunnelStatus?.has_mcp_token && !mcpToken) {
-      setIsEditingToken(false);
-    }
-    if (tunnelStatus?.network_mode) {
-      setNetworkMode(tunnelStatus.network_mode);
-    }
-    if (tunnelStatus?.custom_proxy_url !== undefined) {
-      setCustomProxyUrl(tunnelStatus.custom_proxy_url || "");
-    }
-  }, [tunnelStatus]);
 
   const handleSaveServer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -711,236 +648,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     onRefresh();
-  };
-
-  // Helper for user-friendly, secret-safe error mapping
-  const formatTunnelError = (err: unknown): string => {
-    const raw = err instanceof Error ? err.message : String(err);
-    if (raw.includes("TUNNEL_PROXY_AUTH_UNSUPPORTED") || raw.includes("PROXY_CREDENTIALS_UNSUPPORTED")) {
-      return t.errors.PROXY_CREDENTIALS_UNSUPPORTED;
-    }
-    if (raw.includes("PAC_PROXY_UNSUPPORTED")) {
-      return t.errors.PAC_PROXY_UNSUPPORTED;
-    }
-    if (raw.includes("TUNNEL_PROXY_INVALID")) {
-      return t.errors.TUNNEL_PROXY_INVALID;
-    }
-    if (raw.includes("TUNNEL_PROXY_UNREACHABLE")) {
-      return t.errors.TUNNEL_PROXY_UNREACHABLE;
-    }
-    if (raw.includes("TUNNEL_CONTROL_PLANE_UNREACHABLE")) {
-      return t.errors.TUNNEL_CONTROL_PLANE_UNREACHABLE;
-    }
-    if (raw.includes("TUNNEL_CONTROL_PLANE_TIMEOUT")) {
-      return t.errors.TUNNEL_CONTROL_PLANE_TIMEOUT;
-    }
-    if (raw.includes("TUNNEL_NETWORK_MODE_INVALID")) {
-      return t.errors.TUNNEL_NETWORK_MODE_INVALID;
-    }
-    if (raw.includes("TUNNEL_RESTART_FAILED")) {
-      return t.errors.TUNNEL_RESTART_FAILED;
-    }
-    if (raw.includes("missing required key") || raw.includes("invalid args")) {
-      return `${t.tunnel.errorConfigFailed} (IPC_ARGUMENT_ERROR)`;
-    }
-    if (raw.includes("401") || raw.includes("403") || raw.includes("Unauthorized") || raw.includes("Authentication")) {
-      return `${t.tunnel.errorAuthFailed} (TUNNEL_AUTH_FAILED)`;
-    }
-    if (raw.includes("Health port") || raw.includes("already in use") || raw.includes("conflict")) {
-      return `${t.tunnel.errorPortConflict} (HEALTH_PORT_CONFLICT)`;
-    }
-    // Redact any raw token strings from error messages
-    return raw
-      .replace(/lb_[a-f0-9]{32,64}/gi, "lb_***")
-      .replace(/lbr_[a-f0-9]{32,64}/gi, "lbr_***")
-      .replace(/lm_[a-f0-9]{32,64}/gi, "lm_***");
-  };
-
-  // Tunnel Actions
-  const handleSaveTunnel = async (andStart: boolean) => {
-    setTunnelBusy(true);
-    setTunnelSuccessMsg(null);
-    setTunnelErrorMsg(null);
-    try {
-      if (networkMode === "custom") {
-        if (customProxyUrl.includes("@")) {
-          setTunnelErrorMsg(t.errors.PROXY_CREDENTIALS_UNSUPPORTED);
-          return;
-        }
-        if (!customProxyUrl.trim()) {
-          setTunnelErrorMsg(t.errors.TUNNEL_PROXY_INVALID);
-          return;
-        }
-      }
-
-      await bridge.tunnel.saveConfig({
-        tunnelId: tunnelId.trim(),
-        runtimeApiKey: runtimeApiKey.trim() || undefined,
-        mcpToken: mcpToken.trim() || undefined,
-        autoReconnect,
-        connectNow: andStart,
-        networkMode,
-        customProxyUrl: networkMode === "custom" ? customProxyUrl.trim() : undefined,
-      });
-
-      setTunnelSuccessMsg(t.tunnel.configuredSuccess);
-      setIsEditingKey(false);
-      setIsEditingToken(false);
-      setRuntimeApiKey("");
-      setMcpToken("");
-      setTimeout(() => setTunnelSuccessMsg(null), 3000);
-      onRefresh();
-    } catch (err: unknown) {
-      setTunnelErrorMsg(formatTunnelError(err));
-    } finally {
-      setTunnelBusy(false);
-    }
-  };
-
-  const handleAutoCreateToken = async () => {
-    setTunnelBusy(true);
-    setTunnelSuccessMsg(null);
-    setTunnelErrorMsg(null);
-    try {
-      await bridge.tunnel.autoCreateToken(tokenScopes);
-      setTunnelSuccessMsg(t.tunnel.autoCreateTokenSuccess);
-      setIsEditingToken(false);
-      setTimeout(() => setTunnelSuccessMsg(null), 3000);
-      onRefresh();
-    } catch (err: unknown) {
-      setTunnelErrorMsg(formatTunnelError(err));
-    } finally {
-      setTunnelBusy(false);
-    }
-  };
-
-  const handleStartTunnel = async () => {
-    setTunnelBusy(true);
-    setTunnelErrorMsg(null);
-    try {
-      await bridge.tunnel.start();
-      onRefresh();
-    } catch (err: unknown) {
-      setTunnelErrorMsg(formatTunnelError(err));
-    } finally {
-      setTunnelBusy(false);
-    }
-  };
-
-  const handleStopTunnel = async () => {
-    setTunnelBusy(true);
-    setTunnelErrorMsg(null);
-    try {
-      await bridge.tunnel.stop();
-      onRefresh();
-    } catch (err: unknown) {
-      setTunnelErrorMsg(formatTunnelError(err));
-    } finally {
-      setTunnelBusy(false);
-    }
-  };
-
-  const handleClearTunnel = async () => {
-    if (!confirm(t.tunnel.removeBtn + "?")) return;
-    setTunnelBusy(true);
-    setTunnelErrorMsg(null);
-    try {
-      await bridge.tunnel.clearConfig();
-      setTunnelId("");
-      setRuntimeApiKey("");
-      setMcpToken("");
-      setNetworkMode("system");
-      setCustomProxyUrl("");
-      setIsEditingKey(true);
-      setIsEditingToken(true);
-      onRefresh();
-    } catch (err: unknown) {
-      setTunnelErrorMsg(formatTunnelError(err));
-    } finally {
-      setTunnelBusy(false);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    setTunnelBusy(true);
-    setTestResult(null);
-    try {
-      const res = await bridge.testTunnelConnection({
-        networkMode,
-        customProxyUrl: networkMode === "custom" ? customProxyUrl.trim() : undefined,
-      });
-      if (res.success) {
-        setTestResult({
-          success: true,
-          message: res.message || t.tunnel.testSuccess,
-        });
-      } else {
-        let errMsg = res.message || t.tunnel.testFailed;
-        if (res.errorCode && (t.errors as any)[res.errorCode]) {
-          errMsg = (t.errors as any)[res.errorCode];
-        }
-        setTestResult({
-          success: false,
-          message: errMsg,
-        });
-      }
-    } catch (err: any) {
-      setTestResult({
-        success: false,
-        message: err?.message || String(err),
-      });
-    } finally {
-      setTunnelBusy(false);
-    }
-  };
-
-  const toggleScope = (scope: string) => {
-    setTokenScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
-    );
-  };
-
-  const getStatusBadge = () => {
-    const s = tunnelStatus?.status;
-    if (s === "Connected" && tunnelStatus?.configured) {
-      return (
-        <span className="badge badge-emerald flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          {t.tunnel.chatGptReady}
-        </span>
-      );
-    }
-    if (s === "Starting") {
-      return <span className="badge badge-blue">{t.tunnel.statusStarting}</span>;
-    }
-    if (s === "Connecting") {
-      return <span className="badge badge-blue">{t.tunnel.statusConnecting}</span>;
-    }
-    if (s === "Reconnecting") {
-      return <span className="badge badge-amber">{t.tunnel.statusReconnecting}</span>;
-    }
-    if (s === "AuthenticationError") {
-      return <span className="badge badge-red">{t.tunnel.statusAuthError}</span>;
-    }
-    if (s === "NeedsAttention") {
-      return <span className="badge badge-red">{t.tunnel.statusNeedsAttention}</span>;
-    }
-    if (s === "RuntimeMissing") {
-      return <span className="badge badge-red">{t.tunnel.statusMissingRuntime}</span>;
-    }
-    if (s === "HealthPortConflict") {
-      return <span className="badge badge-red">{t.tunnel.statusPortConflict}</span>;
-    }
-    if (s === "LocalMcpUnavailable") {
-      return <span className="badge badge-red">{t.tunnel.statusMcpUnavailable}</span>;
-    }
-    if (s === "Error") {
-      return <span className="badge badge-red">{t.tunnel.statusError}</span>;
-    }
-    if (s === "Stopped") {
-      return <span className="badge badge-slate">{t.tunnel.statusStopped}</span>;
-    }
-    return <span className="badge badge-slate">{t.tunnel.statusNotConfigured}</span>;
   };
 
   return (
@@ -995,7 +702,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           type="button"
           onClick={() => setRoute({ page: "connections" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-            route.page === "connections" || route.page === "secure-mcp"
+            route.page === "connections"
               ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm"
               : "text-theme-muted hover:text-theme-primary border border-transparent"
           }`}
@@ -1045,591 +752,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <div className="space-y-6">
-        {/* Tab: ChatGPT Connection - kept mounted to preserve scroll & state */}
-        <div className={route.page === "connections" ? "block" : "hidden"}>
-          <ChatGPTConnection
-            tunnelStatus={tunnelStatus}
-            onRefreshAll={onRefresh}
-            onNavigateToTunnel={() => setRoute({ page: "secure-mcp" })}
-          />
-        </div>
-
-        {/* Tab 1: Secure Tunnel (P0) / Secure MCP */}
-        {route.page === "secure-mcp" && (
-          <div className="max-w-4xl space-y-6 animate-fade-in">
-            {/* Top Navigation Breadcrumbs and Back Button */}
-            <div className="flex items-center justify-between gap-4 p-3.5 px-4 bg-theme-card border border-theme-subtle rounded-xl shadow-xs">
-              <div className="flex items-center gap-2 text-xs text-theme-muted">
-                <span>{isZh ? "应用设置" : "Settings"}</span>
-                <span>/</span>
-                <button
-                  type="button"
-                  onClick={() => setRoute({ page: "connections" })}
-                  className="text-sky-600 dark:text-sky-400 hover:underline font-semibold"
-                >
-                  {isZh ? "ChatGPT 连接" : "ChatGPT Connection"}
-                </button>
-                <span>/</span>
-                <span className="text-theme-primary font-semibold">
-                  {isZh ? "Secure MCP 隧道" : "Secure MCP Tunnel"}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setRoute({ page: "connections" })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-theme-card-muted hover:bg-theme-card-hover text-theme-primary border border-theme-subtle transition shadow-xs"
-              >
-                <span>&larr;</span>
-                <span>{isZh ? "返回 AI 连接中心" : "Back to AI Connections"}</span>
-              </button>
-            </div>
-          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-                <Radio className="w-4 h-4 text-sky-500" />
-                <span>{t.tunnel.cardTitle}</span>
-              </div>
-              {getStatusBadge()}
-            </div>
-
-            <p className="text-xs text-theme-muted">{t.tunnel.cardDesc}</p>
-
-            {/* Error, Warning or Success feedback */}
-            {tunnelSuccessMsg && (
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center gap-2 text-emerald-500 text-xs font-medium">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{tunnelSuccessMsg}</span>
-              </div>
-            )}
-            {tunnelErrorMsg && (
-              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-500 text-xs font-medium">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{redactSecrets(tunnelErrorMsg)}</span>
-              </div>
-            )}
-            {/* Transient reconnect notice (Amber, gentle, non-alarmist) */}
-            {tunnelStatus?.status === "Reconnecting" && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center gap-2 text-amber-500 text-xs font-medium">
-                <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
-                <span>{t.tunnel.reconnectingNotice}</span>
-              </div>
-            )}
-            {/* Actionable error banner (Red only for genuine attention required) */}
-            {tunnelStatus?.status !== "Connected" &&
-              tunnelStatus?.status !== "Reconnecting" &&
-              tunnelStatus?.status !== "Connecting" &&
-              tunnelStatus?.status !== "Starting" &&
-              (tunnelStatus?.error_message ||
-                tunnelStatus?.status === "NeedsAttention" ||
-                tunnelStatus?.status === "AuthenticationError" ||
-                tunnelStatus?.status === "RuntimeMissing" ||
-                tunnelStatus?.status === "HealthPortConflict" ||
-                tunnelStatus?.status === "LocalMcpUnavailable" ||
-                tunnelStatus?.status === "Error") && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2 text-red-500 text-xs">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>
-                    {redactSecrets(tunnelStatus?.error_message) ||
-                      (tunnelStatus?.status === "AuthenticationError"
-                        ? t.tunnel.errorAuthFailed
-                        : tunnelStatus?.status === "HealthPortConflict"
-                          ? t.tunnel.errorPortConflict
-                          : t.tunnel.needsAttentionNotice)}
-                  </span>
-                </div>
-              )}
-            {testResult && (
-              <div
-                className={`p-3 rounded-lg flex items-center gap-2 text-xs font-medium ${
-                  testResult.success
-                    ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-500"
-                    : "bg-red-500/10 border border-red-500/30 text-red-500"
-                }`}
-              >
-                {testResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                )}
-                <span>{testResult.message}</span>
-              </div>
-            )}
-
-            {/* Tunnel Form Fields */}
-            <div className="space-y-4">
-              {/* Outbound Network & Proxy */}
-              <div className="p-3.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold text-theme-primary flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-sky-500" />
-                    <span>{t.tunnel.networkModeLabel}</span>
-                  </div>
-                  {(tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url) && (
-                    <span className="text-[11px] font-mono text-theme-muted truncate max-w-[200px]" title={tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || ""}>
-                      {tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url}
-                    </span>
-                  )}
-                </div>
-
-                {/* 3 Network Modes */}
-                <div className="grid grid-cols-3 gap-2">
-                  {(["direct", "system", "custom"] as const).map((mode) => {
-                    const active = networkMode === mode;
-                    const label =
-                      mode === "direct"
-                        ? t.tunnel.modeDirect
-                        : mode === "system"
-                          ? t.tunnel.modeSystem
-                          : t.tunnel.modeCustom;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setNetworkMode(mode)}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border text-center transition ${
-                          active
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                            : "bg-theme-input border-theme-input text-theme-secondary hover:border-indigo-500"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Mode-specific status / inputs */}
-                {networkMode === "system" && (
-                  <div className="text-[11px] text-theme-muted bg-theme-input/50 px-2.5 py-1.5 rounded border border-theme-subtle flex items-center justify-between">
-                    <span>{t.tunnel.detectedProxyLabel}:</span>
-                    <span className="font-mono text-theme-primary font-medium">
-                      {tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || "127.0.0.1:10808 (Auto)"}
-                    </span>
-                  </div>
-                )}
-
-                {networkMode === "custom" && (
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] font-medium text-theme-secondary">
-                      {t.tunnel.customProxyUrlLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={customProxyUrl}
-                      onChange={(e) => setCustomProxyUrl(e.target.value)}
-                      placeholder={t.tunnel.customProxyUrlPlaceholder}
-                      className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-1.5 text-xs font-mono text-theme-primary focus:outline-none focus:border-indigo-500"
-                    />
-                    {customProxyUrl.includes("@") && (
-                      <p className="text-[11px] text-red-500 font-medium">
-                        {t.errors.PROXY_CREDENTIALS_UNSUPPORTED}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Tunnel ID */}
-              <div>
-                <label className="block text-xs font-medium text-theme-secondary mb-1.5">
-                  {t.tunnel.tunnelIdLabel}
-                </label>
-                <input
-                  type="text"
-                  value={tunnelId}
-                  onChange={(e) => setTunnelId(e.target.value)}
-                  placeholder={t.tunnel.tunnelIdPlaceholder}
-                  className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-mono text-theme-primary focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              {/* Runtime API Key */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-medium text-theme-secondary">
-                    {t.tunnel.runtimeApiKeyLabel}
-                  </label>
-                  {tunnelStatus?.has_api_key && (
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingKey(!isEditingKey)}
-                      className="text-[11px] text-indigo-500 hover:text-indigo-400 font-medium"
-                    >
-                      {isEditingKey ? t.common.cancel : t.tunnel.replaceBtn}
-                    </button>
-                  )}
-                </div>
-                {isEditingKey ? (
-                  <input
-                    type="password"
-                    value={runtimeApiKey}
-                    onChange={(e) => setRuntimeApiKey(e.target.value)}
-                    placeholder={t.tunnel.runtimeApiKeyPlaceholder}
-                    className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-mono text-theme-primary focus:outline-none focus:border-indigo-500"
-                  />
-                ) : (
-                  <div className="w-full bg-theme-input/50 border border-theme-subtle rounded-lg px-3 py-2 text-xs font-mono text-theme-muted flex items-center justify-between">
-                    <span>{t.tunnel.keyConfigured}</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  </div>
-                )}
-              </div>
-
-              {/* Local MCP Token */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-medium text-theme-secondary">
-                    {t.tunnel.mcpTokenLabel}
-                  </label>
-                  {tunnelStatus?.has_mcp_token && (
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingToken(!isEditingToken)}
-                      className="text-[11px] text-indigo-500 hover:text-indigo-400 font-medium"
-                    >
-                      {isEditingToken ? t.common.cancel : t.tunnel.replaceBtn}
-                    </button>
-                  )}
-                </div>
-                {isEditingToken ? (
-                  <input
-                    type="password"
-                    value={mcpToken}
-                    onChange={(e) => setMcpToken(e.target.value)}
-                    placeholder={t.tunnel.mcpTokenPlaceholder}
-                    className="w-full bg-theme-input border border-theme-input rounded-lg px-3 py-2 text-xs font-mono text-theme-primary focus:outline-none focus:border-indigo-500"
-                  />
-                ) : (
-                  <div className="w-full bg-theme-input/50 border border-theme-subtle rounded-lg px-3 py-2 text-xs font-mono text-theme-muted flex items-center justify-between">
-                    <span>{t.tunnel.tokenConfigured}</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  </div>
-                )}
-              </div>
-
-              {/* Dedicated Token Auto-Creator */}
-              <div className="p-3.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-2.5">
-                <div className="text-xs font-medium text-theme-primary flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>{t.tunnel.tokenScopesLabel}</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {(["read", "write", "execute"] as const).map((sc) => {
-                    const active = tokenScopes.includes(sc);
-                    const label =
-                      sc === "read"
-                        ? t.tunnel.scopeRead
-                        : sc === "write"
-                          ? t.tunnel.scopeWrite
-                          : t.tunnel.scopeExecute;
-                    return (
-                      <button
-                        key={sc}
-                        type="button"
-                        onClick={() => toggleScope(sc)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium border transition ${
-                          active
-                            ? "bg-indigo-600 text-white border-indigo-600"
-                            : "bg-theme-input border-theme-input text-theme-secondary hover:border-indigo-500"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  disabled={tunnelBusy}
-                  onClick={handleAutoCreateToken}
-                  className="w-full py-2 bg-theme-card hover:bg-theme-card-hover border border-theme-subtle text-indigo-500 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>{t.tunnel.autoCreateTokenBtn}</span>
-                </button>
-              </div>
-
-              {/* Auto-reconnect checkbox */}
-              <label className="flex items-center gap-2 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={autoReconnect}
-                  onChange={(e) => setAutoReconnect(e.target.checked)}
-                  className="rounded border-theme-input text-indigo-600 focus:ring-indigo-500"
-                />
-                <span className="text-xs text-theme-secondary font-medium">
-                  {t.tunnel.autoReconnectLabel}
-                </span>
-              </label>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-theme-subtle">
-              <button
-                type="button"
-                disabled={tunnelBusy || !tunnelId.trim()}
-                onClick={() => handleSaveTunnel(true)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition shadow-sm"
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>{t.tunnel.saveAndConnectBtn}</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={tunnelBusy}
-                onClick={handleTestConnection}
-                className="flex items-center gap-1.5 px-3 py-2 bg-theme-card-muted hover:bg-theme-card-hover text-theme-primary border border-theme-subtle rounded-lg text-xs font-medium transition"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${tunnelBusy ? "animate-spin" : ""}`} />
-                <span>{t.tunnel.testConnectionBtn}</span>
-              </button>
-
-              {tunnelStatus?.status === "Connected" ? (
-                <button
-                  type="button"
-                  disabled={tunnelBusy}
-                  onClick={handleStopTunnel}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 border border-amber-500/30 rounded-lg text-xs font-medium transition"
-                >
-                  <Square className="w-3.5 h-3.5" />
-                  <span>{t.tunnel.disconnectBtn}</span>
-                </button>
-              ) : tunnelStatus?.configured ? (
-                <button
-                  type="button"
-                  disabled={tunnelBusy}
-                  onClick={handleStartTunnel}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-500 border border-emerald-500/30 rounded-lg text-xs font-medium transition"
-                >
-                  <Play className="w-3.5 h-3.5" />
-                  <span>{t.tunnel.connectBtn}</span>
-                </button>
-              ) : null}
-
-              {tunnelStatus?.configured && (
-                <button
-                  type="button"
-                  disabled={tunnelBusy}
-                  onClick={handleClearTunnel}
-                  className="flex items-center gap-1.5 px-3 py-2 text-red-500 hover:bg-red-500/10 rounded-lg text-xs font-medium transition ml-auto"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>{t.tunnel.removeBtn}</span>
-                </button>
-              )}
-            </div>
-
-            {/* Collapsible Diagnostics Section */}
-            <div className="pt-2 border-t border-theme-subtle">
-              <button
-                type="button"
-                onClick={() => setShowDiagnostics(!showDiagnostics)}
-                className="flex items-center gap-1.5 text-xs text-theme-muted hover:text-theme-primary font-medium transition"
-              >
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDiagnostics ? "rotate-180" : ""}`} />
-                <span>{showDiagnostics ? t.tunnel.hideDiagnostics : t.tunnel.viewDiagnostics}</span>
-              </button>
-
-              {showDiagnostics && (
-                <div className="mt-3 p-3.5 bg-theme-card-muted border border-theme-subtle rounded-lg space-y-2.5 text-xs">
-                  <div className="font-semibold text-theme-primary text-xs flex items-center gap-1.5">
-                    <Activity className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>{t.tunnel.diagnosticsTitle}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.networkModeLabel}:</span>{" "}
-                      <span className="text-theme-primary font-semibold uppercase">
-                        {tunnelStatus?.network_mode || "system"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.detectedProxyLabel}:</span>{" "}
-                      <span className="text-theme-primary truncate block" title={tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || "Direct / None"}>
-                        {tunnelStatus?.active_proxy_url || tunnelStatus?.resolved_proxy_url || "Direct / None"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.diagProcess}:</span>{" "}
-                      <span className="text-theme-primary">
-                        {tunnelStatus?.status === "Connected"
-                          ? "Running (Active)"
-                          : tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Starting"
-                            ? "Starting..."
-                            : tunnelStatus?.status === "Reconnecting"
-                              ? "Restarting (Backoff)"
-                              : tunnelStatus?.status === "Stopped"
-                                ? "Stopped"
-                                : tunnelStatus?.status === "NotConfigured"
-                                  ? "Not Configured"
-                                  : tunnelStatus?.status || "Unknown"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.diagLocalHealth}:</span>{" "}
-                      <span className="text-theme-primary">
-                        {tunnelStatus?.status === "Connected"
-                          ? `OK (Port ${tunnelStatus.health_port})`
-                          : tunnelStatus?.status === "HealthPortConflict"
-                            ? `Conflict (Port ${tunnelStatus?.health_port || 8080})`
-                            : `Standby (Port ${tunnelStatus?.health_port || 8080})`}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.diagControlPlane}:</span>{" "}
-                      <span className={(tunnelStatus?.control_plane_status === "Connected" || tunnelStatus?.control_plane_connected) ? "text-emerald-500 font-semibold" : "text-theme-primary"}>
-                        {(tunnelStatus?.control_plane_status === "Connected" || tunnelStatus?.control_plane_connected)
-                          ? `${t.tunnel.controlPlaneConnected}`
-                          : (tunnelStatus?.status === "Connecting" || tunnelStatus?.status === "Starting" || tunnelStatus?.control_plane_status === "Polling")
-                            ? t.tunnel.controlPlanePolling
-                            : tunnelStatus?.status === "AuthenticationError"
-                              ? "Auth Failed (401/403)"
-                              : t.tunnel.controlPlaneFailed}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.diagMcpSession}:</span>{" "}
-                      <span className={(tunnelStatus?.local_mcp_status !== "Failed" && tunnelStatus?.local_mcp_connected !== false) ? "text-emerald-500 font-semibold" : "text-red-500 font-semibold"}>
-                        {(tunnelStatus?.local_mcp_status !== "Failed" && tunnelStatus?.local_mcp_connected !== false)
-                          ? t.tunnel.localMcpConnected
-                          : t.tunnel.localMcpFailed}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.diagReconnectAttempts}:</span>{" "}
-                      <span className="text-theme-primary">{tunnelStatus?.reconnect_attempts ?? 0}</span>
-                    </div>
-                    <div>
-                      <span className="text-theme-muted">{t.tunnel.diagChildExitCode}:</span>{" "}
-                      <span className="text-theme-primary">
-                        {tunnelStatus?.error_message?.includes("exit code")
-                          ? (tunnelStatus.error_message.match(/exit code[:\s]+(\d+)/i)?.[1] ?? "Non-zero")
-                          : "0 (OK)"}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-theme-subtle">
-                    <div className="text-[11px] text-theme-muted mb-1">{t.tunnel.diagLastError}:</div>
-                    <div className="p-2 bg-theme-card rounded border border-theme-subtle text-[11px] font-mono break-all text-theme-secondary">
-                      {redactSecrets(tunnelStatus?.error_message) || (language === "zh-CN" ? "无" : "None")}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Per-Client MCP Authorizations Card */}
-          <div className="p-6 bg-theme-card border border-theme-card rounded-xl space-y-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-semibold text-theme-primary text-sm">
-                <KeyRound className="w-4 h-4 text-indigo-500" />
-                <span>{isZh ? "MCP 客户端授权" : "MCP Client Authorizations"}</span>
-              </div>
-              <span className="text-[11px] text-theme-muted font-mono">
-                {isZh ? "多客户端凭据隔离" : "Per-Client Token Isolation"}
-              </span>
-            </div>
-            <p className="text-xs text-theme-muted">
-              {isZh
-                ? "为不同 AI 客户端独立签发和管理访问令牌与权限。轮换或撤销某一客户端令牌不会影响其他已连接客户端。"
-                : "Issue and manage independent tokens and scopes per AI client. Rotating or revoking one client does not affect others."}
-            </p>
-
-            <div className="space-y-3 pt-2">
-              {/* ChatGPT */}
-              <div className="p-3.5 rounded-xl bg-theme-card-muted border border-theme-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Radio className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-theme-primary">ChatGPT</span>
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                        {isZh ? "已连接" : "Connected"}
-                      </span>
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                        {isZh ? "主要 AI" : "Primary"}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-theme-muted font-mono mt-0.5">
-                      <span>Scopes: read, write, execute &bull; 64 {isZh ? "工具" : "tools"} &bull; 12 ms</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRoute({ page: "connections" })}
-                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-theme-card hover:bg-theme-card-hover text-theme-primary border border-theme-subtle transition"
-                  >
-                    {isZh ? "在连接中心查看" : "View"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Kimi Web */}
-              <div className="p-3.5 rounded-xl bg-theme-card-muted border border-theme-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-theme-primary">Kimi Web</span>
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">
-                        {tunnelStatus?.has_mcp_token ? (isZh ? "已配置" : "Configured") : (isZh ? "等待授权" : "Awaiting Auth")}
-                      </span>
-                      <span className="text-[11px] text-theme-muted font-mono">conn_kimi_web</span>
-                    </div>
-                    <div className="text-[11px] text-theme-muted font-mono mt-0.5">
-                      <span>Scopes: read, write &bull; Remote MCP Tunnel &bull; {tunnelStatus?.has_mcp_token ? (isZh ? "专属凭证激活" : "Token Active") : (isZh ? "等待授权" : "Awaiting Authorization")}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRoute({ page: "connections" })}
-                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xs"
-                  >
-                    {isZh ? "在连接中心管理" : "Manage"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Claude & Gemini summary row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="p-3 rounded-xl bg-theme-card-muted/50 border border-theme-subtle flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <Zap className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="font-semibold text-theme-secondary">Claude Desktop</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRoute({ page: "connections" })}
-                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline font-medium"
-                  >
-                    {isZh ? "前往配置" : "Configure"}
-                  </button>
-                </div>
-                <div className="p-3 rounded-xl bg-theme-card-muted/50 border border-theme-subtle flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <Terminal className="w-3.5 h-3.5 text-sky-500" />
-                    <span className="font-semibold text-theme-secondary">Gemini CLI</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRoute({ page: "connections" })}
-                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline font-medium"
-                  >
-                    {isZh ? "前往配置" : "Configure"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        {/* Tab: ChatGPT Connection */}
+        {activeTab === "connections" && (
+          <ConnectionCenterErrorBoundary isZh={isZh}>
+            <ChatGPTConnection
+              tunnelStatus={tunnelStatus}
+              onRefreshAll={onRefresh}
+              uxMode={uxMode}
+            />
+          </ConnectionCenterErrorBoundary>
+        )}
 
       {/* Tab 2: Security & Trust Policies */}
       {activeTab === "security" && (

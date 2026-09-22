@@ -37,6 +37,7 @@ interface ErrorBoundaryProps {
   fallbackTitleEn?: string;
   componentName?: string;
   onReset?: () => void;
+  onBack?: () => void;
   isZh?: boolean;
 }
 
@@ -46,6 +47,7 @@ interface ErrorBoundaryState {
   errorInfo: ErrorInfo | null;
   crashId: string | null;
   copied: boolean;
+  remountKey: number;
 }
 
 export class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -57,6 +59,7 @@ export class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundar
       errorInfo: null,
       crashId: null,
       copied: false,
+      remountKey: 0,
     };
   }
 
@@ -88,9 +91,23 @@ export class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundar
   }
 
   handleReset = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null, crashId: null, copied: false });
+    this.setState((prev) => ({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      crashId: null,
+      copied: false,
+      remountKey: prev.remountKey + 1,
+    }));
     if (this.props.onReset) {
       this.props.onReset();
+    }
+  };
+
+  handleBack = () => {
+    this.handleReset();
+    if (this.props.onBack) {
+      this.props.onBack();
     }
   };
 
@@ -122,11 +139,11 @@ export class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundar
       const isZh = this.props.isZh ?? true;
       const title = isZh
         ? (this.props.fallbackTitleZh || "连接页面发生错误")
-        : (this.props.fallbackTitleEn || "Something went wrong in AI Connections");
+        : (this.props.fallbackTitleEn || "Something went wrong in ChatGPT Connection");
 
       const subtitle = isZh ? "Nexus 仍在运行。" : "Nexus is still running.";
       const retryText = isZh ? "重试" : "Retry";
-      const backText = isZh ? "返回 AI 连接中心" : "Back to AI Connections";
+      const backText = isZh ? "返回 ChatGPT 连接" : "Back to ChatGPT Connection";
       const copyText = isZh ? "复制错误详情" : "Copy error details";
       const copiedText = isZh ? "已复制" : "Copied";
 
@@ -164,7 +181,7 @@ export class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundar
 
               <button
                 type="button"
-                onClick={this.handleReset}
+                onClick={this.handleBack}
                 className="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle transition flex items-center gap-1.5"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -185,20 +202,25 @@ export class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundar
       );
     }
 
-    return this.props.children;
+    return (
+      <React.Fragment key={this.state.remountKey}>
+        {this.props.children}
+      </React.Fragment>
+    );
   }
 }
 
 export const ConnectionCenterErrorBoundary: React.FC<{
   children: ReactNode;
   onReset?: () => void;
+  onBack?: () => void;
   isZh?: boolean;
 }> = (props) => {
   return (
     <AppErrorBoundary
-      componentName="AIConnectionCenter"
+      componentName="ChatGPTConnection"
       fallbackTitleZh="连接页面发生错误"
-      fallbackTitleEn="Something went wrong in AI Connections"
+      fallbackTitleEn="Something went wrong in ChatGPT Connection"
       {...props}
     />
   );
