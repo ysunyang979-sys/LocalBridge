@@ -2497,6 +2497,79 @@ fn quit_nexus(app: tauri::AppHandle, state: tauri::State<Arc<Mutex<SupervisorSta
     );
 }
 
+#[cfg(target_os = "windows")]
+pub fn apply_crisp_windows_icons(hwnd_val: isize) {
+    unsafe {
+        type HMODULE = *mut std::ffi::c_void;
+        type HICON = *mut std::ffi::c_void;
+        type HwndPtr = *mut std::ffi::c_void;
+
+        extern "system" {
+            fn GetModuleHandleW(lpModuleName: *const u16) -> HMODULE;
+            fn LoadImageW(
+                hInst: HMODULE,
+                name: *const u16,
+                type_: u32,
+                cx: i32,
+                cy: i32,
+                fuLoad: u32,
+            ) -> HICON;
+            fn SendMessageW(
+                hWnd: HwndPtr,
+                Msg: u32,
+                wParam: usize,
+                lParam: isize,
+            ) -> isize;
+            fn SetClassLongPtrW(
+                hWnd: HwndPtr,
+                nIndex: i32,
+                dwNewLong: isize,
+            ) -> isize;
+            fn GetSystemMetrics(nIndex: i32) -> i32;
+        }
+
+        let hinstance = GetModuleHandleW(std::ptr::null());
+        let sm_cx_big = GetSystemMetrics(11); // SM_CXICON (32, 48, etc.)
+        let sm_cy_big = GetSystemMetrics(12); // SM_CYICON
+        let sm_cx_small = GetSystemMetrics(49); // SM_CXSMICON (16, 24, etc.)
+        let sm_cy_small = GetSystemMetrics(50); // SM_CYSMICON
+
+        // 32512 is IDI_APPLICATION embedded in executable PE resource
+        // 0x00008000 is LR_SHARED
+        let hicon_big = LoadImageW(
+            hinstance,
+            32512 as *const u16,
+            1, // IMAGE_ICON
+            sm_cx_big,
+            sm_cy_big,
+            0x00008000,
+        );
+        let hicon_small = LoadImageW(
+            hinstance,
+            32512 as *const u16,
+            1, // IMAGE_ICON
+            sm_cx_small,
+            sm_cy_small,
+            0x00008000,
+        );
+
+        const WM_SETICON: u32 = 0x0080;
+        const ICON_SMALL: usize = 0;
+        const ICON_BIG: usize = 1;
+        const GCLP_HICON: i32 = -14;
+        const GCLP_HICONSM: i32 = -34;
+
+        if !hicon_big.is_null() {
+            SendMessageW(hwnd_val as _, WM_SETICON, ICON_BIG, hicon_big as isize);
+            SetClassLongPtrW(hwnd_val as _, GCLP_HICON, hicon_big as isize);
+        }
+        if !hicon_small.is_null() {
+            SendMessageW(hwnd_val as _, WM_SETICON, ICON_SMALL, hicon_small as isize);
+            SetClassLongPtrW(hwnd_val as _, GCLP_HICONSM, hicon_small as isize);
+        }
+    }
+}
+
 fn main() {
     let supervisor = Arc::new(Mutex::new(SupervisorState::default()));
     let supervisor_exit_clone = supervisor.clone();
@@ -2666,81 +2739,33 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") {
                 let win_clone = window.clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = win_clone.hide();
+                    match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            let _ = win_clone.hide();
+                        }
+                        #[cfg(target_os = "windows")]
+                        tauri::WindowEvent::Focused(true) | tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                            if let Ok(hwnd) = win_clone.hwnd() {
+                                apply_crisp_windows_icons(hwnd.0 as isize);
+                            }
+                        }
+                        _ => {}
                     }
                 });
             }
-            // Explicitly set the window and taskbar icon for the main window
+
+            #[cfg(not(target_os = "windows"))]
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(icon) = Image::from_bytes(include_bytes!("../icons/icon.png")) {
                     let _ = window.set_icon(icon);
                 }
+            }
 
-                #[cfg(target_os = "windows")]
-                {
-                    if let Ok(hwnd) = window.hwnd() {
-                        unsafe {
-                            type HMODULE = *mut std::ffi::c_void;
-                            type HICON = *mut std::ffi::c_void;
-                            type HwndPtr = *mut std::ffi::c_void;
-
-                            extern "system" {
-                                fn GetModuleHandleW(lpModuleName: *const u16) -> HMODULE;
-                                fn LoadImageW(
-                                    hInst: HMODULE,
-                                    name: *const u16,
-                                    type_: u32,
-                                    cx: i32,
-                                    cy: i32,
-                                    fuLoad: u32,
-                                ) -> HICON;
-                                fn SendMessageW(
-                                    hWnd: HwndPtr,
-                                    Msg: u32,
-                                    wParam: usize,
-                                    lParam: isize,
-                                ) -> isize;
-                                fn SetClassLongPtrW(
-                                    hWnd: HwndPtr,
-                                    nIndex: i32,
-                                    dwNewLong: isize,
-                                ) -> isize;
-                                fn GetSystemMetrics(nIndex: i32) -> i32;
-                            }
-
-                            let hinstance = GetModuleHandleW(std::ptr::null());
-                            // 32512 is IDI_APPLICATION, embedded in localbridge-desktop.exe by resource.rc
-                            let hicon_big = LoadImageW(
-                                hinstance,
-                                32512 as *const u16,
-                                1, // IMAGE_ICON
-                                0,
-                                0,
-                                0x00000040, // LR_DEFAULTSIZE | LR_SHARED
-                            );
-                            let sm_cx = GetSystemMetrics(49); // SM_CXSMICON
-                            let sm_cy = GetSystemMetrics(50); // SM_CYSMICON
-                            let hicon_small = LoadImageW(
-                                hinstance,
-                                32512 as *const u16,
-                                1, // IMAGE_ICON
-                                sm_cx,
-                                sm_cy,
-                                0x00000000,
-                            );
-
-                            if !hicon_big.is_null() {
-                                SendMessageW(hwnd.0 as _, 0x007F /* WM_SETICON */, 1 /* ICON_BIG */, hicon_big as isize);
-                                SetClassLongPtrW(hwnd.0 as _, -14 /* GCLP_HICON */, hicon_big as isize);
-                            }
-                            if !hicon_small.is_null() {
-                                SendMessageW(hwnd.0 as _, 0x007F /* WM_SETICON */, 0 /* ICON_SMALL */, hicon_small as isize);
-                                SetClassLongPtrW(hwnd.0 as _, -34 /* GCLP_HICONSM */, hicon_small as isize);
-                            }
-                        }
-                    }
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(hwnd) = window.hwnd() {
+                    apply_crisp_windows_icons(hwnd.0 as isize);
                 }
             }
 
