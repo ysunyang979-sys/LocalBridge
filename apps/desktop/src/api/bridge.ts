@@ -42,6 +42,8 @@ import type {
   SkillBatchImportResult,
   SkillDeleteResult,
   SkillRawContentResult,
+  ResourceDiagnostics,
+  StartupDiagnostics,
 } from "../types.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:18080";
@@ -98,6 +100,48 @@ class ApiBridge {
       }
     }
     return null;
+  }
+
+  async getResourceDiagnostics(): Promise<ResourceDiagnostics | null> {
+    if (isTauri()) {
+      try {
+        return await invoke<ResourceDiagnostics>("get_resource_diagnostics");
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  async getStartupDiagnostics(): Promise<StartupDiagnostics | null> {
+    if (isTauri()) {
+      try {
+        return await invoke<StartupDiagnostics>("desktop_get_startup_diagnostics");
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  async openLogsFolder(): Promise<void> {
+    if (isTauri()) {
+      try {
+        await invoke("desktop_open_logs_folder");
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  async quitNexus(): Promise<void> {
+    if (isTauri()) {
+      try {
+        await invoke("quit_nexus");
+      } catch {
+        // ignore
+      }
+    }
   }
 
   // System & MCP Status

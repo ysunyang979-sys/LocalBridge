@@ -144,6 +144,32 @@ fn terminate_owned_process_tree(child: &mut Child) {
     let _ = child.wait();
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceDiagnostics {
+    pub executable_path: String,
+    pub resource_root: String,
+    pub node_path: String,
+    pub server_bundle_path: String,
+    pub runner_bundle_path: String,
+    pub lsp_root: String,
+    pub skills_root: String,
+    pub laya_root: String,
+    pub tunnel_runtime_path: String,
+    pub webview_target: String,
+    pub health_url: String,
+    pub source_tree_fallback_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartupDiagnosticsDto {
+    pub ready: bool,
+    pub startup_error: Option<String>,
+    pub resource_root: Option<String>,
+    pub server_exit_code: Option<i32>,
+    pub last_stderr: Option<String>,
+    pub port_state: String,
+}
+
 #[derive(Default)]
 struct SupervisorState {
     server_process: Option<Child>,
@@ -159,6 +185,9 @@ struct SupervisorState {
     startup_error: Option<String>,
     #[cfg(target_os = "windows")]
     job_object: Option<job_object::JobObjectGuard>,
+    resource_diagnostics: Option<ResourceDiagnostics>,
+    server_exit_code: Option<i32>,
+    last_stderr_lines: Vec<String>,
 }
 
 impl SupervisorState {
@@ -241,41 +270,198 @@ fn is_port_open(port: u16) -> bool {
     .is_ok()
 }
 
-fn resolve_resource_file(app: &tauri::AppHandle, relative_path: &str) -> Option<PathBuf> {
-    // 1. Tauri resource directory
-    if let Ok(res_dir) = app.path().resource_dir() {
-        let p1 = res_dir.join(relative_path);
-        if p1.exists() {
-            return Some(p1);
+fn is_inside_repo() -> bool {
+    if let Ok(exe) = std::env::current_exe() {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        if exe.starts_with(manifest_dir) {
+            return true;
         }
-        let p2 = res_dir.join("resources").join(relative_path);
-        if p2.exists() {
-            return Some(p2);
+        let exe_str = exe.to_string_lossy().to_lowercase();
+        if exe_str.contains("target\\release")
+            || exe_str.contains("target\\debug")
+            || exe_str.contains("apps\\desktop\\src-tauri")
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn resolve_production_resources(app: &tauri::AppHandle) -> Result<ResourceDiagnostics, String> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // 1. Directory containing current executable (highest priority for portable & installed)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            candidates.push(parent.join("resources"));
+            candidates.push(parent.to_path_buf());
         }
     }
 
-    // 2. Directory containing current executable
+    // 2. Tauri resource directory
+    if let Ok(res_dir) = app.path().resource_dir() {
+        candidates.push(res_dir.join("resources"));
+        candidates.push(res_dir);
+    }
+
+    let mut found_root: Option<PathBuf> = None;
+    let mut fallback_count: u32 = 0;
+
+    for cand in &candidates {
+        let node_check = cand.join("runtime").join("node.exe");
+        let server_check = cand.join("server").join("index.js");
+        if node_check.exists() && server_check.exists() {
+            found_root = Some(cand.clone());
+            break;
+        }
+    }
+
+    // If not found in production candidates, check if development fallback is permitted
+    if found_root.is_none() {
+        if is_inside_repo() {
+            let dev_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
+            if dev_root.join("runtime").join("node.exe").exists()
+                && dev_root.join("server").join("index.js").exists()
+            {
+                found_root = Some(dev_root);
+                fallback_count = 1;
+            }
+        }
+    }
+
+    let resource_root = match found_root {
+        Some(r) => r,
+        None => {
+            let searched = candidates
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "Fatal: Bundled production resources not found. Searched: [{}]. Source-tree fallback is forbidden outside repository.",
+                searched
+            ));
+        }
+    };
+
+    let exe_str = std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let node_path = resource_root.join("runtime").join("node.exe");
+    let server_entry = resource_root.join("server").join("index.js");
+    let runner_entry = resource_root.join("runner").join("index.js");
+    let lsp_root = resource_root.join("lsp");
+    let skills_root = resource_root.join("skills");
+    let laya_root = resource_root.join("laya");
+    let laya_str = if laya_root.exists() {
+        laya_root.to_string_lossy().to_string()
+    } else {
+        String::new()
+    };
+
+    let tunnel_cf = resource_root.join("tunnel").join("tunnel-client-runtime-cloudflared.exe");
+    let tunnel_fallback = resource_root.join("tunnel").join("cloudflared.exe");
+    let tunnel_str = if tunnel_cf.exists() {
+        tunnel_cf.to_string_lossy().to_string()
+    } else if tunnel_fallback.exists() {
+        tunnel_fallback.to_string_lossy().to_string()
+    } else {
+        String::new()
+    };
+
+    Ok(ResourceDiagnostics {
+        executable_path: exe_str,
+        resource_root: resource_root.to_string_lossy().to_string(),
+        node_path: node_path.to_string_lossy().to_string(),
+        server_bundle_path: server_entry.to_string_lossy().to_string(),
+        runner_bundle_path: runner_entry.to_string_lossy().to_string(),
+        lsp_root: lsp_root.to_string_lossy().to_string(),
+        skills_root: skills_root.to_string_lossy().to_string(),
+        laya_root: laya_str,
+        tunnel_runtime_path: tunnel_str,
+        webview_target: "tauri://localhost".to_string(),
+        health_url: "http://127.0.0.1:18080/health".to_string(),
+        source_tree_fallback_count: fallback_count,
+    })
+}
+
+fn resolve_resource_file(app: &tauri::AppHandle, relative_path: &str) -> Option<PathBuf> {
+    // 1. Directory containing current executable
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(parent) = exe_path.parent() {
-            let p1 = parent.join(relative_path);
+            let p1 = parent.join("resources").join(relative_path);
             if p1.exists() {
                 return Some(p1);
             }
-            let p2 = parent.join("resources").join(relative_path);
+            let p2 = parent.join(relative_path);
             if p2.exists() {
                 return Some(p2);
             }
         }
     }
 
-    // 3. Fallback for development workspace
-    let dev_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
-    let dev_p = dev_root.join(relative_path);
-    if dev_p.exists() {
-        return Some(dev_p);
+    // 2. Tauri resource directory
+    if let Ok(res_dir) = app.path().resource_dir() {
+        let p1 = res_dir.join("resources").join(relative_path);
+        if p1.exists() {
+            return Some(p1);
+        }
+        let p2 = res_dir.join(relative_path);
+        if p2.exists() {
+            return Some(p2);
+        }
+    }
+
+    // 3. Fallback ONLY for development workspace inside repository
+    if is_inside_repo() {
+        let dev_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
+        let dev_p = dev_root.join(relative_path);
+        if dev_p.exists() {
+            return Some(dev_p);
+        }
     }
 
     None
+}
+
+fn log_resource_diagnostics(diag: &ResourceDiagnostics, data_dir: Option<&Path>) {
+    let banner = format!(
+        "\n==================================================\n\
+         Nexus Resource Diagnostics:\n\
+           Executable:       {}\n\
+           Resource Root:    {}\n\
+           Node Runtime:     {}\n\
+           Server Bundle:    {}\n\
+           Runner Bundle:    {}\n\
+           LSP Root:         {}\n\
+           Skills Root:      {}\n\
+           Laya Root:        {}\n\
+           Tunnel Runtime:   {}\n\
+           WebView Target:   {}\n\
+           Health URL:       {}\n\
+           Source Fallbacks: {}\n\
+         ==================================================",
+        diag.executable_path,
+        diag.resource_root,
+        diag.node_path,
+        diag.server_bundle_path,
+        diag.runner_bundle_path,
+        diag.lsp_root,
+        diag.skills_root,
+        if diag.laya_root.is_empty() { "Not Present" } else { &diag.laya_root },
+        if diag.tunnel_runtime_path.is_empty() { "Not Present" } else { &diag.tunnel_runtime_path },
+        diag.webview_target,
+        diag.health_url,
+        diag.source_tree_fallback_count
+    );
+    eprintln!("{}", banner);
+    println!("{}", banner);
+
+    if let Some(dir) = data_dir {
+        let log_file = dir.join("desktop.log");
+        let _ = std::fs::write(&log_file, &banner);
+    }
 }
 
 fn get_or_create_token(prefix: &str, filename: &str, data_dir: &Path) -> Result<String, String> {
@@ -2154,33 +2340,24 @@ fn desktop_tunnel_test_connection(
 }
 
 fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorState>>) {
-    // 1. Locate bundled node.exe
-    let node_path = match resolve_resource_file(app, "runtime/node.exe") {
-        Some(p) => p,
-        None => {
-            eprintln!("[LocalBridge Supervisor] Bundled node.exe not found.");
+    // 1. Resolve production resources with strict isolation
+    let diag = match resolve_production_resources(app) {
+        Ok(d) => d,
+        Err(err) => {
+            eprintln!("[LocalBridge Supervisor] {}", err);
+            if let Ok(mut state) = supervisor.lock() {
+                state.startup_error = Some(err);
+            }
             return;
         }
     };
 
-    // 2. Locate server and runner index.js
-    let server_entry = match resolve_resource_file(app, "server/index.js") {
-        Some(p) => p,
-        None => {
-            eprintln!("[LocalBridge Supervisor] Bundled server/index.js not found.");
-            return;
-        }
-    };
+    let node_path = PathBuf::from(&diag.node_path);
+    let server_entry = PathBuf::from(&diag.server_bundle_path);
+    let runner_entry = PathBuf::from(&diag.runner_bundle_path);
+    let resource_root = PathBuf::from(&diag.resource_root);
 
-    let runner_entry = match resolve_resource_file(app, "runner/index.js") {
-        Some(p) => p,
-        None => {
-            eprintln!("[LocalBridge Supervisor] Bundled runner/index.js not found.");
-            return;
-        }
-    };
-
-    // 3. Prepare data directories in local app data
+    // 2. Prepare data directories in local app data
     let base_data_dir = std::env::var("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -2198,25 +2375,33 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     let _ = std::fs::create_dir_all(&runner_data_dir);
     let _ = std::fs::create_dir_all(&data_dir);
 
+    // 3. Log diagnostics banner to stdout, stderr, and desktop.log
+    log_resource_diagnostics(&diag, Some(&data_dir));
+
     let db_path = server_data_dir.join("localbridge.db");
     let projects_path = runner_data_dir.join("projects.json");
 
-    // Never trust or authenticate to an unknown listener. A second Desktop
-    // instance is handled by the single-instance plugin; any remaining port
-    // occupant is a hard startup error.
+    // 4. Port collision check
     if is_port_open(18080) {
-        let message = "LocalBridge cannot start safely because 127.0.0.1:18080 is already in use by an unknown process. Close the conflicting process and restart LocalBridge.".to_string();
+        let message = "LocalBridge cannot start safely because 127.0.0.1:18080 is already in use by another process. Close conflicting processes and restart LocalBridge.".to_string();
         eprintln!("[LocalBridge Supervisor] {}", message);
-        if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+        if let Ok(mut state) = supervisor.lock() {
+            state.resource_diagnostics = Some(diag);
+            state.data_dir = Some(data_dir);
+            state.startup_error = Some(message);
+        }
         return;
     }
 
-    // 4. Retrieve or generate tokens using the operating system CSPRNG.
+    // 5. Retrieve or generate tokens using OS CSPRNG
     let runner_token = match get_or_create_token("lbr_", "runner-token.key", &data_dir) {
         Ok(token) => token,
         Err(message) => {
             eprintln!("[LocalBridge Supervisor] {}", message);
-            if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+            if let Ok(mut state) = supervisor.lock() {
+                state.resource_diagnostics = Some(diag);
+                state.startup_error = Some(message);
+            }
             return;
         }
     };
@@ -2224,12 +2409,15 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         Ok(token) => token,
         Err(message) => {
             eprintln!("[LocalBridge Supervisor] {}", message);
-            if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+            if let Ok(mut state) = supervisor.lock() {
+                state.resource_diagnostics = Some(diag);
+                state.startup_error = Some(message);
+            }
             return;
         }
     };
 
-    // 5. Update state
+    // 6. Update state
     #[cfg(target_os = "windows")]
     let job_guard = job_object::JobObjectGuard::create();
 
@@ -2241,11 +2429,12 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         state.management_token = Some(management_token.clone());
         state.server_port = 18080;
         state.data_dir = Some(data_dir.clone());
+        state.resource_diagnostics = Some(diag.clone());
     }
 
-    // 6. Start the owned Server and require authenticated readiness.
+    // 7. Start the owned Server and require authenticated readiness.
     {
-        let server_cwd = server_entry.parent().unwrap_or(&server_entry);
+        let server_cwd = server_entry.parent().unwrap_or(&resource_root);
         let mut server_cmd = Command::new(&node_path);
         server_cmd.arg(&server_entry);
         server_cmd.current_dir(server_cwd);
@@ -2256,9 +2445,14 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         server_cmd.env("LOCALBRIDGE_SERVER_DB_PATH", db_path.to_string_lossy().to_string());
         server_cmd.env("LOCALBRIDGE_BOOTSTRAP_RUNNER_TOKEN", &runner_token);
         server_cmd.env("LOCALBRIDGE_MANAGEMENT_TOKEN", &management_token);
+        server_cmd.env("LOCALBRIDGE_RESOURCES_PATH", &diag.resource_root);
+        server_cmd.env("NEXUS_SKILLS_DIR", &diag.skills_root);
+        server_cmd.env("LOCALBRIDGE_LSP_DIR", &diag.lsp_root);
 
         #[cfg(target_os = "windows")]
         server_cmd.creation_flags(CREATE_NO_WINDOW);
+
+        server_cmd.stderr(std::process::Stdio::piped());
 
         let mut server_child = match server_cmd.spawn() {
             Ok(child) => child,
@@ -2270,16 +2464,37 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
             }
         };
 
+        if let Some(err_pipe) = server_child.stderr.take() {
+            let sup_err = supervisor.clone();
+            std::thread::spawn(move || {
+                use std::io::{BufRead, BufReader};
+                let reader = BufReader::new(err_pipe);
+                for line in reader.lines().flatten() {
+                    eprintln!("[Server stderr] {}", line);
+                    if let Ok(mut s) = sup_err.lock() {
+                        if s.last_stderr_lines.len() >= 30 {
+                            s.last_stderr_lines.remove(0);
+                        }
+                        s.last_stderr_lines.push(line);
+                    }
+                }
+            });
+        }
+
         #[cfg(target_os = "windows")]
         if let Some(ref job) = job_guard {
             job.assign_child(&server_child);
         }
 
-        // Port-open alone is not readiness. The owned child must still be alive
-        // and answer an lm_-authenticated management request.
+        // Authenticated readiness check
         let mut ready = false;
         for _ in 0..50 {
-            if server_child.try_wait().ok().flatten().is_some() { break; }
+            if let Ok(Some(exit_st)) = server_child.try_wait() {
+                if let Ok(mut s) = supervisor.lock() {
+                    s.server_exit_code = exit_st.code();
+                }
+                break;
+            }
             if loopback_management_request(18080, &management_token, "GET", "/api/status", None).is_ok() {
                 ready = true;
                 break;
@@ -2288,17 +2503,22 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         }
 
         if !ready {
+            let exit_code = server_child.try_wait().ok().flatten().and_then(|s| s.code());
             terminate_owned_process_tree(&mut server_child);
             let message = "Bundled LocalBridge Server failed authenticated readiness; Runner was not started.".to_string();
             eprintln!("[LocalBridge Supervisor] {}", message);
-            if let Ok(mut state) = supervisor.lock() { state.startup_error = Some(message); }
+            if let Ok(mut state) = supervisor.lock() {
+                state.server_exit_code = exit_code;
+                state.startup_error = Some(message);
+            }
             return;
         }
+
         if let Ok(mut state) = supervisor.lock() {
             state.server_process = Some(server_child);
         }
 
-        // Start server process lifecycle monitor immediately so that any server exit is caught
+        // Server lifecycle monitor
         let sup_srv_mon = supervisor.clone();
         let app_srv_mon = app.clone();
         std::thread::spawn(move || {
@@ -2349,8 +2569,8 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         });
     }
 
-    // 7. Start Runner
-    let runner_cwd = runner_entry.parent().unwrap_or(&runner_entry);
+    // 8. Start Runner
+    let runner_cwd = runner_entry.parent().unwrap_or(&resource_root);
     let mut runner_cmd = Command::new(&node_path);
     runner_cmd.arg(&runner_entry);
     runner_cmd.current_dir(runner_cwd);
@@ -2359,15 +2579,13 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     runner_cmd.env("LOCALBRIDGE_SERVER_URL", "ws://127.0.0.1:18080/runner/ws");
     runner_cmd.env("LOCALBRIDGE_RUNNER_TOKEN", &runner_token);
     runner_cmd.env("LOCALBRIDGE_PROJECTS_PATH", projects_path.to_string_lossy().to_string());
-    if let Some(lsp_dir) = resolve_resource_file(app, "lsp") {
-        runner_cmd.env("LOCALBRIDGE_LSP_DIR", lsp_dir.to_string_lossy().to_string());
-    }
-    if let Some(resources_dir) = runner_entry.parent().and_then(|p| p.parent()) {
-        runner_cmd.env("LOCALBRIDGE_RESOURCES_PATH", resources_dir.to_string_lossy().to_string());
-    }
+    runner_cmd.env("LOCALBRIDGE_LSP_DIR", &diag.lsp_root);
+    runner_cmd.env("LOCALBRIDGE_RESOURCES_PATH", &diag.resource_root);
 
     #[cfg(target_os = "windows")]
     runner_cmd.creation_flags(CREATE_NO_WINDOW);
+
+    runner_cmd.stderr(std::process::Stdio::piped());
 
     let mut runner_child = match runner_cmd.spawn() {
         Ok(child) => child,
@@ -2381,6 +2599,16 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
             return;
         }
     };
+
+    if let Some(err_pipe) = runner_child.stderr.take() {
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(err_pipe);
+            for line in reader.lines().flatten() {
+                eprintln!("[Runner stderr] {}", line);
+            }
+        });
+    }
 
     #[cfg(target_os = "windows")]
     if let Some(ref job) = job_guard {
@@ -2541,6 +2769,73 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
             }
         }
     });
+}
+
+#[tauri::command]
+fn get_resource_diagnostics(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<ResourceDiagnostics, String> {
+    let s = state.lock().map_err(|e| e.to_string())?;
+    s.resource_diagnostics.clone().ok_or_else(|| "Resource diagnostics not yet initialized".into())
+}
+
+#[tauri::command]
+fn desktop_get_resource_diagnostics(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<ResourceDiagnostics, String> {
+    get_resource_diagnostics(state)
+}
+
+#[tauri::command]
+fn desktop_get_startup_diagnostics(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<StartupDiagnosticsDto, String> {
+    let s = state.lock().map_err(|e| e.to_string())?;
+    let port_open = is_port_open(if s.server_port > 0 { s.server_port } else { 18080 });
+    let port_state = if port_open { "127.0.0.1:18080 (LISTEN)".into() } else { "127.0.0.1:18080 (FREE)".into() };
+    let resource_root = s.resource_diagnostics.as_ref().map(|d| d.resource_root.clone());
+    let last_stderr = if s.last_stderr_lines.is_empty() {
+        None
+    } else {
+        Some(s.last_stderr_lines.join("\n"))
+    };
+    let ready = s.startup_error.is_none()
+        && s.server_process.as_ref().is_some()
+        && s.runner_process.as_ref().is_some();
+
+    Ok(StartupDiagnosticsDto {
+        ready,
+        startup_error: s.startup_error.clone(),
+        resource_root,
+        server_exit_code: s.server_exit_code,
+        last_stderr,
+        port_state,
+    })
+}
+
+#[tauri::command]
+fn desktop_open_logs_folder(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<(), String> {
+    let dir = if let Ok(s) = state.lock() {
+        s.data_dir.clone().unwrap_or_else(|| {
+            std::env::var("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("LocalBridge")
+        })
+    } else {
+        std::env::var("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("LocalBridge")
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("explorer").arg(&dir).spawn();
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2751,6 +3046,10 @@ fn main() {
             skills_delete,
             skills_get_raw,
             skills_open_source_folder,
+            get_resource_diagnostics,
+            desktop_get_resource_diagnostics,
+            desktop_get_startup_diagnostics,
+            desktop_open_logs_folder,
             quit_nexus
         ])
         .setup(move |app| {

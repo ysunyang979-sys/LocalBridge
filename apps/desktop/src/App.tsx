@@ -3,6 +3,7 @@ import { OctagonAlert } from "lucide-react";
 import { Sidebar, type NavPage } from "./components/Sidebar.js";
 import { Header } from "./components/Header.js";
 import { NexusPulseLoading } from "./components/NexusPulseLoading.js";
+import { StartupScreen } from "./components/StartupScreen.js";
 import { ControlPage } from "./pages/ControlPage.js";
 import { ProjectsPage } from "./pages/ProjectsPage.js";
 import { JobsPage } from "./pages/JobsPage.js";
@@ -33,6 +34,7 @@ import type {
   UserExperienceMode,
   FullControlStatusDto,
   AIConnectionDto,
+  StartupDiagnostics,
 } from "./types.js";
 import { applyServerPollResult } from "./polling-state.js";
 
@@ -86,6 +88,15 @@ export const App: React.FC = () => {
   const [fullControlStatus, setFullControlStatus] = useState<FullControlStatusDto | null>(null);
   const [isFullControlModalOpen, setIsFullControlModalOpen] = useState(false);
   const [connections, setConnections] = useState<AIConnectionDto[]>([]);
+
+  // Startup Readiness State
+  const [isStartupComplete, setIsStartupComplete] = useState(false);
+  const [startupTimeout, setStartupTimeout] = useState(false);
+  const [startupDiag, setStartupDiag] = useState<StartupDiagnostics | null>(null);
+  const [startupServerReady, setStartupServerReady] = useState(false);
+  const [startupRunnerReady, setStartupRunnerReady] = useState(false);
+  const [startupMcpReady, setStartupMcpReady] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   // Fetch all state
   const loadData = useCallback(async () => {
@@ -194,14 +205,102 @@ export const App: React.FC = () => {
     setIsRefreshing(false);
   };
 
+  // Initial startup & readiness polling
   useEffect(() => {
-    loadData();
+    if (isStartupComplete) return;
+
+    let cancelled = false;
+    const timeoutTimer = setTimeout(async () => {
+      if (!isStartupComplete && !cancelled) {
+        setStartupTimeout(true);
+        const diag = await bridge.getStartupDiagnostics();
+        if (diag && !cancelled) setStartupDiag(diag);
+      }
+    }, 15000);
+
+    const poll = async () => {
+      if (cancelled || isStartupComplete) return;
+      try {
+        const health = await bridge.getDesktopHealth();
+        if (cancelled) return;
+        if (health) {
+          if (health.startup_error) {
+            setStartupError(health.startup_error);
+            setStartupTimeout(true);
+            const diag = await bridge.getStartupDiagnostics();
+            if (diag && !cancelled) setStartupDiag(diag);
+            return;
+          }
+          if (health.server_running) {
+            setStartupServerReady(true);
+          }
+          if (health.runner_running) {
+            setStartupRunnerReady(true);
+          }
+          if (health.ready) {
+            setStartupServerReady(true);
+            setStartupRunnerReady(true);
+            setStartupMcpReady(true);
+            clearTimeout(timeoutTimer);
+            await loadData();
+            if (!cancelled) {
+              setIsStartupComplete(true);
+            }
+            return;
+          }
+        } else {
+          // Outside Tauri (e.g. browser dev mode)
+          try {
+            const status = await bridge.getStatus();
+            if (status) {
+              setStartupServerReady(true);
+              setStartupRunnerReady(true);
+              setStartupMcpReady(true);
+              clearTimeout(timeoutTimer);
+              await loadData();
+              if (!cancelled) {
+                setIsStartupComplete(true);
+              }
+              return;
+            }
+          } catch {
+            // Server not up yet, keep polling
+          }
+        }
+      } catch {
+        // Keep polling
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutTimer);
+      clearInterval(interval);
+    };
+  }, [isStartupComplete, retryNonce, loadData]);
+
+  // Regular data polling after startup
+  useEffect(() => {
+    if (!isStartupComplete) return;
     const interval = setInterval(loadData, 3000);
     return () => {
       refreshGeneration.current++;
       clearInterval(interval);
     };
-  }, [loadData]);
+  }, [isStartupComplete, loadData]);
+
+  const handleRetryStartup = () => {
+    setStartupTimeout(false);
+    setStartupError(null);
+    setStartupServerReady(false);
+    setStartupRunnerReady(false);
+    setStartupMcpReady(false);
+    setStartupDiag(null);
+    setRetryNonce((n) => n + 1);
+  };
 
   // Toggle Global Pause
   const handleTogglePause = async () => {
@@ -285,6 +384,22 @@ export const App: React.FC = () => {
     }
     setCurrentPage(page);
   };
+
+  if (!isStartupComplete) {
+    return (
+      <StartupScreen
+        isTimeout={startupTimeout}
+        startupError={startupError}
+        serverReady={startupServerReady}
+        runnerReady={startupRunnerReady}
+        mcpReady={startupMcpReady}
+        diagnostics={startupDiag}
+        onRetry={handleRetryStartup}
+        onOpenLogs={() => bridge.openLogsFolder()}
+        onQuit={() => bridge.quitNexus()}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen bg-theme-base text-theme-primary font-sans antialiased overflow-hidden select-none">

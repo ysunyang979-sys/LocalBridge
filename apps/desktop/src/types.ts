@@ -150,6 +150,30 @@ export interface DesktopHealthStatus {
   startup_error: string | null;
 }
 
+export interface ResourceDiagnostics {
+  executable_path: string;
+  resource_root: string;
+  node_path: string;
+  server_bundle_path: string;
+  runner_bundle_path: string;
+  lsp_root: string;
+  skills_root: string;
+  laya_root: string;
+  tunnel_runtime_path: string;
+  webview_target: string;
+  health_url: string;
+  source_tree_fallback_count: number;
+}
+
+export interface StartupDiagnostics {
+  ready: boolean;
+  startup_error: string | null;
+  resource_root: string | null;
+  server_exit_code: number | null;
+  last_stderr: string | null;
+  port_state: string;
+}
+
 export type ProjectTrustLevel =
   | "standard"
   | "session-trusted"
