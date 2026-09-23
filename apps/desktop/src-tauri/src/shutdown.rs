@@ -142,6 +142,7 @@ pub fn fast_shutdown(
     tunnel_stop_fn: impl FnOnce() + Send + 'static,
     mut runner_process: Option<Child>,
     mut server_process: Option<Child>,
+    mut bridge_process: Option<Child>,
 ) {
     let quit_clicked_at = current_time_millis();
 
@@ -182,6 +183,9 @@ pub fn fast_shutdown(
         std::thread::sleep(Duration::from_millis(100));
 
         let child_processes_killed_at = current_time_millis();
+        if let Some(mut bridge) = bridge_process.take() {
+            terminate_child_process_tree(&mut bridge);
+        }
         if let Some(mut runner) = runner_process.take() {
             terminate_child_process_tree(&mut runner);
         }

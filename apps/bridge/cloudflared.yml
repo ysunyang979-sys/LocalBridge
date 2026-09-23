@@ -1,0 +1,26 @@
+# Cloudflare Tunnel Configuration for Nexus MCP Bridge
+# Documentation: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+
+# The Tunnel UUID (obtain by running: cloudflared tunnel create nexus-mcp-bridge)
+tunnel: <TUNNEL_UUID_OR_NAME>
+credentials-file: C:\Users\22365\.cloudflared\<TUNNEL_UUID>.json
+
+# Ingress rules route traffic from Cloudflare's edge to local services
+ingress:
+  # 1. Route MCP traffic to local Nexus Bridge (Port 8787)
+  # Replace nexus-mcp.example.com with your custom hostname or domain
+  - hostname: nexus-mcp.example.com
+    service: http://127.0.0.1:8787
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: false
+      httpHostHeader: 127.0.0.1
+      disableChunkedEncoding: false
+
+  # 2. Catch-all rule returning 404 for unmatched hostnames
+  - service: http_status:404
+
+# Best Practices for Gemini Spark Integration:
+# 1. In Cloudflare Zero Trust Dashboard, attach Cloudflare Access policy to https://nexus-mcp.example.com/mcp
+# 2. Add Service Token or IP/Geo restrictions if needed.
+# 3. Nexus MCP Bridge will independently enforce Bearer Token (Authorization: Bearer <NEXUS_BRIDGE_TOKEN>).

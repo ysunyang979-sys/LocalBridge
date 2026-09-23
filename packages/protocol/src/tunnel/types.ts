@@ -61,10 +61,17 @@ export const TunnelStatusDtoSchema = z.object({
   active_proxy_url: z.string().nullable().optional(),
   proxy_status: z.enum(["Reachable", "Unreachable", "Unsupported", "NotConfigured"]).nullable().optional(),
   control_plane_status: z.enum(["Connected", "ConnectionFailed", "Polling", "Idle"]).nullable().optional(),
+  control_plane_connected: z.boolean().optional(),
   local_mcp_status: z.enum(["Connected", "Failed"]).nullable().optional(),
   last_successful_poll_at: z.number().nullable().optional(),
   poll_errors: z.number().default(0),
   error_message: z.string().nullable().optional(),
   reconnect_attempts: z.number(),
+  public_hostname: z.string().nullable().optional(),
+  public_base_url: z.string().nullable().optional(),
+  mcp_endpoint: z.string().nullable().optional(),
+  tunnel_mode: z.enum(["quick", "managed"]).nullable().optional(),
+  dns_status: z.enum(["configured", "not_configured", "pending", "error"]).nullable().optional(),
+  cloudflare_account_id: z.string().nullable().optional(),
 });
 export type TunnelStatusDto = z.infer<typeof TunnelStatusDtoSchema>;

@@ -1159,6 +1159,113 @@ class ApiBridge {
     };
   }
 
+  // Nexus MCP Bridge (Gemini Spark + OAuth)
+  async getMcpBridgeStatus(): Promise<BridgeStatusDto> {
+    if (isTauri()) {
+      return invoke<BridgeStatusDto>("desktop_mcp_bridge_get_status");
+    }
+    try {
+      const res = await fetch("http://127.0.0.1:8787/health");
+      const data = await res.json();
+      return {
+        running: res.ok && data.ok,
+        port: 8787,
+        mode: "reused",
+        public_base_url: (data && data.baseUrl) || "http://127.0.0.1:8787",
+        mcp_url: (data && data.endpoint) || "http://127.0.0.1:8787/mcp",
+        core_url: "http://127.0.0.1:18080",
+        uptime_seconds: 0,
+        restart_count: 0,
+        cloudflared_service_detected: true,
+        tools_count: 8,
+      };
+    } catch {
+      return {
+        running: false,
+        port: 8787,
+        mode: "stopped",
+        public_base_url: "http://127.0.0.1:8787",
+        mcp_url: "http://127.0.0.1:8787/mcp",
+        core_url: "http://127.0.0.1:18080",
+        uptime_seconds: 0,
+        restart_count: 0,
+        cloudflared_service_detected: false,
+        tools_count: 0,
+      };
+    }
+  }
+
+  async restartMcpBridge(): Promise<BridgeStatusDto> {
+    if (isTauri()) {
+      return invoke<BridgeStatusDto>("desktop_mcp_bridge_restart");
+    }
+    throw new Error("Restart only supported in Tauri desktop app");
+  }
+
+  async getMcpBridgeLogs(): Promise<string[]> {
+    if (isTauri()) {
+      return invoke<string[]>("desktop_mcp_bridge_get_logs");
+    }
+    return [];
+  }
+
+  async detectCloudflaredService(): Promise<boolean> {
+    if (isTauri()) {
+      return invoke<boolean>("desktop_mcp_bridge_detect_cloudflared");
+    }
+    return false;
+  }
+
+  async detectCloudflaredAgent(): Promise<{
+    online: boolean;
+    ready_connections: number;
+    service_running: boolean;
+    details: string;
+  }> {
+    if (isTauri()) {
+      return invoke<{
+        online: boolean;
+        ready_connections: number;
+        service_running: boolean;
+        details: string;
+      }>("desktop_mcp_bridge_detect_cloudflared_agent");
+    }
+    return {
+      online: false,
+      ready_connections: 0,
+      service_running: false,
+      details: "Agent service offline",
+    };
+  }
+
+  async checkPublicDnsOs(domain: string): Promise<{
+    resolves: boolean;
+    ips: string[];
+    details: string;
+  }> {
+    if (isTauri()) {
+      return invoke<{
+        resolves: boolean;
+        ips: string[];
+        details: string;
+      }>("desktop_mcp_bridge_check_dns_os", { domain });
+    }
+    return {
+      resolves: false,
+      ips: [],
+      details: "Not in Tauri environment",
+    };
+  }
+
+  readonly mcpBridge = {
+    getStatus: () => this.getMcpBridgeStatus(),
+    restart: () => this.restartMcpBridge(),
+    getLogs: () => this.getMcpBridgeLogs(),
+    detectCloudflared: () => this.detectCloudflaredService(),
+    detectCloudflaredAgent: () => this.detectCloudflaredAgent(),
+    checkPublicDnsOs: (domain: string) => this.checkPublicDnsOs(domain),
+  };
+
   // Workflow Sessions
   async listSessions(params?: {
     projectId?: string;
@@ -1597,6 +1704,21 @@ export interface TunnelStatusDto {
   poll_errors?: number;
   error_message?: string | null;
   reconnect_attempts: number;
+}
+
+export interface BridgeStatusDto {
+  running: boolean;
+  port: number;
+  mode: "owned" | "reused" | "stopped" | "failed" | string;
+  error?: string | null;
+  public_base_url: string;
+  mcp_url: string;
+  core_url: string;
+  pid?: number | null;
+  uptime_seconds: number;
+  restart_count: number;
+  cloudflared_service_detected: boolean;
+  tools_count: number;
 }
 
 export const bridge = new ApiBridge();

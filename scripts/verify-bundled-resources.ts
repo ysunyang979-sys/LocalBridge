@@ -44,7 +44,13 @@ if (fs.existsSync(bundledNodeExe)) {
   }
 }
 
-console.log("Bundled resources contain verified tunnel runtime, bundled language server, and no database or migration-backup artifacts.");
+const bridgeJs = path.join(resources, "bridge/index.js");
+const bridgeExe = path.join(resources, "bridge/nexus-mcp-bridge.exe");
+if (!fs.existsSync(bridgeJs) || !fs.existsSync(bridgeExe)) {
+  throw new Error("Tauri resource verification failed; bundled MCP bridge (index.js or nexus-mcp-bridge.exe) missing.");
+}
+
+console.log("Bundled resources contain verified tunnel runtime, bundled language server, bundled MCP bridge, and no database or migration-backup artifacts.");
 
 // Section 9: Build Artifact Regression Test
 // Verify the bundled server runtime directly by launching it and fetching tools/list

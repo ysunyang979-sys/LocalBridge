@@ -20,6 +20,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub mod tunnel;
 pub mod shutdown;
+pub mod bridge;
 
 #[cfg(target_os = "windows")]
 pub mod job_object {
@@ -151,6 +152,8 @@ pub struct ResourceDiagnostics {
     pub node_path: String,
     pub server_bundle_path: String,
     pub runner_bundle_path: String,
+    pub bridge_bundle_path: String,
+    pub bridge_executable_path: String,
     pub lsp_root: String,
     pub skills_root: String,
     pub laya_root: String,
@@ -174,6 +177,8 @@ pub struct StartupDiagnosticsDto {
 struct SupervisorState {
     server_process: Option<Child>,
     runner_process: Option<Child>,
+    bridge_supervisor: bridge::BridgeSupervisor,
+    bridge_entry: Option<PathBuf>,
     tunnel_supervisor: tunnel::TunnelSupervisor,
     bundled_node: Option<PathBuf>,
     server_entry: Option<PathBuf>,
@@ -215,6 +220,9 @@ impl SupervisorState {
             );
         }
         std::thread::sleep(Duration::from_millis(100));
+        if let Some(mut bridge) = self.bridge_supervisor.process.take() {
+            shutdown::terminate_child_process_tree(&mut bridge);
+        }
         if let Some(mut runner) = self.runner_process.take() {
             shutdown::terminate_child_process_tree(&mut runner);
         }
@@ -351,11 +359,24 @@ fn resolve_production_resources(app: &tauri::AppHandle) -> Result<ResourceDiagno
     let node_path = resource_root.join("runtime").join("node.exe");
     let server_entry = resource_root.join("server").join("index.js");
     let runner_entry = resource_root.join("runner").join("index.js");
+    let bridge_entry = resource_root.join("bridge").join("index.js");
+    let bridge_exe = resource_root.join("bridge").join("nexus-mcp-bridge.exe");
     let lsp_root = resource_root.join("lsp");
     let skills_root = resource_root.join("skills");
     let laya_root = resource_root.join("laya");
     let laya_str = if laya_root.exists() {
         laya_root.to_string_lossy().to_string()
+    } else {
+        String::new()
+    };
+
+    let bridge_entry_str = if bridge_entry.exists() {
+        bridge_entry.to_string_lossy().to_string()
+    } else {
+        String::new()
+    };
+    let bridge_exe_str = if bridge_exe.exists() {
+        bridge_exe.to_string_lossy().to_string()
     } else {
         String::new()
     };
@@ -376,6 +397,8 @@ fn resolve_production_resources(app: &tauri::AppHandle) -> Result<ResourceDiagno
         node_path: node_path.to_string_lossy().to_string(),
         server_bundle_path: server_entry.to_string_lossy().to_string(),
         runner_bundle_path: runner_entry.to_string_lossy().to_string(),
+        bridge_bundle_path: bridge_entry_str,
+        bridge_executable_path: bridge_exe_str,
         lsp_root: lsp_root.to_string_lossy().to_string(),
         skills_root: skills_root.to_string_lossy().to_string(),
         laya_root: laya_str,
@@ -2339,6 +2362,68 @@ fn desktop_tunnel_test_connection(
     }))
 }
 
+#[tauri::command]
+fn desktop_mcp_bridge_get_status(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> bridge::BridgeStatusDto {
+    if let Ok(mut s) = state.lock() {
+        s.bridge_supervisor.get_status_dto()
+    } else {
+        bridge::BridgeStatusDto {
+            running: false,
+            port: 8787,
+            mode: "failed".to_string(),
+            error: Some("Failed to acquire supervisor lock".to_string()),
+            public_base_url: "http://127.0.0.1:8787".to_string(),
+            mcp_url: "http://127.0.0.1:8787/mcp".to_string(),
+            core_url: "http://127.0.0.1:18080".to_string(),
+            pid: None,
+            uptime_seconds: 0,
+            restart_count: 0,
+            cloudflared_service_detected: false,
+            tools_count: 0,
+        }
+    }
+}
+
+#[tauri::command]
+fn desktop_mcp_bridge_restart(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<bridge::BridgeStatusDto, String> {
+    if let Ok(mut s) = state.lock() {
+        s.bridge_supervisor.restart()?;
+        Ok(s.bridge_supervisor.get_status_dto())
+    } else {
+        Err("Failed to acquire supervisor lock".to_string())
+    }
+}
+
+#[tauri::command]
+fn desktop_mcp_bridge_get_logs(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Vec<String> {
+    if let Ok(s) = state.lock() {
+        s.bridge_supervisor.get_logs()
+    } else {
+        Vec::new()
+    }
+}
+
+#[tauri::command]
+fn desktop_mcp_bridge_detect_cloudflared() -> bool {
+    bridge::detect_cloudflared_service()
+}
+
+#[tauri::command]
+fn desktop_mcp_bridge_detect_cloudflared_agent() -> bridge::CloudflaredAgentStatus {
+    bridge::detect_cloudflared_agent()
+}
+
+#[tauri::command]
+fn desktop_mcp_bridge_check_dns_os(domain: String) -> bridge::PublicDnsResult {
+    bridge::check_public_dns_os(&domain)
+}
+
 fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorState>>) {
     // 1. Resolve production resources with strict isolation
     let diag = match resolve_production_resources(app) {
@@ -2355,6 +2440,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
     let node_path = PathBuf::from(&diag.node_path);
     let server_entry = PathBuf::from(&diag.server_bundle_path);
     let runner_entry = PathBuf::from(&diag.runner_bundle_path);
+    let bridge_entry = PathBuf::from(&diag.bridge_bundle_path);
     let resource_root = PathBuf::from(&diag.resource_root);
 
     // 2. Prepare data directories in local app data
@@ -2425,6 +2511,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         state.bundled_node = Some(node_path.clone());
         state.server_entry = Some(server_entry.clone());
         state.runner_entry = Some(runner_entry.clone());
+        state.bridge_entry = Some(bridge_entry.clone());
         state.runner_token = Some(runner_token.clone());
         state.management_token = Some(management_token.clone());
         state.server_port = 18080;
@@ -2448,6 +2535,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         server_cmd.env("LOCALBRIDGE_RESOURCES_PATH", &diag.resource_root);
         server_cmd.env("NEXUS_SKILLS_DIR", &diag.skills_root);
         server_cmd.env("LOCALBRIDGE_LSP_DIR", &diag.lsp_root);
+        server_cmd.env("NEXUS_DISABLE_INTERNAL_GATEWAY", "true");
 
         #[cfg(target_os = "windows")]
         server_cmd.creation_flags(CREATE_NO_WINDOW);
@@ -2539,15 +2627,16 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
                     }
                 };
                 if server_exited && !shutdown::is_shutting_down() {
-                    let (port, token, runner_proc, server_proc) = {
+                    let (port, token, runner_proc, server_proc, bridge_proc) = {
                         if let Ok(mut s) = sup_srv_mon.lock() {
                             let port = s.server_port;
                             let token = get_management_token(&s);
                             let runner = s.runner_process.take();
                             let server = s.server_process.take();
-                            (port, token, runner, server)
+                            let bridge = s.bridge_supervisor.process.take();
+                            (port, token, runner, server, bridge)
                         } else {
-                            (18080, String::new(), None, None)
+                            (18080, String::new(), None, None, None)
                         }
                     };
                     let sup_tunnel = sup_srv_mon.clone();
@@ -2562,6 +2651,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
                         },
                         runner_proc,
                         server_proc,
+                        bridge_proc,
                     );
                     break;
                 }
@@ -2633,15 +2723,16 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         if let Ok(mut state) = supervisor.lock() {
             state.startup_error = Some(message.clone());
         }
-        let (port, token, runner_proc, server_proc) = {
+        let (port, token, runner_proc, server_proc, bridge_proc) = {
             if let Ok(mut s) = supervisor.lock() {
                 let port = s.server_port;
                 let token = get_management_token(&s);
                 let runner = s.runner_process.take();
                 let server = s.server_process.take();
-                (port, token, runner, server)
+                let bridge = s.bridge_supervisor.process.take();
+                (port, token, runner, server, bridge)
             } else {
-                (18080, String::new(), None, None)
+                (18080, String::new(), None, None, None)
             }
         };
         let sup_tunnel = supervisor.clone();
@@ -2656,6 +2747,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
             },
             runner_proc,
             server_proc,
+            bridge_proc,
         );
         return;
     }
@@ -2665,6 +2757,80 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
             state.job_object = job_guard;
         }
         state.runner_process = Some(runner_child);
+    }
+
+    // 8.5. Start or Reuse Nexus MCP Bridge
+    {
+        if let Ok(mut state) = supervisor.lock() {
+            let core_port = if state.server_port == 0 { 18080 } else { state.server_port };
+            state.bridge_supervisor.core_url = format!("http://127.0.0.1:{}", core_port);
+            state.bridge_supervisor.port = 8787;
+            let res = state.bridge_supervisor.start_or_reuse(
+                &node_path,
+                &bridge_entry,
+                &data_dir,
+                &management_token,
+            );
+            if let Err(e) = res {
+                eprintln!("[Nexus Bridge Supervisor Warning] {}", e);
+            }
+            #[cfg(target_os = "windows")]
+            if let Some(ref job) = state.job_object {
+                if let Some(ref child) = state.bridge_supervisor.process {
+                    job.assign_child(child);
+                }
+            }
+        }
+
+        // Bridge Watchdog monitor loop
+        let sup_bridge_mon = supervisor.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_millis(1000));
+                if shutdown::is_shutting_down() {
+                    break;
+                }
+
+                let should_restart = {
+                    let Ok(mut s) = sup_bridge_mon.lock() else { continue; };
+                    if !s.bridge_supervisor.should_run || s.bridge_supervisor.mode != "owned" {
+                        false
+                    } else if let Some(ref mut child) = s.bridge_supervisor.process {
+                        match child.try_wait() {
+                            Ok(Some(st)) => {
+                                eprintln!("[Nexus Bridge Watchdog] Bridge child exited with status {:?}. Will auto-restart in 5s...", st);
+                                true
+                            }
+                            Ok(None) => false,
+                            Err(_) => true,
+                        }
+                    } else {
+                        false
+                    }
+                };
+
+                if should_restart && !shutdown::is_shutting_down() {
+                    std::thread::sleep(Duration::from_secs(5));
+                    if shutdown::is_shutting_down() {
+                        break;
+                    }
+
+                    if let Ok(mut s) = sup_bridge_mon.lock() {
+                        if s.bridge_supervisor.restart_count < 5 {
+                            s.bridge_supervisor.restart_count += 1;
+                            eprintln!("[Nexus Bridge Watchdog] Attempting auto-restart #{}...", s.bridge_supervisor.restart_count);
+                            let _ = s.bridge_supervisor.spawn_bridge_process();
+                            #[cfg(target_os = "windows")]
+                            if let Some(ref job) = s.job_object {
+                                if let Some(ref child) = s.bridge_supervisor.process {
+                                    job.assign_child(child);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 
     // 8. Initialize Tunnel Supervisor
@@ -2840,15 +3006,16 @@ fn desktop_open_logs_folder(
 
 #[tauri::command]
 fn quit_nexus(app: tauri::AppHandle, state: tauri::State<Arc<Mutex<SupervisorState>>>) {
-    let (port, token, runner_proc, server_proc) = {
+    let (port, token, runner_proc, server_proc, bridge_proc) = {
         if let Ok(mut s) = state.lock() {
             let port = s.server_port;
             let token = get_management_token(&s);
             let runner = s.runner_process.take();
             let server = s.server_process.take();
-            (port, token, runner, server)
+            let bridge = s.bridge_supervisor.process.take();
+            (port, token, runner, server, bridge)
         } else {
-            (18080, String::new(), None, None)
+            (18080, String::new(), None, None, None)
         }
     };
     let sup_tunnel = state.inner().clone();
@@ -2863,6 +3030,7 @@ fn quit_nexus(app: tauri::AppHandle, state: tauri::State<Arc<Mutex<SupervisorSta
         },
         runner_proc,
         server_proc,
+        bridge_proc,
     );
 }
 
@@ -3050,6 +3218,12 @@ fn main() {
             desktop_get_resource_diagnostics,
             desktop_get_startup_diagnostics,
             desktop_open_logs_folder,
+            desktop_mcp_bridge_get_status,
+            desktop_mcp_bridge_restart,
+            desktop_mcp_bridge_get_logs,
+            desktop_mcp_bridge_detect_cloudflared,
+            desktop_mcp_bridge_detect_cloudflared_agent,
+            desktop_mcp_bridge_check_dns_os,
             quit_nexus
         ])
         .setup(move |app| {
@@ -3072,15 +3246,16 @@ fn main() {
                             }
                         }
                         "quit" => {
-                            let (port, token, runner_proc, server_proc) = {
+                            let (port, token, runner_proc, server_proc, bridge_proc) = {
                                 if let Ok(mut s) = sup_tray.lock() {
                                     let port = s.server_port;
                                     let token = get_management_token(&s);
                                     let runner = s.runner_process.take();
                                     let server = s.server_process.take();
-                                    (port, token, runner, server)
+                                    let bridge = s.bridge_supervisor.process.take();
+                                    (port, token, runner, server, bridge)
                                 } else {
-                                    (18080, String::new(), None, None)
+                                    (18080, String::new(), None, None, None)
                                 }
                             };
                             let sup_tunnel = sup_tray.clone();
@@ -3095,6 +3270,7 @@ fn main() {
                                 },
                                 runner_proc,
                                 server_proc,
+                                bridge_proc,
                             );
                         }
                         _ => {}
@@ -3157,15 +3333,16 @@ fn main() {
 
     app.run(move |app_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
-            let (port, token, runner_proc, server_proc) = {
+            let (port, token, runner_proc, server_proc, bridge_proc) = {
                 if let Ok(mut s) = supervisor_exit_clone.lock() {
                     let port = s.server_port;
                     let token = get_management_token(&s);
                     let runner = s.runner_process.take();
                     let server = s.server_process.take();
-                    (port, token, runner, server)
+                    let bridge = s.bridge_supervisor.process.take();
+                    (port, token, runner, server, bridge)
                 } else {
-                    (18080, String::new(), None, None)
+                    (18080, String::new(), None, None, None)
                 }
             };
             let sup_tunnel = supervisor_exit_clone.clone();
@@ -3180,6 +3357,7 @@ fn main() {
                 },
                 runner_proc,
                 server_proc,
+                bridge_proc,
             );
         }
     });

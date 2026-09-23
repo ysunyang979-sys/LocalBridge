@@ -24,6 +24,7 @@ import {
   Download,
   DownloadCloud,
   FolderOpen,
+  Sparkles,
 } from "lucide-react";
 import { bridge, type TunnelStatusDto } from "../api/bridge.js";
 import { useTranslation } from "../i18n/useTranslation.js";
@@ -37,6 +38,7 @@ import {
 } from "../i18n/intelligence-map.js";
 import nexusLogo from "../assets/nexus.png";
 import { ChatGPTConnection } from "../components/connections/ChatGPTConnection.js";
+import { GeminiConnection } from "../components/connections/GeminiConnection.js";
 import { ConnectionCenterErrorBoundary } from "../components/common/AppErrorBoundary.js";
 import type {
   Project,
@@ -64,6 +66,7 @@ export type SettingsRoute =
   | { page: "general" }
   | { page: "appearance" }
   | { page: "intelligence" }
+  | { page: "gemini" }
   | { page: "connections" }
   | { page: "security" }
   | { page: "advanced" }
@@ -73,6 +76,7 @@ export type SettingsTab =
   | "general"
   | "appearance"
   | "intelligence"
+  | "gemini"
   | "connections"
   | "security"
   | "advanced"
@@ -700,6 +704,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <button
           type="button"
+          onClick={() => setRoute({ page: "gemini" })}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+            route.page === "gemini"
+              ? "bg-theme-card text-theme-primary border border-theme-subtle shadow-sm font-semibold"
+              : "text-theme-muted hover:text-theme-primary border border-transparent"
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+          <span>{isZh ? "Gemini Spark 连接" : "Gemini Spark"}</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setRoute({ page: "connections" })}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
             route.page === "connections"
@@ -752,6 +769,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <div className="space-y-6">
+        {/* Tab: Gemini Spark Connection */}
+        {activeTab === "gemini" && (
+          <ConnectionCenterErrorBoundary isZh={isZh}>
+            <GeminiConnection
+              tunnelStatus={tunnelStatus}
+              onRefreshAll={onRefresh}
+              uxMode={uxMode}
+            />
+          </ConnectionCenterErrorBoundary>
+        )}
+
         {/* Tab: ChatGPT Connection */}
         {activeTab === "connections" && (
           <ConnectionCenterErrorBoundary isZh={isZh}>

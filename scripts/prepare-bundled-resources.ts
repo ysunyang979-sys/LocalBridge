@@ -19,6 +19,7 @@ const runtimeDir = path.join(resourcesDir, "runtime");
 const serverDir = path.join(resourcesDir, "server");
 const runnerDir = path.join(resourcesDir, "runner");
 const tunnelDir = path.join(resourcesDir, "tunnel");
+const bridgeDir = path.join(resourcesDir, "bridge");
 const lspDir = path.join(resourcesDir, "lsp");
 const skillsDir = path.join(resourcesDir, "skills");
 const rootSkillsDir = path.resolve(rootDir, "resources/skills");
@@ -62,7 +63,7 @@ async function main() {
 
   // 1. Clean only the controlled build outputs. This makes preparation
   // deterministic and prevents stale runtime or database files being shipped.
-  for (const controlledDir of [runtimeDir, serverDir, runnerDir, lspDir, skillsDir]) {
+  for (const controlledDir of [runtimeDir, serverDir, runnerDir, bridgeDir, lspDir, skillsDir]) {
     const relative = path.relative(resourcesDir, controlledDir);
     if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(`Refusing to clean uncontrolled resource path: ${controlledDir}`);
@@ -74,6 +75,7 @@ async function main() {
   fs.mkdirSync(runtimeDir, { recursive: true });
   fs.mkdirSync(serverDir, { recursive: true });
   fs.mkdirSync(runnerDir, { recursive: true });
+  fs.mkdirSync(bridgeDir, { recursive: true });
   fs.mkdirSync(lspDir, { recursive: true });
 
   // Ensure workspace packages are freshly built from source before bundling server/runner.
@@ -240,6 +242,35 @@ async function main() {
     console.log(`-> Copied built-in skills to ${skillsDir}`);
   }
 
+  // 4e. Prepare Bundled MCP Bridge
+  console.log("\nBundling @localbridge/bridge (Nexus MCP Bridge)...");
+  fs.mkdirSync(bridgeDir, { recursive: true });
+  const bridgeEntry = path.resolve(rootDir, "apps/bridge/src/index.ts");
+  const bridgeOut = path.join(bridgeDir, "index.js");
+
+  child_process.execSync(
+    `${esbuildCmd} "${bridgeEntry}" --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="${bridgeOut}"`,
+    { cwd: rootDir, stdio: "inherit" }
+  );
+
+  fs.writeFileSync(
+    path.join(bridgeDir, "package.json"),
+    JSON.stringify({ name: "@localbridge/bridge-runtime", type: "module", private: true }, null, 2),
+    "utf-8"
+  );
+  console.log(`-> Bundled MCP bridge to ${bridgeOut}`);
+
+  // Compile standalone nexus-mcp-bridge.exe launcher
+  const launcherSrc = path.resolve(rootDir, "scripts/bridge-launcher.rs");
+  const launcherOut = path.join(bridgeDir, "nexus-mcp-bridge.exe");
+  if (fs.existsSync(launcherSrc)) {
+    console.log("Compiling standalone nexus-mcp-bridge.exe launcher...");
+    child_process.execSync(`rustc -O "${launcherSrc}" -o "${launcherOut}"`, { cwd: rootDir, stdio: "inherit" });
+    const pdb = path.join(bridgeDir, "nexus-mcp-bridge.pdb");
+    if (fs.existsSync(pdb)) fs.rmSync(pdb, { force: true });
+    console.log(`-> Compiled standalone launcher to ${launcherOut}`);
+  }
+
   // 5. Verification Test
   console.log("\nVerifying bundled runtime integrity using bundled node.exe...");
   const verifyResult = child_process.execFileSync(destNodeExe, [
@@ -281,6 +312,22 @@ async function main() {
   ], { cwd: runnerDir, env: { ...process.env, LOCALBRIDGE_RUNNER_TOKEN: "lbr_test_test_test_test_test_test_123", LOCALBRIDGE_SERVER_URL: "ws://127.0.0.1:1/ignore", LOCALBRIDGE_LOG_LEVEL: "silent" } }).toString().trim();
 
   console.log(`Runner import verification: ${runnerImportTest}`);
+
+  // 7b. Test starting bridge import with bundled node.exe
+  const bridgeImportTest = child_process.execFileSync(destNodeExe, [
+    "-e",
+    "import('./index.js'); setTimeout(() => { console.log('BRIDGE_IMPORT_OK'); process.exit(0); }, 500);",
+  ], {
+    cwd: bridgeDir,
+    env: {
+      ...process.env,
+      PORT: "0",
+      NEXUS_BRIDGE_PORT: "0",
+      PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "http://127.0.0.1:8787",
+      NEXUS_CORE_URL: "http://127.0.0.1:18080",
+    },
+  }).toString().trim();
+  console.log(`Bridge import verification: ${bridgeImportTest}`);
 
   // 8. Test bundled Language Server with bundled node.exe and sanitized/empty PATH
   const lspCliPath = path.join(destTsLsp, "lib/cli.mjs");
