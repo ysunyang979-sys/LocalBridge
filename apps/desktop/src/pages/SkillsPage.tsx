@@ -13,6 +13,8 @@ import {
   X,
   FileText,
   Layers,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import type {
   SkillMetadata,
@@ -43,14 +45,19 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   // Filters & Search
+  const [sourceFilter, setSourceFilter] = useState<SkillSource | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<"all" | SkillSource>("all");
 
-  // Modals & Drawer State
+  // Drawer & Highlight States
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [highlightedSkillId, setHighlightedSkillId] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+
+  // Deletion modal state
+  const [collectionToDelete, setCollectionToDelete] = useState<{ id: string; name: string; total: number } | null>(null);
+  const [skillToDelete, setSkillToDelete] = useState<SkillMetadata | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Toast State
   const [toastMessage, setToastMessage] = useState<{
@@ -126,6 +133,51 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
       }
     } catch (err: any) {
       showToast("操作失败", err?.message, "error");
+    }
+  };
+
+  const handleDeleteCollection = async (collectionId: string, collSkills?: SkillMetadata[]) => {
+    const toDelete = collSkills || skills.filter((s) => s.collectionId === collectionId);
+    if (toDelete.length === 0) return;
+    setIsDeleting(true);
+    try {
+      await Promise.all(
+        toDelete.map((s) => bridge.deleteSkill(s.id, s.source as any, projectId, projectRoot))
+      );
+      await loadSkills();
+      if (selectedCollectionId === collectionId) {
+        setSelectedCollectionId(null);
+      }
+      if (toDelete.some((s) => s.id === selectedSkillId)) {
+        setSelectedSkillId(null);
+      }
+      setCollectionToDelete(null);
+      showToast("集合删除成功", `已成功删除集合及其包含的 ${toDelete.length} 个子技能。`);
+    } catch (err: any) {
+      showToast("删除集合失败", err?.message, "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteSkill = async (skill: SkillMetadata) => {
+    setIsDeleting(true);
+    try {
+      const res = await bridge.deleteSkill(skill.id, skill.source as any, projectId, projectRoot);
+      if (res.success) {
+        await loadSkills();
+        if (selectedSkillId === skill.id) {
+          setSelectedSkillId(null);
+        }
+        setSkillToDelete(null);
+        showToast("技能删除成功", `技能 ${skill.id} 已从磁盘完全删除。`);
+      } else {
+        showToast("删除技能失败", res.error || "Failed to delete skill", "error");
+      }
+    } catch (err: any) {
+      showToast("删除技能失败", err?.message, "error");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -477,31 +529,45 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Collection Master Toggle */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleCollection(coll.id, !isAllEnabled);
-                      }}
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        isAllEnabled
-                          ? "bg-sky-600 dark:bg-sky-500"
-                          : isMixed
-                          ? "bg-amber-500"
-                          : "bg-slate-300 dark:bg-slate-700"
-                      }`}
-                      title={isAllEnabled ? "全部关闭" : "全部启用"}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCollectionToDelete({ id: coll.id, name: coll.name, total: coll.total });
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition opacity-80 group-hover:opacity-100"
+                        title="删除集合"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Collection Master Toggle */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleCollection(coll.id, !isAllEnabled);
+                        }}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                           isAllEnabled
-                            ? "translate-x-4"
+                            ? "bg-sky-600 dark:bg-sky-500"
                             : isMixed
-                            ? "translate-x-2"
-                            : "translate-x-0"
+                            ? "bg-amber-500"
+                            : "bg-slate-300 dark:bg-slate-700"
                         }`}
-                      />
-                    </button>
+                        title={isAllEnabled ? "全部关闭" : "全部启用"}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            isAllEnabled
+                              ? "translate-x-4"
+                              : isMixed
+                              ? "translate-x-2"
+                              : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Badges Strip */}
@@ -608,21 +674,37 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Enable Toggle Switch */}
-                    <button
-                      onClick={(e) => handleToggle(skill, e)}
-                      disabled={isConflict || isInvalid}
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed ${
-                        skill.enabled ? "bg-sky-600 dark:bg-sky-500" : "bg-slate-300 dark:bg-slate-700"
-                      }`}
-                      title={skill.enabled ? t.common.disable : t.common.enable}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                          skill.enabled ? "translate-x-4" : "translate-x-0"
+                    <div className="flex items-center gap-2">
+                      {!isBuiltin && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSkillToDelete(skill);
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition opacity-80 group-hover:opacity-100"
+                          title="删除技能"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* Enable Toggle Switch */}
+                      <button
+                        onClick={(e) => handleToggle(skill, e)}
+                        disabled={isConflict || isInvalid}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed ${
+                          skill.enabled ? "bg-sky-600 dark:bg-sky-500" : "bg-slate-300 dark:bg-slate-700"
                         }`}
-                      />
-                    </button>
+                        title={skill.enabled ? t.common.disable : t.common.enable}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            skill.enabled ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Clean Badges Strip */}
@@ -762,9 +844,23 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         skillId={selectedSkillId}
         projectId={projectId}
         projectRoot={projectRoot}
-        onClose={() => setSelectedSkillId(null)}
+        onClose={() => {
+          setSelectedSkillId(null);
+          setSelectedCollectionId(null);
+        }}
         onReload={loadSkills}
         initialMode={uxMode}
+        collectionContext={
+          selectedCollectionId
+            ? {
+                id: selectedCollectionId,
+                name: collections.find((c) => c.id === selectedCollectionId)?.name,
+              }
+            : undefined
+        }
+        onBack={() => {
+          setSelectedSkillId(null);
+        }}
       />
 
       {/* Collection Detail Drawer */}
@@ -774,6 +870,7 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         skills={skills}
         projectId={projectId}
         projectRoot={projectRoot}
+        isChildDrawerOpen={Boolean(selectedSkillId)}
         onClose={() => setSelectedCollectionId(null)}
         onToggleSkill={async (skill, enabled) => {
           const res = await bridge.toggleSkill(skill.id, enabled);
@@ -791,6 +888,8 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         onSelectSkill={(skillId) => {
           setSelectedSkillId(skillId);
         }}
+        onDeleteCollection={(collId, collSkills) => handleDeleteCollection(collId, collSkills)}
+        onDeleteSkill={(skill) => handleDeleteSkill(skill)}
       />
 
       {/* Import Skill Modal */}
@@ -801,6 +900,111 @@ export const SkillsPage: React.FC<SkillsPageProps> = ({
         projectId={projectId}
         projectRoot={projectRoot}
       />
+
+      {/* Card Delete Collection Confirmation Modal */}
+      {collectionToDelete && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => !isDeleting && setCollectionToDelete(null)}
+        >
+          <div
+            className="bg-white dark:bg-[#0f172a] border border-rose-200 dark:border-rose-900/60 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  删除集合与全部子技能
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+                  确定要删除集合「<span className="font-semibold text-slate-900 dark:text-slate-100">{collectionToDelete.name}</span>」吗？
+                </p>
+                <div className="mt-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-800/40 text-xs text-rose-800 dark:text-rose-300 leading-relaxed">
+                  此操作将永久删除该集合下的全部 <strong>{collectionToDelete.total}</strong> 个子技能目录及配置。此操作无法撤销。
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setCollectionToDelete(null)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeleteCollection(collectionToDelete.id)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>正在删除全部技能...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>确认删除全部 ({collectionToDelete.total})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Card Delete Standalone Skill Confirmation Modal */}
+      {skillToDelete && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => !isDeleting && setSkillToDelete(null)}
+        >
+          <div
+            className="bg-white dark:bg-[#0f172a] border border-rose-200 dark:border-rose-900/60 rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-4">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              删除技能
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+              确定要永久删除技能「
+              <span className="font-semibold text-slate-900 dark:text-slate-100">
+                {skillToDelete.name[language] || skillToDelete.name["zh-CN"] || skillToDelete.id}
+              </span>
+              」吗？文件将被永久移除，无法恢复。
+            </p>
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setSkillToDelete(null)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeleteSkill(skillToDelete)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 transition flex items-center gap-1.5 shadow-sm"
+              >
+                {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>确认删除</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

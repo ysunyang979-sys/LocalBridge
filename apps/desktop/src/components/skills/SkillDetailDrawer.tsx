@@ -13,6 +13,8 @@ import {
   Trash2,
   Tag,
   ArrowDown,
+  ArrowLeft,
+  Loader2,
   FileText,
   Code2,
   ChevronDown,
@@ -27,13 +29,15 @@ import type {
 import { useTranslation } from "../../i18n/useTranslation.js";
 import { bridge } from "../../api/bridge.js";
 
-interface SkillDetailDrawerProps {
+export interface SkillDetailDrawerProps {
   skillId: string | null;
   projectId?: string;
   projectRoot?: string;
   onClose: () => void;
   onReload?: () => void;
   initialMode?: UserExperienceMode;
+  collectionContext?: { id: string; name?: string };
+  onBack?: () => void;
 }
 
 type TabType = "overview" | "workflow" | "tools" | "skillMd" | "rawConfig";
@@ -174,6 +178,8 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
   onClose,
   onReload,
   initialMode = "standard",
+  collectionContext,
+  onBack,
 }) => {
   const { t, language } = useTranslation();
 
@@ -369,7 +375,7 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
     : "";
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 dark:bg-black/65 backdrop-blur-sm transition-opacity animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-[60] flex justify-end bg-slate-900/40 dark:bg-black/65 backdrop-blur-sm transition-opacity animate-in fade-in duration-150">
       <div
         className="w-full sm:w-[46vw] sm:min-w-[720px] sm:max-w-[920px] bg-white dark:bg-[#0d1320] border-l border-slate-200 dark:border-slate-800 h-full flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200"
         role="dialog"
@@ -377,6 +383,19 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
       >
         {/* Sticky Solid Header */}
         <div className="sticky top-0 z-20 px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0d1320]">
+          {onBack && (
+            <div className="flex items-center justify-between gap-4 mb-3 pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/60 transition group shadow-2xs"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+                <span>返回集合{collectionContext?.name ? `「${collectionContext.name}」` : ""}</span>
+              </button>
+            </div>
+          )}
+
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <div className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800/60 text-sky-600 dark:text-sky-400 shrink-0">
@@ -450,8 +469,8 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
               </div>
             </div>
 
-            {/* Right Controls: Mode Switch, Enable Toggle, Close */}
-            <div className="flex items-center gap-3 shrink-0">
+            {/* Right Controls: Mode Switch, Enable Toggle, Delete, Close */}
+            <div className="flex items-center gap-2.5 shrink-0">
               {/* Standard vs Advanced Mode Switch */}
               <div className="flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                 <button
@@ -493,6 +512,18 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
                       skill.enabled ? "translate-x-4" : "translate-x-0"
                     }`}
                   />
+                </button>
+              )}
+
+              {/* Delete Button in Header for non-builtin */}
+              {skill && skill.source !== "builtin" && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 border border-slate-200/60 dark:border-slate-700/60 hover:border-rose-200 dark:hover:border-rose-800/60 transition shadow-2xs"
+                  title={t.skills.deleteButton}
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               )}
 
@@ -1162,40 +1193,73 @@ export const SkillDetailDrawer: React.FC<SkillDetailDrawerProps> = ({
                   <span>{t.skills.reloadButton}</span>
                 </button>
 
-                {showDeleteConfirm ? (
-                  <div className="flex items-center gap-2 bg-rose-50 dark:bg-rose-950/40 p-1 rounded-lg border border-rose-200 dark:border-rose-800/60">
-                    <button
-                      type="button"
-                      onClick={() => setShowDeleteConfirm(false)}
-                      className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                    >
-                      {t.common.cancel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDelete}
-                      disabled={deleting}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-50 transition"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>{language === "zh-CN" ? "确认删除" : "Confirm Delete"}</span>
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-xs font-medium text-rose-700 dark:text-rose-400 transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>{t.skills.deleteButton}</span>
-                  </button>
-                )}
-              </div>
-            )}
+              {showDeleteConfirm ? (
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleDelete}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition shadow-xs"
+                >
+                  {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  <span>{language === "zh-CN" ? "确认删除" : "Confirm Delete"}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-xs font-medium text-rose-700 dark:text-rose-400 transition"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{t.skills.deleteButton}</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Centered High-Priority Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => !deleting && setShowDeleteConfirm(false)}
+        >
+          <div
+            className="bg-white dark:bg-[#0f172a] border border-rose-200 dark:border-rose-900/60 rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-4">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              确定删除该技能？
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+              将永久删除技能「<span className="font-semibold text-slate-900 dark:text-slate-100">{displayName}</span>」及其配置文件，此操作无法撤销。
+            </p>
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDelete}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 transition flex items-center gap-1.5 shadow-sm"
+              >
+                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{language === "zh-CN" ? "确认删除" : "Confirm Delete"}</span>
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
+  </div>
   );
 };
