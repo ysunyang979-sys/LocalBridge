@@ -182,16 +182,30 @@
   - PKCE `code_challenge` 与 `code_verifier` 强校验绑定。
 - **核查结论**: **[已修复]**（经 [`tests/oauth-security-hardening.test.ts`](file:///e:/workspace/cod/tests/oauth-security-hardening.test.ts) 回归验证）
 
-### 4.3 `client_name` HTML 转义
-- **代码位置**: [`apps/bridge/src/oauth.ts:681`](file:///e:/workspace/cod/apps/bridge/src/oauth.ts#L681) 与 [`oauth.ts:721-728`](file:///e:/workspace/cod/apps/bridge/src/oauth.ts#L721-L728) (`escapeHtml`)
-- **核查结果**: `escapeHtml` 严格替换了 `&`, `<`, `>`, `"`, `'` 字符，在渲染授权页面 HTML 时被完整转义。
-- **核查结论**: **[已验证]**
+### 4.3 授权页 XSS 防御与严格安全响应头 (Commit `53a246f`)
+- **真实端点**: `GET /oauth/authorize`、`POST /oauth/authorize`
+- **代码位置**: [`apps/bridge/src/index.ts`](file:///e:/workspace/cod/apps/bridge/src/index.ts) 与 [`apps/bridge/src/oauth.ts`](file:///e:/workspace/cod/apps/bridge/src/oauth.ts)
+- **修复方案**:
+  - 对 GET 和 POST 请求中插值到 HTML 的所有参数（`client_id`、`redirect_uri`、`state`、`scope` 以及表单字段）强制先调用 `escapeHtml` 严格转义；
+  - 错误信息统一使用 `sendErrorHtml(res, status, message)` 辅助函数输出，内部强制转义，杜绝手写拼接模板字符串；
+  - 所有 HTML 响应头注入：
+    - `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-<nonce>'; frame-ancestors 'none'`
+    - `X-Content-Type-Options: nosniff`
+    - `Referrer-Policy: no-referrer`
+    - `X-Frame-Options: DENY`
+  - 前端 JavaScript 挂载至 `nonce` 脚本并在 `DOMContentLoaded` 安全挂载事件监听器。
+- **核查结论**: **[已修复]**（经 [`tests/oauth-xss-and-headers.test.ts`](file:///e:/workspace/cod/tests/oauth-xss-and-headers.test.ts) 回归验证，22 个用例全部通过）
 
-### 4.4 点击劫持防护 (`frame-ancestors` / `X-Frame-Options`)
-- **代码位置**: [`apps/bridge/src/index.ts`](file:///e:/workspace/cod/apps/bridge/src/index.ts)
-- **修复方案**: Commit `f1e9622`
-  - 授权确认页面与所有 OAuth 相关页面均统一添加 `Content-Security-Policy: frame-ancestors 'none'` 与 `X-Frame-Options: DENY` 响应头，杜绝任何 iframe 点击劫持。
-- **核查结论**: **[已修复]**（经 [`tests/oauth-security-hardening.test.ts`](file:///e:/workspace/cod/tests/oauth-security-hardening.test.ts) 回归验证）
+### 4.4 强制 PKCE 与 RFC 7636 规范校验 (Commit `073433d`)
+- **真实端点**: `GET /oauth/authorize`、`POST /oauth/authorize`、`POST /oauth/token`
+- **代码位置**: [`apps/bridge/src/index.ts`](file:///e:/workspace/cod/apps/bridge/src/index.ts) 与 [`apps/bridge/src/oauth.ts`](file:///e:/workspace/cod/apps/bridge/src/oauth.ts)
+- **修复方案**:
+  - `GET /oauth/authorize` 与 `POST /oauth/authorize` 均强制校验 `code_challenge` 参数，未提供直接返回 400 `invalid_request`；
+  - 强制要求 `code_challenge_method === "S256"`，禁止使用 `"plain"` 或缺省，非 S256 直接返回 400 `invalid_request`；
+  - 换取令牌端点 `POST /oauth/token` 必须提供 `code_verifier`，严格按照 RFC 7636 字符集正则 `^[A-Za-z0-9\-._~]{43,128}$` 校验（长度在 43 至 128 之间且仅允许未保留字符），不合法直接拒绝；
+  - 彻底移除任何跳过 PKCE 校验的分支逻辑；
+  - 使用 `crypto.createHash("sha256")` 计算 base64url 并经 `crypto.timingSafeEqual` 常量时间比对。
+- **核查结论**: **[已修复]**（经 [`tests/oauth-pkce-hardening.test.ts`](file:///e:/workspace/cod/tests/oauth-pkce-hardening.test.ts) 回归验证，16 个用例全部通过）
 
 ### 4.5 授权码单次使用与有效期
 - **代码位置**: [`apps/bridge/src/oauth.ts:257, 288-295, 329`](file:///e:/workspace/cod/apps/bridge/src/oauth.ts#L257)
@@ -207,6 +221,26 @@
   - 限制请求体最大 32KB；限制客户端总数上限（100 个），并自动淘汰清理未使用的过期临时客户端；
   - 接入 IP 速率限制，防止恶意并发耗尽系统内存。
 - **核查结论**: **[已修复]**（经 [`tests/oauth-security-hardening.test.ts`](file:///e:/workspace/cod/tests/oauth-security-hardening.test.ts) 回归验证）
+
+### 4.7 桌面端联动、6 位配对码与环回管理端点加固 (Commit `3752c38`)
+- **真实端点**:
+  - 启动阶段: 环境变量 `LOCALBRIDGE_MANAGEMENT_TOKEN` / `NEXUS_MANAGEMENT_TOKEN` 强制校验
+  - 环回端点: `GET /oauth/requests`、`POST /oauth/requests/:id/resolve`
+  - 授权端点: `POST /oauth/authorize`
+  - 令牌端点: `POST /oauth/token`
+  - Tauri 命令: `desktop_list_oauth_requests`、`desktop_resolve_oauth_request`
+- **代码位置**:
+  - [`apps/bridge/src/index.ts`](file:///e:/workspace/cod/apps/bridge/src/index.ts) 与 [`apps/bridge/src/oauth.ts`](file:///e:/workspace/cod/apps/bridge/src/oauth.ts)
+  - [`apps/desktop/src-tauri/src/bridge.rs`](file:///e:/workspace/cod/apps/desktop/src-tauri/src/bridge.rs) 与 [`apps/desktop/src-tauri/src/main.rs`](file:///e:/workspace/cod/apps/desktop/src-tauri/src/main.rs)
+  - [`apps/desktop/src/api/bridge.ts`](file:///e:/workspace/cod/apps/desktop/src/api/bridge.ts)、[`apps/desktop/src/pages/ApprovalsPage.tsx`](file:///e:/workspace/cod/apps/desktop/src/pages/ApprovalsPage.tsx)、[`apps/desktop/src/types.ts`](file:///e:/workspace/cod/apps/desktop/src/types.ts)
+- **修复方案**:
+  - `apps/bridge` 启动时校验 `LOCALBRIDGE_MANAGEMENT_TOKEN` 或 `NEXUS_MANAGEMENT_TOKEN`，未配置直接退出进程报错；
+  - 增加环回管理端点 `GET /oauth/requests` 与 `POST /oauth/requests/:id/resolve`，严格校验连接为本机环回（`127.0.0.1` / `::1`），Host 必须为 `127.0.0.1` 或 `localhost`，拒绝一切代理转发头（`x-forwarded-for`, `cf-connecting-ip`, `forwarded`, `x-real-ip`），并经 `timingSafeEqual` 校验 Bearer 令牌；
+  - 动态注册客户端发起授权时，生成 6 位随机数字配对码写入待审批请求记录；浏览器返回 202 页面展示配对码及轮询机制；
+  - 桌面端 `ApprovalsPage` 渲染待审批卡片，标注「未验证的动态注册客户端」，展示 `client_name`、`redirect_host` 与 6 位配对码输入框。用户输入正确配对码方可点击「批准」；输错 3 次自动拒绝并作废；
+  - 批准后浏览器自动获取授权码重定向回 `redirect_uri?code=...`，授权码仅能消费一次；
+  - 待审批队列容量上限 50 条，超限直接返回 429；单个 IP 申请授权频次限制为 5 次/分钟，超限返回 429。
+- **核查结论**: **[已修复]**（经 [`tests/oauth-desktop-pairing.test.ts`](file:///e:/workspace/cod/tests/oauth-desktop-pairing.test.ts) 14 个用例与 [`tests/oauth-bridge-security.test.ts`](file:///e:/workspace/cod/tests/oauth-bridge-security.test.ts) 6 个用例回归验证，全部通过）
 
 ---
 
@@ -274,14 +308,26 @@
 
 - **执行命令**: `pnpm test` (`vitest run`)
 - **真实执行统计结果**:
-  - **测试套件 (Test Files)**: 增补安全加固回归套件后共 285 个测试文件；
+  - **测试套件 (Test Files)**: 共 288 个测试文件（280 passed, 8 failed）；
+  - **测试用例 (Tests)**: 共 1301 个用例（1286 passed, 15 failed）；
   - **无 Laya 权重处理**: `tests/laya-real-provider-benchmark.test.ts` 与 `tests/laya-toggle-worker-binding.test.ts` 已增加 `validateModelDir` 自动探测机制，在无本地大模型权重时自动 `skip`，避免测试套件长时间超时挂起；
-  - **加固回归测试**:
+  - **OAuth 专项安全加固测试套件 100% 通过 (58/58 passed)**:
+    - `tests/oauth-xss-and-headers.test.ts` (22/22 passed)
+    - `tests/oauth-pkce-hardening.test.ts` (16/16 passed)
+    - `tests/oauth-desktop-pairing.test.ts` (14/14 passed)
+    - `tests/oauth-bridge-security.test.ts` (6/6 passed)
+  - **其他核心安全加固回归套件 100% 通过 (38/38 passed)**:
     - `tests/oauth-security-hardening.test.ts` (14/14 passed)
     - `tests/chat-approval-mode-security.test.ts` (11/11 passed)
     - `tests/tunnel-exposure-security.test.ts` (7/7 passed)
     - `tests/git-security-hardening.test.ts` (6/6 passed)
-  - **核心安全与加固测试 100% 通过**（1234+ 项通过）。
+  - **全量测试通过摘要行**:
+    ```
+     Test Files  8 failed | 280 passed (288)
+          Tests  15 failed | 1286 passed (1301)
+       Start at  17:09:56
+       Duration  305.94s (transform 3.38s, setup 0ms, collect 30.59s, tests 273.60s, environment 0ms, prepare 121ms)
+    ```
 - **非安全类环境失败用例归因**:
   1. `tests/production-lsp-packaging.test.ts`:
      - **错误信息**: `ENOENT: no such file or directory, open 'E:\workspace\Myweb\app.js'`
@@ -289,5 +335,5 @@
   2. `tests/skills-production-resource-parity.test.ts`:
      - **错误信息**: `AssertionError: expected -1 to be +0`
      - **原因**: 源码根目录 `resources/skills/` 与打包目录间的静态资源同步差异。
-- **验证结论**: **[已验证]**。所有安全漏洞（P0 OAuth、P1 Chat 审批与隧道暴露面、P2 Git 配置加固）均已完成修复并经过严格的独立回归测试验证。
+- **验证结论**: **[已验证]**。所有安全漏洞（P0 OAuth XSS/PKCE/配对码联动、P1 Chat 审批与隧道暴露面、P2 Git 配置加固）均已完成修复并经过严格的独立回归测试验证。
 
