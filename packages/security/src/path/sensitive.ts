@@ -114,3 +114,79 @@ export function isProtectedFile(relativePath: string): boolean {
 export function isSensitiveFile(relativePath: string): boolean {
   return isAbsoluteDenyPath(relativePath) || isProtectedFile(relativePath);
 }
+
+/**
+ * Checks whether a relative path points to a build definition or CI/CD configuration file.
+ * In all approval modes (including "chat" mode), modifying these files MUST require
+ * explicit human approval on desktop to prevent automated supply-chain / code injection attacks.
+ *
+ * Categories:
+ * - package.json and lockfiles (package.json, pnpm-lock.yaml, yarn.lock, package-lock.json)
+ * - Makefile, GNUmakefile, Makefile.am, Makefile.in, *.mk
+ * - .husky/ Git hook definitions
+ * - CI/CD pipeline configurations (.github/workflows/*, .gitlab-ci.yml, .circleci/*, azure-pipelines.yml, Jenkinsfile, bitbucket-pipelines.yml)
+ * - Build tool manifests: CMakeLists.txt, pom.xml, build.gradle, settings.gradle, Cargo.toml
+ */
+export function isBuildDefinitionFile(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, "/").toLowerCase();
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length === 0) return false;
+
+  const basename = segments[segments.length - 1]!;
+
+  // 1. package.json and lockfiles
+  if (
+    basename === "package.json" ||
+    basename === "package-lock.json" ||
+    basename === "pnpm-lock.yaml" ||
+    basename === "yarn.lock"
+  ) {
+    return true;
+  }
+
+  // 2. Makefile variants
+  if (
+    basename === "makefile" ||
+    basename === "gnumakefile" ||
+    basename === "makefile.am" ||
+    basename === "makefile.in" ||
+    basename.endsWith(".mk")
+  ) {
+    return true;
+  }
+
+  // 3. .husky Git hooks
+  if (segments.includes(".husky")) {
+    return true;
+  }
+
+  // 4. CI/CD configurations (.github, .circleci, gitlab, jenkins, etc.)
+  if (segments.includes(".github") || segments.includes(".circleci")) {
+    return true;
+  }
+  if (
+    basename === ".gitlab-ci.yml" ||
+    basename === ".travis.yml" ||
+    basename === "azure-pipelines.yml" ||
+    basename === "jenkinsfile" ||
+    basename === "bitbucket-pipelines.yml"
+  ) {
+    return true;
+  }
+
+  // 5. Build tool manifests
+  if (
+    basename === "cmakelists.txt" ||
+    basename === "pom.xml" ||
+    basename === "build.gradle" ||
+    basename === "build.gradle.kts" ||
+    basename === "settings.gradle" ||
+    basename === "settings.gradle.kts" ||
+    basename === "cargo.toml" ||
+    basename === "cargo.lock"
+  ) {
+    return true;
+  }
+
+  return false;
+}

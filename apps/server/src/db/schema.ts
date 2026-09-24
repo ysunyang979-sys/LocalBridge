@@ -8,6 +8,7 @@ export interface TokenRow {
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
+  purpose?: string | null;
 }
 
 export interface RunnerRow {

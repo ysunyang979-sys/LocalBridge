@@ -612,6 +612,9 @@ export class JobManager {
         timeoutMs: 300000,
         decisionSource: decision.decisionSource,
         isProtectedFile: false,
+        commandCategory: decision.category,
+        isPackageInstall: decision.category === "package-install",
+        callerPurpose: (params as any).callerPurpose,
       });
     }
 

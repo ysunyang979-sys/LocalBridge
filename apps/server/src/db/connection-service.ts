@@ -259,6 +259,7 @@ export class ConnectionService {
       type: "mcp",
       scopes,
       prefix: "lb_",
+      purpose: conn.client_type,
     });
 
     this.db

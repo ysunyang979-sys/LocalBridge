@@ -7,7 +7,7 @@ import { LocalBridgeError, LocalBridgeErrorCode } from "@localbridge/protocol";
 import { canonicalPayloadHash } from "@localbridge/shared";
 import type { ApprovalManager } from "../../approvals/index.js";
 import type { ProjectRegistry } from "../../projects/index.js";
-import { TrustPolicyEvaluator } from "@localbridge/security";
+import { TrustPolicyEvaluator, isProtectedFile, isBuildDefinitionFile } from "@localbridge/security";
 
 export function createFileWriteHandler(
   fsService: FilesystemService,
@@ -68,7 +68,11 @@ export function createFileWriteHandler(
     };
     const pHash = canonicalPayloadHash(payload);
 
-    if (evalResult.decision === "ask") {
+    const isProtected = evalResult.decisionSource === "protected-file" || isProtectedFile(params.path);
+    const isBuildDef = isBuildDefinitionFile(params.path);
+    const needsApproval = evalResult.decision === "ask" || isProtected || isBuildDef;
+
+    if (needsApproval) {
       if (!approvalManager) {
         throw new LocalBridgeError(
           LocalBridgeErrorCode.APPROVAL_REQUIRED,
@@ -79,13 +83,19 @@ export function createFileWriteHandler(
       approvalManager.handleOperationApproval({
         projectId: params.projectId,
         operation: "file.write",
-        risk: "CAUTION",
+        risk: isProtected || isBuildDef ? "DANGEROUS" : "CAUTION",
         summary: `Overwrite file "${params.path}" in project "${params.projectId}"`,
         payloadHash: pHash,
         approvalId: params.approvalId,
         timeoutMs: 300000,
-        decisionSource: evalResult.decisionSource,
-        isProtectedFile: evalResult.decisionSource === "protected-file",
+        decisionSource: isProtected
+          ? "protected-file"
+          : isBuildDef
+          ? "build-definition"
+          : evalResult.decisionSource,
+        isProtectedFile: isProtected,
+        isBuildDefinition: isBuildDef,
+        callerPurpose: params.callerPurpose,
       });
     }
 

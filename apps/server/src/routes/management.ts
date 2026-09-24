@@ -212,9 +212,10 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       type: "runner" | "mcp";
       scopes?: string[];
       expiresAt?: number | null;
+      purpose?: string | null;
     };
   }>("/tokens", async (request, reply) => {
-    const { name, type, scopes, expiresAt } = request.body || {};
+    const { name, type, scopes, expiresAt, purpose } = request.body || {};
     if (!name || !type || (type !== "runner" && type !== "mcp")) {
       return reply.status(400).send({
         code: LocalBridgeErrorCode.INVALID_REQUEST,
@@ -227,6 +228,7 @@ export const managementRoutes: FastifyPluginAsync<ManagementRoutesOptions> = asy
       type,
       scopes: scopes ?? [],
       expiresAt: expiresAt ?? null,
+      purpose: purpose ?? undefined,
     });
 
     return reply.status(201).send(created);

@@ -292,6 +292,7 @@ export const FileReadParamsSchema = z
     maxLines: z.number().int().min(1).max(500).default(300),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type FileReadParams = z.infer<typeof FileReadParamsSchema>;
@@ -327,6 +328,7 @@ export const FileCreateParamsSchema = z
     content: z.string(),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type FileCreateParams = z.infer<typeof FileCreateParamsSchema>;
@@ -351,6 +353,7 @@ export const FileWriteParamsSchema = z
     content: z.string(),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type FileWriteParams = z.infer<typeof FileWriteParamsSchema>;
@@ -386,6 +389,7 @@ export const FilePatchParamsSchema = z
     replacements: z.array(PatchReplacementSchema).min(1, "At least one replacement is required"),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type FilePatchParams = z.infer<typeof FilePatchParamsSchema>;
@@ -412,6 +416,7 @@ export const FileDeleteParamsSchema = z
     expectedHash: z.string(),
     approvalId: z.string().regex(/^approval_[0-9a-f-]{36}$/i).optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type FileDeleteParams = z.infer<typeof FileDeleteParamsSchema>;
@@ -434,6 +439,7 @@ export const FileRestoreParamsSchema = z
     projectId: z.string(),
     operationId: OperationIdSchema,
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type FileRestoreParams = z.infer<typeof FileRestoreParamsSchema>;
@@ -736,6 +742,7 @@ export const GitCommitParamsSchema = z
     message: z.string().min(1).max(4096),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type GitCommitParams = z.infer<typeof GitCommitParamsSchema>;
@@ -801,6 +808,7 @@ export const ToolVersionCommandSchema = z
     tool: z.enum(["node", "npm", "pnpm", "python"]),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type ToolVersionCommand = z.infer<typeof ToolVersionCommandSchema>;
@@ -815,6 +823,7 @@ export const NodeScriptCommandSchema = z
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type NodeScriptCommand = z.infer<typeof NodeScriptCommandSchema>;
@@ -829,6 +838,7 @@ export const PythonScriptCommandSchema = z
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type PythonScriptCommand = z.infer<typeof PythonScriptCommandSchema>;
@@ -844,6 +854,7 @@ export const PackageScriptCommandSchema = z
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type PackageScriptCommand = z.infer<typeof PackageScriptCommandSchema>;
@@ -903,6 +914,10 @@ export const CommandSpecToolSchema = z.object({
     .string()
     .optional()
     .describe("Optional workflow session ID to execute within bound worktree"),
+  callerPurpose: z
+    .string()
+    .optional()
+    .describe("Optional caller purpose identifier"),
 });
 export type CommandSpecTool = z.infer<typeof CommandSpecToolSchema>;
 
@@ -953,6 +968,9 @@ export function sanitizeCommandSpec(raw: any): any {
   }
   if (raw.sessionId !== undefined && raw.sessionId !== null && raw.sessionId !== "") {
     base.sessionId = raw.sessionId;
+  }
+  if (raw.callerPurpose !== undefined && raw.callerPurpose !== null && raw.callerPurpose !== "") {
+    base.callerPurpose = raw.callerPurpose;
   }
   if (kind === "tool-version") {
     if (raw.tool !== undefined && raw.tool !== null) base.tool = raw.tool;
@@ -1031,6 +1049,7 @@ export const JobStartParamsSchema = z
     timeoutMs: z.number().int().min(1000).max(300000).default(60000),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type JobStartParams = z.infer<typeof JobStartParamsSchema>;

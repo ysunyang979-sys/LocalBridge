@@ -18,6 +18,7 @@ export interface CreateTokenParams {
   scopes?: string[];
   expiresAt?: number | null;
   prefix?: string;
+  purpose?: string;
 }
 
 export interface CreatedTokenResult {
@@ -27,6 +28,7 @@ export interface CreatedTokenResult {
   token: string;
   createdAt: number;
   expiresAt: number | null;
+  purpose?: string | null;
 }
 
 export interface PublicTokenInfo {
@@ -38,6 +40,7 @@ export interface PublicTokenInfo {
   lastUsedAt: number | null;
   expiresAt: number | null;
   revokedAt: number | null;
+  purpose?: string | null;
 }
 
 export interface ValidateTokenResult {
@@ -62,17 +65,21 @@ export class TokenService {
   private readonly stmtFindTokenById: Database.Statement;
 
   constructor(private readonly db: Database.Database) {
+    try {
+      this.db.prepare("ALTER TABLE tokens ADD COLUMN purpose TEXT").run();
+    } catch {}
+
     this.stmtInsertToken = this.db.prepare(
-      `INSERT INTO tokens (id, type, token_hash, name, scopes, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO tokens (id, type, token_hash, name, scopes, created_at, expires_at, purpose)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
     this.stmtValidateRunner = this.db.prepare(
-      `SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at
+      `SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at, purpose
        FROM tokens
        WHERE token_hash = ? AND type = 'runner'`
     );
     this.stmtValidateMcp = this.db.prepare(
-      `SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at
+      `SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at, purpose
        FROM tokens
        WHERE token_hash = ? AND type = 'mcp'`
     );
@@ -80,7 +87,7 @@ export class TokenService {
       "UPDATE tokens SET last_used_at = ? WHERE id = ?"
     );
     this.stmtListTokens = this.db.prepare(
-      `SELECT id, type, name, scopes, created_at, last_used_at, expires_at, revoked_at
+      `SELECT id, type, name, scopes, created_at, last_used_at, expires_at, revoked_at, purpose
        FROM tokens
        ORDER BY created_at DESC`
     );
@@ -88,7 +95,7 @@ export class TokenService {
       "UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL"
     );
     this.stmtFindTokenById = this.db.prepare(
-      "SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at FROM tokens WHERE id = ?"
+      "SELECT id, type, token_hash, name, scopes, created_at, last_used_at, expires_at, revoked_at, purpose FROM tokens WHERE id = ?"
     );
   }
 
@@ -106,8 +113,10 @@ export class TokenService {
         : generateMcpToken();
     const tokenHash = hashToken(token);
     const createdAt = Date.now();
-    const scopesJson = JSON.stringify(params.scopes ?? []);
+    const scopesList = [...(params.scopes ?? [])];
+    const scopesJson = JSON.stringify(scopesList);
     const expiresAt = params.expiresAt ?? null;
+    const purpose = params.purpose ?? null;
 
     this.stmtInsertToken.run(
       id,
@@ -116,7 +125,8 @@ export class TokenService {
       params.name,
       scopesJson,
       createdAt,
-      expiresAt
+      expiresAt,
+      purpose
     );
 
     return {
@@ -126,6 +136,7 @@ export class TokenService {
       token,
       createdAt,
       expiresAt,
+      purpose: params.purpose ?? null,
     };
   }
 
@@ -148,6 +159,7 @@ export class TokenService {
       name,
       JSON.stringify([]),
       createdAt,
+      null,
       null
     );
     return id;
@@ -240,6 +252,21 @@ export class TokenService {
     // Update last_used_at timestamp
     this.stmtUpdateLastUsed.run(Date.now(), row.id);
 
+    if (!row.purpose) {
+      try {
+        const parsedScopes = JSON.parse(row.scopes) as string[];
+        for (const s of parsedScopes) {
+          if (s.startsWith("purpose:")) {
+            row.purpose = s.slice("purpose:".length);
+            break;
+          } else if (s === "chat:direct-approve") {
+            row.purpose = "chatgpt";
+            break;
+          }
+        }
+      } catch {}
+    }
+
     return { valid: true, tokenRecord: row };
   }
 
@@ -286,11 +313,25 @@ export class TokenService {
         scopes = [];
       }
 
+      let purpose = row.purpose ?? null;
+      if (!purpose) {
+        for (const s of scopes) {
+          if (s.startsWith("purpose:")) {
+            purpose = s.slice("purpose:".length);
+            break;
+          } else if (s === "chat:direct-approve") {
+            purpose = "chatgpt";
+            break;
+          }
+        }
+      }
+
       return {
         id: row.id,
         type: row.type,
         name: row.name,
         scopes,
+        purpose,
         createdAt: row.created_at,
         lastUsedAt: row.last_used_at,
         expiresAt: row.expires_at,

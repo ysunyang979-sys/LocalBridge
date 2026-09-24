@@ -340,14 +340,22 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
           });
         }
 
+        const isChatGPT =
+          tokenRecord.purpose === "chatgpt" ||
+          principal.scopes.includes("purpose:chatgpt") ||
+          principal.scopes.includes("chat:direct-approve");
         const isKimi =
+          tokenRecord.purpose === "kimi" ||
+          principal.scopes.includes("purpose:kimi") ||
           tokenRecord.name?.toLowerCase().includes("kimi") ||
           tokenRecord.id.includes("kimi");
-        const clientType = isKimi ? "kimi-web" : "chatgpt";
-        const clientDisplayName = isKimi
+        const clientType = isChatGPT ? "chatgpt" : isKimi ? "kimi-web" : "unknown";
+        const clientDisplayName = isChatGPT
+          ? tokenRecord.name?.startsWith("AI Client: ")
+            ? tokenRecord.name.slice(11)
+            : tokenRecord.name || "ChatGPT"
+          : isKimi
           ? "Kimi Web"
-          : tokenRecord.name?.startsWith("AI Client: ")
-          ? tokenRecord.name.slice(11)
           : tokenRecord.name || "AI Client";
 
         if (fullControlSession && body.params) {
@@ -412,7 +420,23 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
       }
 
       // 3.9 Create fresh stateless McpServer and Transport for this request
-      const server = createLocalBridgeMcpServer(mcpContext);
+      const callerPurpose: string | undefined =
+        tokenRecord.purpose === "chatgpt" ||
+        principal.scopes.includes("purpose:chatgpt") ||
+        principal.scopes.includes("chat:direct-approve")
+          ? "chatgpt"
+          : undefined;
+
+      const scopedContext = Object.create(mcpContext);
+      scopedContext.request = async (runnerId: string, method: any, params: any) => {
+        const enrichedParams = { ...params };
+        if (callerPurpose && enrichedParams.callerPurpose === undefined) {
+          enrichedParams.callerPurpose = callerPurpose;
+        }
+        return mcpContext.request(runnerId, method, enrichedParams);
+      };
+
+      const server = createLocalBridgeMcpServer(scopedContext);
       const transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

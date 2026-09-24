@@ -73,20 +73,19 @@ export function createGitCommitHandler(
     };
     const pHash = canonicalPayloadHash(payload);
 
-    if (evalResult.decision === "ask") {
-      const shortMsg = message.length > 80 ? message.slice(0, 77) + "..." : message;
-      approvalManager.handleOperationApproval({
-        projectId: params.projectId,
-        operation: "git.commit",
-        risk: "DANGEROUS",
-        summary: `Commit staged changes in project "${params.projectId}": "${shortMsg}"`,
-        payloadHash: pHash,
-        approvalId: params.approvalId,
-        timeoutMs: 300000,
-        decisionSource: evalResult.decisionSource,
-        isProtectedFile: evalResult.decisionSource === "protected-file",
-      });
-    }
+    const shortMsg = message.length > 80 ? message.slice(0, 77) + "..." : message;
+    approvalManager.handleOperationApproval({
+      projectId: params.projectId,
+      operation: "git.commit",
+      risk: "DANGEROUS",
+      summary: `Commit staged changes in project "${params.projectId}": "${shortMsg}"`,
+      payloadHash: pHash,
+      approvalId: params.approvalId,
+      timeoutMs: 300000,
+      decisionSource: evalResult.decisionSource ?? "git-commit",
+      isProtectedFile: evalResult.decisionSource === "protected-file",
+      callerPurpose: params.callerPurpose,
+    });
 
     return gitService.commit({
       projectId: params.projectId,

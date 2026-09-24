@@ -74,6 +74,7 @@ describe("Nexus Approval UX Overhaul — 3 Approval Modes (chat / auto-trusted /
         timeoutMs: 300000,
         decisionSource: "project-policy",
         isProtectedFile: false,
+        callerPurpose: params.callerPurpose,
       });
 
       return {
@@ -99,6 +100,7 @@ describe("Nexus Approval UX Overhaul — 3 Approval Modes (chat / auto-trusted /
       kind: "package-script",
       script: "build",
       manager: "npm",
+      callerPurpose: "chatgpt",
     } as any);
 
     expect(res).toBeDefined();
@@ -296,6 +298,7 @@ describe("Nexus Approval UX Overhaul — 3 Approval Modes (chat / auto-trusted /
       summary: "Write src/index.ts",
       payloadHash: "hash_1",
       decisionSource: "chat",
+      callerPurpose: "chatgpt",
     });
 
     // 2. Auto-trusted provider execution

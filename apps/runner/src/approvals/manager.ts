@@ -29,6 +29,10 @@ export interface OperationApprovalContext {
   timeoutMs?: number;
   isProtectedFile?: boolean;
   decisionSource?: string;
+  callerPurpose?: string;
+  isBuildDefinition?: boolean;
+  commandCategory?: string;
+  isPackageInstall?: boolean;
 }
 
 export class ApprovalManager {

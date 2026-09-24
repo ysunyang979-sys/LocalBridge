@@ -7,7 +7,7 @@ import { LocalBridgeError, LocalBridgeErrorCode } from "@localbridge/protocol";
 import { canonicalPayloadHash } from "@localbridge/shared";
 import type { ApprovalManager } from "../../approvals/index.js";
 import type { ProjectRegistry } from "../../projects/index.js";
-import { TrustPolicyEvaluator } from "@localbridge/security";
+import { TrustPolicyEvaluator, isProtectedFile } from "@localbridge/security";
 
 export function createFileReadHandler(
   fsService: FilesystemService,
@@ -66,7 +66,10 @@ export function createFileReadHandler(
     };
     const pHash = canonicalPayloadHash(payload);
 
-    if (evalResult.decision === "ask") {
+    const isProtected = evalResult.decisionSource === "protected-file" || isProtectedFile(params.path);
+    const needsApproval = evalResult.decision === "ask" || isProtected;
+
+    if (needsApproval) {
       if (!approvalManager) {
         throw new LocalBridgeError(
           LocalBridgeErrorCode.APPROVAL_REQUIRED,
@@ -77,13 +80,14 @@ export function createFileReadHandler(
       approvalManager.handleOperationApproval({
         projectId: params.projectId,
         operation: "file.read",
-        risk: "CAUTION",
+        risk: isProtected ? "DANGEROUS" : "CAUTION",
         summary: `Read file "${params.path}" in project "${params.projectId}"`,
         payloadHash: pHash,
         approvalId: params.approvalId,
         timeoutMs: 300000,
-        decisionSource: evalResult.decisionSource,
-        isProtectedFile: evalResult.decisionSource === "protected-file",
+        decisionSource: isProtected ? "protected-file" : evalResult.decisionSource,
+        isProtectedFile: isProtected,
+        callerPurpose: params.callerPurpose,
       });
     }
 

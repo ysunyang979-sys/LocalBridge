@@ -69,6 +69,78 @@ export class ChatHostApprovalProvider implements ApprovalProvider {
       return;
     }
 
+    // 1. Validate caller purpose: token must have explicit purpose: "chatgpt"
+    // Non-ChatGPT tokens, even in chat mode, must go through desktop approval
+    if (context.callerPurpose !== "chatgpt") {
+      const approval = manager.create({
+        projectId: context.projectId,
+        operation: context.operation,
+        risk: context.risk === "SAFE" ? "CAUTION" : context.risk,
+        summary: context.summary,
+        payloadHash: context.payloadHash,
+        timeoutMs: context.timeoutMs ?? 300000,
+        decisionSource: "desktop",
+      });
+
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.APPROVAL_REQUIRED,
+        `Operation requires human approval on desktop. Token lacks authorized ChatGPT purpose. Approval request "${approval.id}" created for "${context.summary}". Please review and approve in LocalBridge Desktop and retry with approvalId: "${approval.id}".`,
+        {
+          code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          approvalId: approval.id,
+          operation: context.operation,
+          projectId: context.projectId,
+          summary: approval.summary,
+          expiresAt: approval.expiresAt,
+        }
+      );
+    }
+
+    // 2. Mandatory desktop approval operations in chat mode:
+    // - Reading or writing protected files (isProtectedFile)
+    // - packageInstall / installing dependencies
+    // - Modifying build definition files (package.json scripts, Makefile, .husky, CI config, etc.)
+    // - git commit
+    const isMandatoryDesktopApproval =
+      Boolean(context.isProtectedFile) ||
+      Boolean(context.isBuildDefinition) ||
+      context.commandCategory === "package-install" ||
+      Boolean(context.isPackageInstall) ||
+      context.operation === "git.commit";
+
+    if (isMandatoryDesktopApproval) {
+      const decisionSource = context.isProtectedFile
+        ? "protected-file"
+        : context.isBuildDefinition
+        ? "build-definition"
+        : context.operation === "git.commit"
+        ? "git-commit"
+        : "package-install";
+
+      const approval = manager.create({
+        projectId: context.projectId,
+        operation: context.operation,
+        risk: context.risk === "SAFE" ? "CAUTION" : context.risk,
+        summary: context.summary,
+        payloadHash: context.payloadHash,
+        timeoutMs: context.timeoutMs ?? 300000,
+        decisionSource,
+      });
+
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.APPROVAL_REQUIRED,
+        `High-risk operation (${decisionSource}) requires explicit desktop approval. Approval request "${approval.id}" created for "${context.summary}". Please review and approve in LocalBridge Desktop and retry with approvalId: "${approval.id}".`,
+        {
+          code: LocalBridgeErrorCode.APPROVAL_REQUIRED,
+          approvalId: approval.id,
+          operation: context.operation,
+          projectId: context.projectId,
+          summary: approval.summary,
+          expiresAt: approval.expiresAt,
+        }
+      );
+    }
+
     // In chat mode, ChatGPT Host App Action Approval already verified with user
     manager.createImmediateResolved({
       projectId: context.projectId,
