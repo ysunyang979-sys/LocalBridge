@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import dotenv from "dotenv";
 import { NexusClient } from "./nexus-client.js";
 import { handleMcpHttpRequest } from "./server.js";
@@ -11,6 +12,7 @@ import {
   SUPPORTED_SCOPES,
   DEFAULT_SCOPES,
   isRedirectUriAllowed,
+  escapeHtml,
 } from "./oauth.js";
 
 dotenv.config();
@@ -27,14 +29,41 @@ const nexusClient = new NexusClient({
 const oauthStore = new OAuthStore();
 const registrationRateLimits = new Map<string, number[]>();
 
-function sendHtml(res: http.ServerResponse, statusCode: number, html: string) {
+function sendHtml(res: http.ServerResponse, statusCode: number, html: string, nonce?: string) {
+  const actualNonce = nonce || crypto.randomBytes(16).toString("base64");
   res.writeHead(statusCode, {
     "Content-Type": "text/html; charset=utf-8",
-    "Content-Security-Policy": "frame-ancestors 'none'",
-    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${actualNonce}'; frame-ancestors 'none'`,
     "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
   });
   res.end(html);
+}
+
+function sendErrorHtml(res: http.ServerResponse, statusCode: number, message: string) {
+  const nonce = crypto.randomBytes(16).toString("base64");
+  const safeMessage = escapeHtml(message);
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>OAuth Error</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #1e293b; border: 1px solid #ef4444; border-radius: 12px; padding: 32px; max-width: 480px; text-align: center; }
+    h3 { margin-top: 0; color: #ef4444; }
+    p { color: #94a3b8; line-height: 1.5; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3>OAuth Error</h3>
+    <p>${safeMessage}</p>
+  </div>
+</body>
+</html>`;
+  sendHtml(res, statusCode, html, nonce);
 }
 
 /**
@@ -385,39 +414,39 @@ const server = http.createServer(async (req, res) => {
         (codeChallenge ? "S256" : undefined);
 
       if (!clientId) {
-        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'client_id' parameter</h3>");
+        sendErrorHtml(res, 400, "Missing required 'client_id' parameter");
         return;
       }
 
       if (!redirectUri) {
-        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'redirect_uri' parameter</h3>");
+        sendErrorHtml(res, 400, "Missing required 'redirect_uri' parameter");
         return;
       }
 
       if (!isRedirectUriAllowed(redirectUri)) {
-        sendHtml(
+        sendErrorHtml(
           res,
           400,
-          `<h3>OAuth Error: Unauthorized redirect_uri '${redirectUri}'. Only Google/Gemini official callbacks, configured production domain, or localhost are permitted.</h3>`
+          `Unauthorized redirect_uri '${redirectUri}'. Only Google/Gemini official callbacks, configured production domain, or localhost are permitted.`
         );
         return;
       }
 
       const client = oauthStore.getClient(clientId);
       if (!client) {
-        sendHtml(
+        sendErrorHtml(
           res,
           400,
-          `<h3>OAuth Error: Unknown client_id '${clientId}'. Please register via /oauth/register.</h3>`
+          `Unknown client_id '${clientId}'. Please register via /oauth/register.`
         );
         return;
       }
 
       if (!client.redirect_uris.includes(redirectUri)) {
-        sendHtml(
+        sendErrorHtml(
           res,
           400,
-          `<h3>OAuth Error: redirect_uri '${redirectUri}' is not registered for client '${clientId}'.</h3>`
+          `redirect_uri '${redirectUri}' is not registered for client '${clientId}'.`
         );
         return;
       }
@@ -437,6 +466,7 @@ const server = http.createServer(async (req, res) => {
 
       // Render Authorization Consent Screen
       const clientName = client.client_name || "Gemini Spark";
+      const nonce = crypto.randomBytes(16).toString("base64");
       const html = renderOAuthConsentHtml({
         baseUrl,
         clientName,
@@ -446,9 +476,10 @@ const server = http.createServer(async (req, res) => {
         state,
         codeChallenge,
         codeChallengeMethod,
+        nonce,
       });
 
-      sendHtml(res, 200, html);
+      sendHtml(res, 200, html, nonce);
       return;
     }
 
@@ -475,38 +506,38 @@ const server = http.createServer(async (req, res) => {
           res.end();
           return;
         }
-        sendHtml(res, 400, "<h3>OAuth Error: Authorization denied</h3>");
+        sendErrorHtml(res, 400, "Authorization denied");
         return;
       }
 
       // 2. client_id must be provided and registered
       if (!clientId) {
-        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'client_id'</h3>");
+        sendErrorHtml(res, 400, "Missing required 'client_id'");
         return;
       }
 
       const client = oauthStore.getClient(clientId);
       if (!client) {
-        sendHtml(res, 400, `<h3>OAuth Error: Unknown client_id '${clientId}'</h3>`);
+        sendErrorHtml(res, 400, `Unknown client_id '${clientId}'`);
         return;
       }
 
       // 3. redirect_uri must be provided and registered for this client
       if (!redirectUri) {
-        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'redirect_uri'</h3>");
+        sendErrorHtml(res, 400, "Missing required 'redirect_uri'");
         return;
       }
 
       if (!isRedirectUriAllowed(redirectUri)) {
-        sendHtml(res, 400, `<h3>OAuth Error: Unauthorized redirect_uri '${redirectUri}'</h3>`);
+        sendErrorHtml(res, 400, `Unauthorized redirect_uri '${redirectUri}'`);
         return;
       }
 
       if (!client.redirect_uris.includes(redirectUri)) {
-        sendHtml(
+        sendErrorHtml(
           res,
           400,
-          `<h3>OAuth Error: redirect_uri '${redirectUri}' is not registered for client '${clientId}'</h3>`
+          `redirect_uri '${redirectUri}' is not registered for client '${clientId}'`
         );
         return;
       }
@@ -546,7 +577,7 @@ const server = http.createServer(async (req, res) => {
           res.end();
           return;
         } catch (err: any) {
-          sendHtml(res, 400, `<h3>OAuth Error: ${err.message}</h3>`);
+          sendErrorHtml(res, 400, err.message);
           return;
         }
       }
@@ -578,6 +609,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // HTML response for browser form submission
+        const nonce = crypto.randomBytes(16).toString("base64");
         const waitHtml = `<!DOCTYPE html>
 <html>
 <head>
@@ -600,7 +632,7 @@ const server = http.createServer(async (req, res) => {
     <p>Client <strong>${escapeHtml(client.client_name)}</strong> has requested access to Nexus.</p>
     <p>Please open <strong>Nexus Desktop</strong> to approve this connection.</p>
   </div>
-  <script>
+  <script nonce="${nonce}">
     setInterval(async () => {
       try {
         const res = await fetch('/oauth/requests/${pending.id}/status');
@@ -615,10 +647,10 @@ const server = http.createServer(async (req, res) => {
   </script>
 </body>
 </html>`;
-        sendHtml(res, 202, waitHtml);
+        sendHtml(res, 202, waitHtml, nonce);
         return;
       } catch (err: any) {
-        sendHtml(res, 400, `<h3>OAuth Error: ${err.message}</h3>`);
+        sendErrorHtml(res, 400, err.message);
         return;
       }
     }

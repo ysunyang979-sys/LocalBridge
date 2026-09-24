@@ -682,6 +682,7 @@ export function renderOAuthConsentHtml(params: {
   state?: string;
   codeChallenge?: string;
   codeChallengeMethod?: string;
+  nonce?: string;
 }): string {
   const {
     baseUrl,
@@ -692,6 +693,7 @@ export function renderOAuthConsentHtml(params: {
     state,
     codeChallenge,
     codeChallengeMethod,
+    nonce,
   } = params;
 
   return `<!DOCTYPE html>
@@ -875,7 +877,7 @@ export function renderOAuthConsentHtml(params: {
       🔒 <strong>Security Policy:</strong> Shell execution, arbitrary commands, and token management are strictly disabled.
     </div>
 
-    <form method="POST" action="${baseUrl}/oauth/authorize">
+    <form method="POST" action="${escapeHtml(baseUrl)}/oauth/authorize">
       <input type="hidden" name="client_id" value="${escapeHtml(clientId)}">
       <input type="hidden" name="redirect_uri" value="${escapeHtml(redirectUri)}">
       <input type="hidden" name="scope" value="${escapeHtml(scope)}">
@@ -886,15 +888,18 @@ export function renderOAuthConsentHtml(params: {
 
       <div class="actions">
         <button type="submit" class="btn-approve">Authorize / 允许授权</button>
-        <button type="button" class="btn-deny" onclick="window.history.back()">Deny / 拒绝</button>
+        <button type="button" id="btn-deny" class="btn-deny">Deny / 拒绝</button>
       </div>
     </form>
   </div>
+  <script nonce="${escapeHtml(nonce || "")}">
+    document.getElementById('btn-deny')?.addEventListener('click', () => window.history.back());
+  </script>
 </body>
 </html>`;
 }
 
-function escapeHtml(str: string): string {
+export function escapeHtml(str: string): string {
   return (str || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
