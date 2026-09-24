@@ -4,9 +4,12 @@ import {
   resolveDefaultModelPath,
   resolveDefaultPythonPath,
 } from "../packages/security/src/intelligence/provider.js";
+import { validateModelDir } from "../packages/security/src/intelligence/downloader.js";
 import type { DecisionContext } from "@localbridge/protocol";
 
-describe("Laya Real Provider Benchmark Test Suite", () => {
+const canRunRealLaya = validateModelDir(resolveDefaultModelPath()).valid;
+
+describe.skipIf(!canRunRealLaya)("Laya Real Provider Benchmark Test Suite", () => {
   let provider: LayaDecisionProvider | null = null;
 
   beforeAll(async () => {

@@ -4,6 +4,9 @@ import {
   resolveDefaultModelPath,
   resolveDefaultPythonPath,
 } from "../packages/security/src/intelligence/provider.js";
+import { validateModelDir } from "../packages/security/src/intelligence/downloader.js";
+
+const canRunRealLaya = validateModelDir(resolveDefaultModelPath()).valid;
 
 describe("Laya Toggle Worker Binding & Lifecycle Suite", () => {
   let provider: ManagedDecisionProvider | null = null;
@@ -27,7 +30,7 @@ describe("Laya Toggle Worker Binding & Lifecycle Suite", () => {
     expect(status.providerClass).toBe("DisabledDecisionProvider");
   });
 
-  it("dynamically binds and starts Laya worker when toggled ON", async () => {
+  it.skipIf(!canRunRealLaya)("dynamically binds and starts Laya worker when toggled ON", async () => {
     provider = new ManagedDecisionProvider({
       provider: "disabled",
       modelPath: resolveDefaultModelPath(),
@@ -45,7 +48,7 @@ describe("Laya Toggle Worker Binding & Lifecycle Suite", () => {
     expect(newStatus.providerClass).toBe("LayaDecisionProvider");
   }, 40000);
 
-  it("dynamically shuts down worker and switches to DisabledDecisionProvider when toggled OFF", async () => {
+  it.skipIf(!canRunRealLaya)("dynamically shuts down worker and switches to DisabledDecisionProvider when toggled OFF", async () => {
     provider = new ManagedDecisionProvider({
       provider: "laya",
       modelPath: resolveDefaultModelPath(),
