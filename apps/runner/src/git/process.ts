@@ -2,6 +2,7 @@ import child_process from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
 import { LocalBridgeError, LocalBridgeErrorCode } from "@localbridge/protocol";
 import type { Logger } from "@localbridge/shared";
 import type { GitSpawnOptions, GitSpawnResult } from "./types.js";
@@ -16,14 +17,13 @@ export class GitProcessRunner {
   private readonly emptyHooksDir: string;
   private gitAvailableCache: boolean | null = null;
 
-  constructor(private readonly logger?: Logger) {
-    this.emptyHooksDir = path.join(os.tmpdir(), "localbridge-empty-hooks");
-    if (!fs.existsSync(this.emptyHooksDir)) {
-      try {
-        fs.mkdirSync(this.emptyHooksDir, { recursive: true });
-      } catch {
-        // Ignore if exists
-      }
+  constructor(private readonly logger?: Logger, hooksBaseDir?: string) {
+    try {
+      const base = hooksBaseDir && fs.existsSync(hooksBaseDir) ? hooksBaseDir : os.tmpdir();
+      this.emptyHooksDir = fs.mkdtempSync(path.join(base, "lb-hooks-"));
+    } catch {
+      this.emptyHooksDir = path.join(os.tmpdir(), `lb-hooks-${crypto.randomUUID()}`);
+      fs.mkdirSync(this.emptyHooksDir, { recursive: true, mode: 0o700 });
     }
   }
 

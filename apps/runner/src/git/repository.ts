@@ -63,3 +63,70 @@ export async function validateRepository(
     worktreeRoot,
   };
 }
+
+/**
+ * Verifies that the local git repository config does not declare malicious or external extension hooks:
+ * - custom filter drivers (filter.*.clean, filter.*.smudge, filter.*.process)
+ * - custom diff drivers (diff.*.command, diff.*.textconv)
+ * - custom merge drivers (merge.*.driver)
+ * - external gpg programs (gpg.program, gpg.*.program, commit.gpgSign)
+ * - core hooks or monitor overrides (core.hooksPath, core.fsmonitor)
+ */
+export async function assertSafeGitConfig(
+  runner: GitProcessRunner,
+  cwd: string
+): Promise<void> {
+  let output = "";
+  try {
+    const res = await runner.exec({
+      cwd,
+      args: ["config", "--local", "-l"],
+      timeoutMs: 3000,
+    });
+    output = res.stdout;
+  } catch {
+    // If git config fails (e.g. fresh repo or no config file yet), try reading .git/config manually if present
+    try {
+      const gitConfigFile = path.join(cwd, ".git", "config");
+      if (fs.existsSync(gitConfigFile)) {
+        output = fs.readFileSync(gitConfigFile, "utf-8");
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  if (!output) return;
+
+  const lines = output.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim().toLowerCase();
+    if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+
+    // In 'git config -l' format: key=value
+    const key = line.split("=")[0]?.trim();
+    if (!key) continue;
+
+    const isUnsafeFilter =
+      key.startsWith("filter.") &&
+      (key.includes(".clean") || key.includes(".smudge") || key.includes(".process"));
+    const isUnsafeDiff =
+      key.startsWith("diff.") &&
+      (key.includes(".command") || key.includes(".textconv"));
+    const isUnsafeMerge =
+      key.startsWith("merge.") && key.includes(".driver");
+    const isUnsafeGpg =
+      key === "gpg.program" ||
+      (key.startsWith("gpg.") && key.endsWith(".program")) ||
+      key === "commit.gpgsign";
+    const isUnsafeCore =
+      key === "core.fsmonitor" || key === "core.hookspath";
+
+    if (isUnsafeFilter || isUnsafeDiff || isUnsafeMerge || isUnsafeGpg || isUnsafeCore) {
+      throw new LocalBridgeError(
+        LocalBridgeErrorCode.GIT_CONFIG_UNSAFE,
+        `Unsafe local Git configuration detected: "${key}". Custom filters, diff/merge drivers, or external gpg programs in local repository config are blocked for security.`
+      );
+    }
+  }
+}

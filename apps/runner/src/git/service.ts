@@ -32,7 +32,7 @@ import type { Logger } from "@localbridge/shared";
 import type { ProjectRegistry } from "../projects/index.js";
 import type { WorkspaceResolver } from "../worktree/resolver.js";
 import { GitProcessRunner, MAX_GIT_DIFF_BYTES } from "./process.js";
-import { validateRepository } from "./repository.js";
+import { validateRepository, assertSafeGitConfig } from "./repository.js";
 import { parsePorcelainV2 } from "./parsers/porcelain-v2.js";
 import { parseGitLog } from "./parsers/log.js";
 
@@ -501,6 +501,7 @@ export class GitService {
     this.getAuthorizedProject(params.projectId);
     const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
     await validateRepository(this.processRunner, canonicalRoot);
+    await assertSafeGitConfig(this.processRunner, canonicalRoot);
 
     const canonicalPaths = canonicalizeGitPaths(params.paths);
 
@@ -554,6 +555,7 @@ export class GitService {
     this.getAuthorizedProject(params.projectId);
     const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
     await validateRepository(this.processRunner, canonicalRoot);
+    await assertSafeGitConfig(this.processRunner, canonicalRoot);
 
     const canonicalPaths = canonicalizeGitPaths(params.paths);
 
@@ -598,6 +600,7 @@ export class GitService {
     this.getAuthorizedProject(params.projectId);
     const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
     await validateRepository(this.processRunner, canonicalRoot);
+    await assertSafeGitConfig(this.processRunner, canonicalRoot);
 
     const branchName = validateBranchNameFormat(params.branchName);
 
@@ -675,6 +678,7 @@ export class GitService {
     this.getAuthorizedProject(params.projectId);
     const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
     await validateRepository(this.processRunner, canonicalRoot);
+    await assertSafeGitConfig(this.processRunner, canonicalRoot);
 
     const branchName = validateBranchNameFormat(params.branchName);
 
@@ -755,6 +759,7 @@ export class GitService {
     this.getAuthorizedProject(params.projectId);
     const canonicalRoot = this.getEffectiveRoot(params.projectId, (params as any).sessionId);
     await validateRepository(this.processRunner, canonicalRoot);
+    await assertSafeGitConfig(this.processRunner, canonicalRoot);
 
     if (!params.message || !params.message.trim()) {
       throw new LocalBridgeError(
