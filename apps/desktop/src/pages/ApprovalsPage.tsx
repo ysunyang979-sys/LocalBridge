@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   ShieldAlert,
   RotateCw,
@@ -7,8 +7,9 @@ import {
   CheckSquare,
   Square,
   Zap,
+  KeyRound,
 } from "lucide-react";
-import type { Approval } from "../types.js";
+import type { Approval, OAuthPendingRequest } from "../types.js";
 import { useTranslation } from "../i18n/useTranslation.js";
 import { bridge } from "../api/bridge.js";
 
@@ -28,6 +29,66 @@ export const ApprovalsPage: React.FC<ApprovalsPageProps> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [oauthRequests, setOauthRequests] = useState<OAuthPendingRequest[]>([]);
+  const [pairingInputs, setPairingInputs] = useState<Record<string, string>>({});
+  const [pairingErrors, setPairingErrors] = useState<Record<string, string>>({});
+
+  const loadOAuthRequests = useCallback(async () => {
+    try {
+      const res = await bridge.listOAuthRequests();
+      setOauthRequests(res.requests || []);
+    } catch {
+      // Ignore in background
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOAuthRequests();
+  }, [loadOAuthRequests]);
+
+  const handleRefreshAll = () => {
+    loadOAuthRequests();
+    onRefresh();
+  };
+
+  const handleResolveOAuth = async (
+    requestId: string,
+    action: "approve" | "deny"
+  ) => {
+    const code = (pairingInputs[requestId] || "").trim();
+    if (action === "approve" && code.length !== 6) {
+      setPairingErrors((prev) => ({
+        ...prev,
+        [requestId]: "请输入 6 位配对码",
+      }));
+      return;
+    }
+    setBusy(true);
+    try {
+      await bridge.resolveOAuthRequest(
+        requestId,
+        action,
+        action === "approve" ? code : undefined
+      );
+      setNotice(action === "approve" ? "已批准客户端授权" : "已拒绝客户端授权");
+      setTimeout(() => setNotice(null), 4000);
+      setPairingErrors((prev) => {
+        const next = { ...prev };
+        delete next[requestId];
+        return next;
+      });
+      loadOAuthRequests();
+      onRefresh();
+    } catch (err: any) {
+      setPairingErrors((prev) => ({
+        ...prev,
+        [requestId]: err.message || "审批处理失败",
+      }));
+      loadOAuthRequests();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const filtered = approvals.filter((a) => {
     if (filter === "all") return true;
@@ -122,7 +183,7 @@ export const ApprovalsPage: React.FC<ApprovalsPageProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={onRefresh}
+            onClick={handleRefreshAll}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border border-theme-subtle rounded-lg text-xs font-medium transition"
           >
             <RotateCw className="w-3.5 h-3.5" />
@@ -158,6 +219,135 @@ export const ApprovalsPage: React.FC<ApprovalsPageProps> = ({
           <span>{notice}</span>
         </div>
       )}
+
+      {/* OAuth Client Pending Approvals */}
+      {(filter === "all" || filter === "pending") &&
+        oauthRequests.filter((r) => r.status === "pending").length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <h3 className="text-xs font-mono uppercase tracking-wider text-amber-600 dark:text-amber-300 font-semibold">
+                未验证的动态注册客户端 (
+                {oauthRequests.filter((r) => r.status === "pending").length})
+              </h3>
+            </div>
+            <div className="space-y-3">
+              {oauthRequests
+                .filter((r) => r.status === "pending")
+                .map((req) => {
+                  const clientName =
+                    req.client_name || req.clientName || "Unknown Client";
+                  const redirectHost =
+                    req.redirect_host || req.redirect_uri_host || "unknown";
+                  const currentCode = pairingInputs[req.id] || "";
+                  const currentErr = pairingErrors[req.id];
+                  const canApprove = currentCode.trim().length === 6 && !busy;
+                  const createdAtStr = new Date(
+                    req.created_at || req.createdAt || Date.now()
+                  ).toLocaleTimeString();
+
+                  return (
+                    <div
+                      key={req.id}
+                      className="p-4 bg-amber-500/[0.04] border border-amber-500/40 rounded-xl shadow-sm space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="badge badge-amber font-semibold">
+                              未验证的动态注册客户端
+                            </span>
+                            <span className="text-xs font-mono font-semibold text-theme-primary">
+                              {clientName}
+                            </span>
+                            <span className="text-xs font-mono text-theme-muted">
+                              {req.id}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-4 text-xs text-theme-secondary">
+                            <span>
+                              回调域名:{" "}
+                              <strong className="font-mono text-theme-primary">
+                                {redirectHost}
+                              </strong>
+                            </span>
+                            <span className="text-theme-muted">
+                              请求时间: {createdAtStr}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-theme-muted">
+                            该客户端发起 OAuth 授权请求。请在下方输入浏览器授权页显示的 6 位配对码完成审批。输错 3 次自动拒绝并作废。
+                          </p>
+                        </div>
+                      </div>
+
+                      {currentErr && (
+                        <div className="p-2 bg-red-500/10 border border-red-500/30 rounded-lg text-red-600 dark:text-red-400 text-xs flex items-center gap-1.5">
+                          <XCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{currentErr}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-3 pt-2 border-t border-theme-subtle">
+                        <div className="flex items-center gap-2">
+                          <KeyRound className="w-4 h-4 text-theme-muted shrink-0" />
+                          <input
+                            type="text"
+                            maxLength={6}
+                            value={currentCode}
+                            onChange={(e) => {
+                              const val = e.target.value
+                                .replace(/\D/g, "")
+                                .slice(0, 6);
+                              setPairingInputs((prev) => ({
+                                ...prev,
+                                [req.id]: val,
+                              }));
+                              if (pairingErrors[req.id]) {
+                                setPairingErrors((prev) => {
+                                  const next = { ...prev };
+                                  delete next[req.id];
+                                  return next;
+                                });
+                              }
+                            }}
+                            placeholder="输入 6 位配对码"
+                            className="w-36 px-2.5 py-1.5 text-center text-xs font-mono tracking-widest bg-theme-input border border-theme-input rounded-lg focus:outline-none focus:border-amber-500 text-theme-primary placeholder:text-theme-muted placeholder:tracking-normal"
+                          />
+                          <span className="text-[11px] text-theme-muted font-mono">
+                            {currentCode.length}/6 位
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={!canApprove}
+                            onClick={() => handleResolveOAuth(req.id, "approve")}
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold shadow-sm transition"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>批准</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => handleResolveOAuth(req.id, "deny")}
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>拒绝</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </section>
+        )}
 
       {/* Bulk Action Bar */}
       {pendingApprovals.length > 0 && (
@@ -202,7 +392,8 @@ export const ApprovalsPage: React.FC<ApprovalsPageProps> = ({
       )}
 
       {/* Approvals List */}
-      {filtered.length === 0 ? (
+      {filtered.length === 0 &&
+      oauthRequests.filter((r) => r.status === "pending").length === 0 ? (
         <div className="p-12 text-center bg-theme-card border border-theme-card rounded-xl space-y-3 shadow-sm">
           <ShieldAlert className="w-10 h-10 text-theme-muted mx-auto" />
           <div className="text-theme-primary font-semibold text-sm">{t.approvals.noApprovals}</div>

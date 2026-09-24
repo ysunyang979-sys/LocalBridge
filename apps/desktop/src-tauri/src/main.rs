@@ -685,6 +685,49 @@ fn desktop_management_call(
     loopback_management_request(port, &token, &method, &path, body.as_ref())
 }
 
+fn desktop_bridge_call(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    method: String,
+    path: String,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let (port, token) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        let port = if s.bridge_supervisor.port > 0 { s.bridge_supervisor.port } else { 8787 };
+        let token = get_management_token(&s);
+        (port, token)
+    };
+    loopback_management_request(port, &token, &method, &path, body.as_ref())
+}
+
+#[tauri::command]
+fn desktop_list_oauth_requests(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    desktop_bridge_call(state, "GET".into(), "/oauth/requests".into(), None)
+}
+
+#[tauri::command]
+fn desktop_resolve_oauth_request(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    request_id: String,
+    action: String,
+    pairing_code: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut payload = serde_json::json!({
+        "action": action,
+    });
+    if let Some(code) = pairing_code {
+        payload["pairing_code"] = serde_json::Value::String(code);
+    }
+    desktop_bridge_call(
+        state,
+        "POST".into(),
+        format!("/oauth/requests/{}/resolve", request_id),
+        Some(payload),
+    )
+}
+
 #[tauri::command]
 fn desktop_set_server_url(
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
@@ -3136,6 +3179,8 @@ fn main() {
             desktop_list_tokens,
             desktop_list_approvals,
             desktop_resolve_approval,
+            desktop_list_oauth_requests,
+            desktop_resolve_oauth_request,
             desktop_list_jobs,
             desktop_cancel_job,
             desktop_get_job_status,

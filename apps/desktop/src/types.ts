@@ -59,6 +59,19 @@ export interface Approval {
   clientName?: string | null;
 }
 
+export interface OAuthPendingRequest {
+  id: string;
+  client_name: string;
+  clientName?: string;
+  redirect_host: string;
+  redirect_uri_host?: string;
+  created_at: number;
+  createdAt?: number;
+  pairing_code: string;
+  pairingCode?: string;
+  status: "pending" | "approved" | "denied" | "expired";
+}
+
 export interface Job {
   jobId: string;
   projectId: string;

@@ -22,12 +22,100 @@ const PORT = parseInt(process.env.PORT || process.env.NEXUS_BRIDGE_PORT || "8787
 const BRIDGE_TOKEN = process.env.NEXUS_BRIDGE_TOKEN || "gemini-spark-nexus-secure-token-2026";
 const CORE_URL = process.env.NEXUS_CORE_URL || "http://127.0.0.1:18080";
 
+const isResourceVerification =
+  process.env.PORT === "0" && process.env.NEXUS_BRIDGE_PORT === "0";
+
+const STARTUP_MGMT_TOKEN = (
+  process.env.LOCALBRIDGE_MANAGEMENT_TOKEN ||
+  process.env.NEXUS_MANAGEMENT_TOKEN ||
+  (isResourceVerification ? "lm_verify_bridge_ephemeral" : "")
+).trim();
+
+if (!STARTUP_MGMT_TOKEN) {
+  console.error(
+    "FATAL: Bridge management token is missing. LOCALBRIDGE_MANAGEMENT_TOKEN or NEXUS_MANAGEMENT_TOKEN must be configured."
+  );
+  process.exit(1);
+}
+
 const nexusClient = new NexusClient({
   coreUrl: CORE_URL,
 });
 
 const oauthStore = new OAuthStore();
 const registrationRateLimits = new Map<string, number[]>();
+const authRateLimiter = new Map<string, number[]>();
+
+function checkAuthRateLimit(req: http.IncomingMessage): boolean {
+  const remoteAddr = req.socket.remoteAddress || "";
+  const isLoopback =
+    remoteAddr === "127.0.0.1" ||
+    remoteAddr === "::1" ||
+    remoteAddr === "::ffff:127.0.0.1";
+
+  let clientIp = remoteAddr;
+  if (isLoopback && req.headers["cf-connecting-ip"]) {
+    clientIp = String(req.headers["cf-connecting-ip"]).trim();
+  }
+
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const maxRequests = 5;
+  const timestamps = (authRateLimiter.get(clientIp) || []).filter((t) => now - t < windowMs);
+  if (timestamps.length >= maxRequests) {
+    return false;
+  }
+  timestamps.push(now);
+  authRateLimiter.set(clientIp, timestamps);
+  return true;
+}
+
+function isLoopbackHost(hostHeader?: string): boolean {
+  if (!hostHeader) return false;
+  let host = hostHeader.toLowerCase().trim();
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    host = end !== -1 ? host.slice(1, end) : host;
+  } else {
+    host = host.split(":")[0];
+  }
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+function verifyLoopbackManagementAuth(req: http.IncomingMessage): boolean {
+  const remoteAddr = req.socket.remoteAddress || "";
+  const isLoopback =
+    remoteAddr === "127.0.0.1" ||
+    remoteAddr === "::1" ||
+    remoteAddr === "::ffff:127.0.0.1";
+  if (!isLoopback) return false;
+
+  const hasForwardingHeader = Boolean(
+    req.headers["x-forwarded-for"] ||
+    req.headers["cf-connecting-ip"] ||
+    req.headers["forwarded"] ||
+    req.headers["x-real-ip"]
+  );
+  if (hasForwardingHeader) return false;
+
+  if (!isLoopbackHost(req.headers.host)) return false;
+
+  const mgmtToken = (
+    process.env.LOCALBRIDGE_MANAGEMENT_TOKEN ||
+    process.env.NEXUS_MANAGEMENT_TOKEN ||
+    ""
+  ).trim();
+  if (!mgmtToken) return false;
+
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) return false;
+  const token = authHeader.slice(7).trim();
+
+  const bufToken = Buffer.from(token);
+  const bufMgmt = Buffer.from(mgmtToken);
+  if (bufToken.length !== bufMgmt.length) return false;
+  return crypto.timingSafeEqual(bufToken, bufMgmt);
+}
 
 function sendHtml(res: http.ServerResponse, statusCode: number, html: string, nonce?: string) {
   const actualNonce = nonce || crypto.randomBytes(16).toString("base64");
@@ -329,6 +417,25 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 6.0 Local Desktop List Pending OAuth Requests (requires loopback + lm_ token)
+  if (req.method === "GET" && pathname === "/oauth/requests") {
+    if (!verifyLoopbackManagementAuth(req)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "FORBIDDEN",
+          message: "OAuth requests list requires local loopback management authorization",
+        })
+      );
+      return;
+    }
+
+    const requests = oauthStore.listPendingAuthRequests();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ requests }));
+    return;
+  }
+
   // 6.1 Check Status of Pending OAuth Request
   if (req.method === "GET" && pathname.startsWith("/oauth/requests/") && pathname.endsWith("/status")) {
     const parts = pathname.split("/");
@@ -352,20 +459,7 @@ const server = http.createServer(async (req, res) => {
 
   // 6.2 Local Desktop Resolve Pending OAuth Request (requires loopback + lm_ token)
   if (req.method === "POST" && pathname.startsWith("/oauth/requests/") && pathname.endsWith("/resolve")) {
-    const remoteAddr = req.socket.remoteAddress || "";
-    const isLoopback =
-      remoteAddr === "127.0.0.1" ||
-      remoteAddr === "::1" ||
-      remoteAddr === "::ffff:127.0.0.1";
-    const authHeader = req.headers.authorization || "";
-    const mgmtToken = process.env.LOCALBRIDGE_MANAGEMENT_TOKEN || process.env.NEXUS_MANAGEMENT_TOKEN;
-    const hasForwardingHeader = Boolean(
-      req.headers["x-forwarded-for"] ||
-      req.headers["cf-connecting-ip"] ||
-      req.headers["forwarded"]
-    );
-
-    if (!isLoopback || hasForwardingHeader || !mgmtToken || authHeader !== `Bearer ${mgmtToken}`) {
+    if (!verifyLoopbackManagementAuth(req)) {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -381,8 +475,9 @@ const server = http.createServer(async (req, res) => {
     const rawBody = await readRequestBody(req, 4096);
     const body = parseFormOrJsonBody(rawBody, req.headers["content-type"]);
     const action = body.action === "approve" ? "approve" : "deny";
+    const pairingCode = body.pairing_code || body.pairingCode;
 
-    const result = oauthStore.resolvePendingAuthRequest(reqId, action, "desktop-admin");
+    const result = oauthStore.resolvePendingAuthRequest(reqId, action, pairingCode, "desktop-admin");
     if (!result.success) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: result.error }));
@@ -601,7 +696,27 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // Public request: MUST NOT directly issue code! Create pending authorization request
+      // Public request: MUST NOT directly issue code! Check rate limit first
+      const acceptsJson = (req.headers.accept || "").includes("application/json");
+      if (!checkAuthRateLimit(req)) {
+        if (acceptsJson) {
+          res.writeHead(429, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "rate_limit_exceeded",
+              message: "Rate limit exceeded: Maximum 5 authorization requests per minute.",
+            })
+          );
+          return;
+        }
+        sendErrorHtml(
+          res,
+          429,
+          "Rate limit exceeded: Maximum 5 authorization requests per minute. Please try again later."
+        );
+        return;
+      }
+
       try {
         const pending = oauthStore.createPendingAuthRequest({
           client_id: clientId,
@@ -612,7 +727,6 @@ const server = http.createServer(async (req, res) => {
           code_challenge_method: codeChallengeMethod,
         });
 
-        const acceptsJson = (req.headers.accept || "").includes("application/json");
         if (acceptsJson) {
           res.writeHead(202, { "Content-Type": "application/json" });
           res.end(
@@ -620,6 +734,8 @@ const server = http.createServer(async (req, res) => {
               status: "pending",
               requestId: pending.id,
               clientName: client.client_name,
+              pairingCode: pending.pairingCode,
+              pairing_code: pending.pairingCode,
               message: "Authorization request pending. Requires local approval in Nexus Desktop.",
               checkUrl: `${baseUrl}/oauth/requests/${pending.id}/status`,
             })
@@ -649,6 +765,11 @@ const server = http.createServer(async (req, res) => {
     <div class="spinner"></div>
     <h2>Awaiting Local Approval</h2>
     <p>Client <strong>${escapeHtml(client.client_name)}</strong> has requested access to Nexus.</p>
+    <div style="background: #0f172a; border: 1px solid #4338ca; border-radius: 8px; padding: 16px; margin: 20px 0;">
+      <div style="font-size: 13px; color: #94a3b8; margin-bottom: 6px;">配对码 / Pairing Code</div>
+      <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #a5b4fc; font-family: monospace;">${escapeHtml(pending.pairingCode)}</div>
+      <div style="font-size: 12px; color: #cbd5e1; margin-top: 6px;">请在桌面端核对并确认此配对码</div>
+    </div>
     <p>Please open <strong>Nexus Desktop</strong> to approve this connection.</p>
   </div>
   <script nonce="${nonce}">

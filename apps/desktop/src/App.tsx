@@ -9,6 +9,7 @@ import { ProjectsPage } from "./pages/ProjectsPage.js";
 import { JobsPage } from "./pages/JobsPage.js";
 import { ConnectionsPage } from "./pages/ConnectionsPage.js";
 import { TokensPage } from "./pages/TokensPage.js";
+import { ApprovalsPage } from "./pages/ApprovalsPage.js";
 import { ActivityPage } from "./pages/ActivityPage.js";
 import { SkillsPage } from "./pages/SkillsPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
@@ -550,12 +551,20 @@ export const App: React.FC = () => {
               />
             )}
 
-            {(currentPage === "activity" || (currentPage as string) === "approvals") && (
+            {currentPage === "approvals" && (
+              <ApprovalsPage
+                approvals={approvals}
+                onSelectApproval={(approval) => setSelectedApproval(approval)}
+                onRefresh={loadData}
+              />
+            )}
+
+            {currentPage === "activity" && (
               <ActivityPage
                 events={auditEvents}
                 approvals={approvals}
                 onRefresh={loadData}
-                initialFilter={(currentPage as string) === "approvals" ? "approvals" : "all"}
+                initialFilter="all"
                 onResolveApproval={async (id, action) => {
                   await bridge.resolveApproval(id, action);
                   await loadData();

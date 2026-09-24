@@ -43,7 +43,8 @@ export interface PendingAuthRequest {
   codeChallenge: string;
   codeChallengeMethod: "S256";
   codeChallengeHash: string;
-  pairingCode?: string;
+  pairingCode: string;
+  pairingAttempts: number;
   createdAt: number;
   expiresAt: number;
   status: "pending" | "approved" | "denied" | "expired";
@@ -311,9 +312,26 @@ export class OAuthStore {
       throw new Error("Invalid 'code_challenge_method'. Only 'S256' is supported.");
     }
 
+    const now = Date.now();
+    for (const pendingReq of this.pendingRequests.values()) {
+      if (pendingReq.status === "pending" && now > pendingReq.expiresAt) {
+        pendingReq.status = "expired";
+      }
+    }
+
+    const activePending = Array.from(this.pendingRequests.values()).filter(
+      (r) => r.status === "pending" && now <= r.expiresAt
+    );
+    if (activePending.length >= 50) {
+      throw new Error(
+        "Pending authorization requests limit reached (50). Please resolve or wait for existing requests to expire."
+      );
+    }
+
     const id = `oauth_req_${crypto.randomBytes(16).toString("hex")}`;
     const codeChallenge = params.code_challenge;
     const codeChallengeHash = crypto.createHash("sha256").update(codeChallenge).digest("hex");
+    const pairingCode = crypto.randomInt(100000, 1000000).toString();
 
     const req: PendingAuthRequest = {
       id,
@@ -325,8 +343,10 @@ export class OAuthStore {
       codeChallenge,
       codeChallengeMethod: "S256",
       codeChallengeHash,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
+      pairingCode,
+      pairingAttempts: 0,
+      createdAt: now,
+      expiresAt: now + 5 * 60 * 1000, // 5 minutes expiry
       status: "pending",
     };
 
@@ -343,9 +363,49 @@ export class OAuthStore {
     return req;
   }
 
+  public listPendingAuthRequests(): Array<{
+    id: string;
+    client_name: string;
+    clientName: string;
+    redirect_host: string;
+    redirect_uri_host: string;
+    created_at: number;
+    createdAt: number;
+    pairing_code: string;
+    pairingCode: string;
+    status: string;
+  }> {
+    const now = Date.now();
+    const result: any[] = [];
+    for (const req of this.pendingRequests.values()) {
+      if (req.status === "pending" && now <= req.expiresAt) {
+        let host = "";
+        try {
+          host = new URL(req.redirectUri).hostname;
+        } catch {
+          host = "unknown";
+        }
+        result.push({
+          id: req.id,
+          client_name: req.clientName,
+          clientName: req.clientName,
+          redirect_host: host,
+          redirect_uri_host: host,
+          created_at: req.createdAt,
+          createdAt: req.createdAt,
+          pairing_code: req.pairingCode,
+          pairingCode: req.pairingCode,
+          status: req.status,
+        });
+      }
+    }
+    return result;
+  }
+
   public resolvePendingAuthRequest(
     id: string,
     action: "approve" | "deny",
+    pairingCode?: string,
     resolvedBy = "local-desktop"
   ): { success: boolean; error?: string; code?: string; redirectUrl?: string } {
     const req = this.getPendingAuthRequest(id);
@@ -360,6 +420,43 @@ export class OAuthStore {
     if (Date.now() > req.expiresAt) {
       req.status = "expired";
       return { success: false, error: "Authorization request has expired" };
+    }
+
+    if (action === "approve") {
+      if (typeof req.pairingAttempts !== "number") req.pairingAttempts = 0;
+      if (req.pairingAttempts >= 3) {
+        req.status = "denied";
+        return {
+          success: false,
+          error: "Too many failed pairing code attempts. Request has been denied.",
+        };
+      }
+
+      if (!pairingCode) {
+        return { success: false, error: "Missing required pairing_code" };
+      }
+
+      const bufGiven = Buffer.from(String(pairingCode).trim());
+      const bufActual = Buffer.from(req.pairingCode || "");
+      const isMatch =
+        bufGiven.length === bufActual.length &&
+        bufGiven.length > 0 &&
+        crypto.timingSafeEqual(bufGiven, bufActual);
+
+      if (!isMatch) {
+        req.pairingAttempts += 1;
+        if (req.pairingAttempts >= 3) {
+          req.status = "denied";
+          return {
+            success: false,
+            error: "Incorrect pairing code. Maximum attempts exceeded, request denied.",
+          };
+        }
+        return {
+          success: false,
+          error: `Incorrect pairing code. ${3 - req.pairingAttempts} attempt(s) remaining.`,
+        };
+      }
     }
 
     req.resolvedBy = resolvedBy;

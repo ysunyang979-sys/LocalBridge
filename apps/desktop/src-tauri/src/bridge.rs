@@ -198,6 +198,13 @@ impl BridgeSupervisor {
         let bridge_entry = self.bridge_entry.as_ref().ok_or("Bridge entry not configured")?;
         let data_dir = self.data_dir.as_ref().ok_or("Data dir not configured")?;
         let management_token = self.management_token.as_deref().unwrap_or("");
+        if management_token.is_empty() {
+            let err = "Cannot start Bridge without a valid management token".to_string();
+            self.error = Some(err.clone());
+            self.mode = "failed".to_string();
+            self.push_log(format!("[BridgeSupervisor ERROR] {}", err));
+            return Err(err);
+        }
 
         let bridge_cwd = bridge_entry.parent().unwrap_or_else(|| Path::new("."));
         let token_key_file = data_dir.join("management-token.key");
@@ -219,6 +226,7 @@ impl BridgeSupervisor {
         cmd.env("NEXUS_BRIDGE_HOST", "127.0.0.1");
         cmd.env("NEXUS_CORE_URL", &self.core_url);
         cmd.env("PUBLIC_BASE_URL", &self.public_base_url);
+        cmd.env("LOCALBRIDGE_MANAGEMENT_TOKEN", management_token);
         cmd.env("NEXUS_MANAGEMENT_TOKEN", management_token);
         cmd.env("NEXUS_MANAGEMENT_TOKEN_PATH", token_key_file.to_string_lossy().to_string());
 

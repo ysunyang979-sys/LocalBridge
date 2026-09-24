@@ -149,7 +149,10 @@ describe("P0 OAuth Bridge Security Regressions", () => {
         "Content-Type": "application/json",
         Authorization: "Bearer lm_test_management_secret_1234567890",
       },
-      body: JSON.stringify({ action: "approve" }),
+      body: JSON.stringify({
+        action: "approve",
+        pairing_code: pendingData.pairing_code || pendingData.pairingCode,
+      }),
     });
 
     expect(resolveRes.status).toBe(200);

@@ -4,6 +4,7 @@ import type {
   McpStatus,
   Project,
   Approval,
+  OAuthPendingRequest,
   Job,
   JobLogsResult,
   Token,
@@ -432,6 +433,42 @@ class ApiBridge {
       method: "POST",
       body: JSON.stringify({ approvalIds, action, resolvedBy }),
     });
+  }
+
+  // Approvals
+  async listOAuthRequests(): Promise<{ requests: OAuthPendingRequest[] }> {
+    if (isTauri()) {
+      return invoke<{ requests: OAuthPendingRequest[] }>("desktop_list_oauth_requests");
+    }
+    const res = await fetch("http://127.0.0.1:8787/oauth/requests");
+    if (!res.ok) {
+      throw new Error(`Failed to list oauth requests: ${res.statusText}`);
+    }
+    return (await res.json()) as { requests: OAuthPendingRequest[] };
+  }
+
+  async resolveOAuthRequest(
+    requestId: string,
+    action: "approve" | "deny",
+    pairingCode?: string
+  ): Promise<any> {
+    if (isTauri()) {
+      return invoke("desktop_resolve_oauth_request", {
+        requestId,
+        action,
+        pairingCode: pairingCode ?? null,
+      });
+    }
+    const res = await fetch(`http://127.0.0.1:8787/oauth/requests/${requestId}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, pairing_code: pairingCode }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(err.message || err.error || `HTTP ${res.status}`);
+    }
+    return await res.json();
   }
 
   // Trust & Approval Policy
