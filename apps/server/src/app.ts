@@ -78,6 +78,46 @@ export async function buildApp(
     origin: config.server.corsOrigin,
   });
 
+  // Strict Anti-Proxy Defense for Management and Control Plane Routes
+  app.addHook("onRequest", async (request, reply) => {
+    const rawUrl = request.raw.url || "";
+    const pathname = rawUrl.split("?")[0] || "";
+    const isProtectedManagementRoute =
+      pathname.startsWith("/api/management") ||
+      pathname.startsWith("/api/tokens") ||
+      pathname.startsWith("/api/approvals") ||
+      pathname === "/api/emergency-stop" ||
+      pathname === "/api/pause" ||
+      pathname.startsWith("/api/projects") ||
+      pathname.startsWith("/api/runners") ||
+      pathname.startsWith("/api/skills") ||
+      pathname.startsWith("/api/status");
+
+    if (isProtectedManagementRoute) {
+      const proxyHeaders = [
+        "cf-connecting-ip",
+        "x-forwarded-for",
+        "x-real-ip",
+        "forwarded",
+        "x-forwarded-host",
+        "x-forwarded-proto",
+        "x-original-host",
+        "true-client-ip",
+        "fastly-client-ip",
+        "cf-ray",
+      ];
+      for (const h of proxyHeaders) {
+        if (request.headers[h]) {
+          reply.status(403).send({
+            error: "Forbidden: 管理接口禁止通过代理访问",
+            code: "PROXY_ACCESS_FORBIDDEN",
+          });
+          return reply;
+        }
+      }
+    }
+  });
+
   // WebSocket support with transport-level maxPayload = 1 MiB (1048576 bytes)
   await app.register(websocket, {
     options: {

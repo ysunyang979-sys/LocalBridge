@@ -85,7 +85,7 @@ export function resolvePublicOrigin(
 /**
  * Reads active tunnel host from tunnel configuration if available.
  */
-function readActiveTunnelHostFromDisk(): string | null {
+export function readActiveTunnelHostFromDisk(): string | null {
   try {
     const dataDir =
       process.platform === "win32" && process.env.LOCALAPPDATA

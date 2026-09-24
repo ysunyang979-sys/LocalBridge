@@ -11,12 +11,14 @@ import {
 } from "./types.js";
 import { hasToolScope, requiredScopeForTool } from "./scope-policy.js";
 import { checkLoopbackAndSecurity } from "../routes/management.js";
+import { readActiveTunnelHostFromDisk } from "../auth/origin-resolver.js";
 
 export interface McpRoutesOptions {
   tokenService: TokenService;
   mcpContext: McpContext;
   rateLimiter?: McpRateLimiter;
   allowedHosts?: string[];
+  activeTunnelHost?: string;
   managementSecret?: string;
   requireManagementAuth?: boolean;
 }
@@ -34,6 +36,42 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
     "::1",
   ];
 
+  function getActiveTunnelHost(): string | null {
+    if (options.activeTunnelHost) {
+      const clean = options.activeTunnelHost
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "")
+        .replace(/:\d+$/, "")
+        .toLowerCase();
+      if (clean && !clean.includes("127.0.0.1") && !clean.includes("localhost")) {
+        return clean;
+      }
+    }
+    const envHost = process.env.NEXUS_PUBLIC_HOST || process.env.LOCALBRIDGE_TUNNEL_HOST;
+    if (envHost) {
+      const clean = envHost
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "")
+        .replace(/:\d+$/, "")
+        .toLowerCase();
+      if (clean && !clean.includes("127.0.0.1") && !clean.includes("localhost")) {
+        return clean;
+      }
+    }
+    const diskHost = readActiveTunnelHostFromDisk();
+    if (diskHost) {
+      const clean = diskHost
+        .replace(/^https?:\/\//, "")
+        .replace(/\/+$/, "")
+        .replace(/:\d+$/, "")
+        .toLowerCase();
+      if (clean && !clean.includes("127.0.0.1") && !clean.includes("localhost")) {
+        return clean;
+      }
+    }
+    return null;
+  }
+
   // Helper to validate Host header for DNS rebinding protection
   function isHostAllowed(hostHeader: string | undefined): boolean {
     if (!hostHeader) return false;
@@ -46,13 +84,17 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
     ) {
       return true;
     }
-    // Allow legitimate Nexus tunnel subdomains and public hosts
+    // Allow legitimate Nexus static domains
     if (
       hostname === "localbridge.dev" ||
-      hostname.endsWith(".localbridge.dev") ||
-      hostname === "trycloudflare.com" ||
-      hostname.endsWith(".trycloudflare.com")
+      hostname.endsWith(".localbridge.dev")
     ) {
+      return true;
+    }
+    // Strict Tunnel Host Check: Only allow the specific active tunnel host.
+    // Wildcard *.trycloudflare.com is strictly disallowed.
+    const activeHost = getActiveTunnelHost();
+    if (activeHost && hostname === activeHost) {
       return true;
     }
     return false;

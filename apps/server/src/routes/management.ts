@@ -48,6 +48,32 @@ export function checkLoopbackAndSecurity(
   reply: FastifyReply,
   opts: ManagementSecurityOptions
 ): boolean {
+  // 0. Anti-Proxy / Gateway Boundary Check
+  // Management interfaces and sensitive control plane MUST ONLY be accessed from pure local callers without any proxying.
+  // Any proxy forwarding headers (CF-Connecting-IP, X-Forwarded-For, X-Real-IP, Forwarded, etc.) indicate external or proxied traffic
+  // and must be strictly rejected even if source IP is 127.0.0.1.
+  const proxyHeaderNames = [
+    "cf-connecting-ip",
+    "x-forwarded-for",
+    "x-real-ip",
+    "forwarded",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-original-host",
+    "true-client-ip",
+    "fastly-client-ip",
+    "cf-ray",
+  ];
+  for (const h of proxyHeaderNames) {
+    if (request.headers[h]) {
+      reply.status(403).send({
+        error: "Forbidden: 管理接口禁止通过代理访问",
+        code: "PROXY_ACCESS_FORBIDDEN",
+      });
+      return false;
+    }
+  }
+
   // 1. Loopback IP Check
   const clientIp = request.ip;
   const isLoopback =
