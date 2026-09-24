@@ -33,6 +33,24 @@ export interface OAuthAccessTokenRecord {
   refresh_token?: string;
 }
 
+export interface PendingAuthRequest {
+  id: string;
+  clientId: string;
+  clientName: string;
+  redirectUri: string;
+  scope: string;
+  state?: string;
+  codeChallenge?: string;
+  codeChallengeMethod?: "S256" | "plain";
+  codeChallengeHash: string;
+  createdAt: number;
+  expiresAt: number;
+  status: "pending" | "approved" | "denied" | "expired";
+  code?: string;
+  redirectUrl?: string;
+  resolvedBy?: string;
+}
+
 export const SUPPORTED_SCOPES = [
   "nexus:read",
   "nexus:write",
@@ -90,12 +108,7 @@ export function isRedirectUriAllowed(uri: string, customBaseUrl?: string): boole
       return true;
     }
 
-    // 4. Cloudflare quick tunnels
-    if (host.endsWith(".trycloudflare.com")) {
-      return true;
-    }
-
-    // 5. Configured custom domain / base URL
+    // 4. Configured custom domain / base URL
     const envBase = customBaseUrl || process.env.PUBLIC_BASE_URL;
     if (envBase) {
       try {
@@ -118,8 +131,19 @@ export class OAuthStore {
   private authCodes = new Map<string, AuthorizationCodeRecord>();
   private accessTokens = new Map<string, OAuthAccessTokenRecord>();
   private refreshTokens = new Map<string, string>(); // refresh_token -> access_token
+  private pendingRequests = new Map<string, PendingAuthRequest>();
 
   constructor() {
+    this.clearDynamicClientsAndTokens();
+  }
+
+  public clearDynamicClientsAndTokens(): void {
+    this.authCodes.clear();
+    this.accessTokens.clear();
+    this.refreshTokens.clear();
+    this.pendingRequests.clear();
+    this.clients.clear();
+
     const defaultUris = [
       "https://spark.gemini.google.com/oauth/callback",
       "https://aistudio.google.com/oauth/callback",
@@ -171,9 +195,32 @@ export class OAuthStore {
     return full;
   }
 
+  public cleanupExpiredClients(): void {
+    const now = Date.now();
+    const defaultIds = new Set(["gemini-spark", "google-gemini", "mcp-default-client"]);
+    for (const [clientId, client] of this.clients.entries()) {
+      if (defaultIds.has(clientId)) continue;
+      if (now - client.createdAt > 24 * 60 * 60 * 1000) {
+        this.clients.delete(clientId);
+      }
+    }
+
+    for (const [code, record] of this.authCodes.entries()) {
+      if (now > record.expiresAt || record.used) {
+        this.authCodes.delete(code);
+      }
+    }
+
+    for (const [id, req] of this.pendingRequests.entries()) {
+      if (now > req.expiresAt + 60 * 1000) {
+        this.pendingRequests.delete(id);
+      }
+    }
+  }
+
   /**
    * Registers a new OAuth client dynamically (RFC 7591 Dynamic Client Registration).
-   * Enforces strict redirect_uri validation against allowed domains.
+   * Enforces strict redirect_uri validation against allowed domains and limits total clients.
    */
   public registerClient(params: {
     client_name?: string;
@@ -182,6 +229,12 @@ export class OAuthStore {
     response_types?: string[];
     token_endpoint_auth_method?: string;
   }): OAuthClient {
+    this.cleanupExpiredClients();
+
+    if (this.clients.size >= 100) {
+      throw new Error("Maximum registered OAuth clients limit reached (100). Please retry later.");
+    }
+
     const clientName = params.client_name || "Gemini Spark / MCP Client";
     const redirectUris: string[] = [];
 
@@ -195,7 +248,6 @@ export class OAuthStore {
         redirectUris.push(uri);
       }
     } else {
-      // Default to safe approved list
       redirectUris.push(
         "https://spark.gemini.google.com/oauth/callback",
         "https://aistudio.google.com/oauth/callback",
@@ -225,8 +277,123 @@ export class OAuthStore {
   }
 
   /**
+   * Creates a pending authorization request requiring local desktop approval.
+   */
+  public createPendingAuthRequest(params: {
+    client_id: string;
+    redirect_uri: string;
+    scope?: string;
+    state?: string;
+    code_challenge?: string;
+    code_challenge_method?: "S256" | "plain";
+  }): PendingAuthRequest {
+    const client = this.clients.get(params.client_id);
+    if (!client) {
+      throw new Error(`Unknown client_id: '${params.client_id}'`);
+    }
+
+    if (!isRedirectUriAllowed(params.redirect_uri)) {
+      throw new Error(`Unauthorized redirect_uri: '${params.redirect_uri}'`);
+    }
+
+    if (!client.redirect_uris.includes(params.redirect_uri)) {
+      throw new Error(
+        `redirect_uri '${params.redirect_uri}' is not registered for client '${params.client_id}'`
+      );
+    }
+
+    const id = `oauth_req_${crypto.randomBytes(16).toString("hex")}`;
+    const codeChallenge = params.code_challenge;
+    const codeChallengeHash = codeChallenge
+      ? crypto.createHash("sha256").update(codeChallenge).digest("hex")
+      : "";
+
+    const req: PendingAuthRequest = {
+      id,
+      clientId: params.client_id,
+      clientName: client.client_name,
+      redirectUri: params.redirect_uri,
+      scope: params.scope || DEFAULT_SCOPES,
+      state: params.state,
+      codeChallenge,
+      codeChallengeMethod: params.code_challenge_method || "S256",
+      codeChallengeHash,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
+      status: "pending",
+    };
+
+    this.pendingRequests.set(id, req);
+    return req;
+  }
+
+  public getPendingAuthRequest(id: string): PendingAuthRequest | undefined {
+    const req = this.pendingRequests.get(id);
+    if (!req) return undefined;
+    if (req.status === "pending" && Date.now() > req.expiresAt) {
+      req.status = "expired";
+    }
+    return req;
+  }
+
+  public resolvePendingAuthRequest(
+    id: string,
+    action: "approve" | "deny",
+    resolvedBy = "local-desktop"
+  ): { success: boolean; error?: string; code?: string; redirectUrl?: string } {
+    const req = this.getPendingAuthRequest(id);
+    if (!req) {
+      return { success: false, error: "Pending authorization request not found" };
+    }
+
+    if (req.status !== "pending") {
+      return { success: false, error: `Request is already ${req.status}` };
+    }
+
+    if (Date.now() > req.expiresAt) {
+      req.status = "expired";
+      return { success: false, error: "Authorization request has expired" };
+    }
+
+    req.resolvedBy = resolvedBy;
+
+    if (action === "deny") {
+      req.status = "denied";
+      const targetUrl = new URL(req.redirectUri);
+      targetUrl.searchParams.set("error", "access_denied");
+      targetUrl.searchParams.set("error_description", "User denied authorization request");
+      if (req.state) targetUrl.searchParams.set("state", req.state);
+      req.redirectUrl = targetUrl.toString();
+      return { success: true, redirectUrl: req.redirectUrl };
+    }
+
+    try {
+      const code = this.createAuthorizationCode({
+        client_id: req.clientId,
+        redirect_uri: req.redirectUri,
+        scope: req.scope,
+        state: req.state,
+        code_challenge: req.codeChallenge,
+        code_challenge_method: req.codeChallengeMethod,
+      });
+
+      req.status = "approved";
+      req.code = code;
+
+      const targetUrl = new URL(req.redirectUri);
+      targetUrl.searchParams.set("code", code);
+      if (req.state) targetUrl.searchParams.set("state", req.state);
+      req.redirectUrl = targetUrl.toString();
+
+      return { success: true, code, redirectUrl: req.redirectUrl };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
    * Generates and stores a short-lived authorization code (valid for 5 minutes).
-   * Validates client and redirect_uri strictly.
+   * Validates client and registered redirect_uri strictly.
    */
   public createAuthorizationCode(params: {
     client_id: string;
@@ -243,6 +410,12 @@ export class OAuthStore {
     const client = this.clients.get(params.client_id);
     if (!client) {
       throw new Error(`Unknown client_id: '${params.client_id}'`);
+    }
+
+    if (!client.redirect_uris.includes(params.redirect_uri)) {
+      throw new Error(
+        `redirect_uri '${params.redirect_uri}' is not registered for client '${params.client_id}'`
+      );
     }
 
     const code = `oa_code_${crypto.randomBytes(24).toString("hex")}`;
@@ -294,8 +467,11 @@ export class OAuthStore {
       return { success: false, error: "Authorization code has expired" };
     }
 
-    // Strict redirect_uri verification
-    if (params.redirect_uri && record.redirect_uri) {
+    // Strict redirect_uri verification: if record had redirect_uri, token exchange MUST provide it
+    if (record.redirect_uri) {
+      if (!params.redirect_uri) {
+        return { success: false, error: "Missing required 'redirect_uri' parameter in token exchange" };
+      }
       try {
         const recUrl = new URL(record.redirect_uri);
         const reqUrl = new URL(params.redirect_uri);

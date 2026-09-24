@@ -25,6 +25,17 @@ const nexusClient = new NexusClient({
 });
 
 const oauthStore = new OAuthStore();
+const registrationRateLimits = new Map<string, number[]>();
+
+function sendHtml(res: http.ServerResponse, statusCode: number, html: string) {
+  res.writeHead(statusCode, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.end(html);
+}
 
 /**
  * Helper to read request body as string.
@@ -228,7 +239,27 @@ const server = http.createServer(async (req, res) => {
   // 6. Dynamic Client Registration (RFC 7591)
   if (req.method === "POST" && pathname === "/oauth/register") {
     try {
-      const rawBody = await readRequestBody(req);
+      const regIp =
+        (req.headers["cf-connecting-ip"] as string)?.split(",")[0]?.trim() ||
+        (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+        req.socket.remoteAddress ||
+        "unknown";
+      const now = Date.now();
+      const timestamps = (registrationRateLimits.get(regIp) || []).filter((t) => now - t < 60000);
+      if (timestamps.length >= 10) {
+        res.writeHead(429, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "slow_down",
+            error_description: "Too many registration requests. Please wait.",
+          })
+        );
+        return;
+      }
+      timestamps.push(now);
+      registrationRateLimits.set(regIp, timestamps);
+
+      const rawBody = await readRequestBody(req, 16 * 1024);
       const data = parseFormOrJsonBody(rawBody, req.headers["content-type"]);
 
       const authMethod =
@@ -269,6 +300,77 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // 6.1 Check Status of Pending OAuth Request
+  if (req.method === "GET" && pathname.startsWith("/oauth/requests/") && pathname.endsWith("/status")) {
+    const parts = pathname.split("/");
+    const reqId = parts[3];
+    const pending = oauthStore.getPendingAuthRequest(reqId);
+    if (!pending) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "not_found", message: "Request not found or expired" }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        status: pending.status,
+        code: pending.code,
+        redirectUrl: pending.redirectUrl,
+      })
+    );
+    return;
+  }
+
+  // 6.2 Local Desktop Resolve Pending OAuth Request (requires loopback + lm_ token)
+  if (req.method === "POST" && pathname.startsWith("/oauth/requests/") && pathname.endsWith("/resolve")) {
+    const remoteAddr = req.socket.remoteAddress || "";
+    const isLoopback =
+      remoteAddr === "127.0.0.1" ||
+      remoteAddr === "::1" ||
+      remoteAddr === "::ffff:127.0.0.1";
+    const authHeader = req.headers.authorization || "";
+    const mgmtToken = process.env.LOCALBRIDGE_MANAGEMENT_TOKEN || process.env.NEXUS_MANAGEMENT_TOKEN;
+    const hasForwardingHeader = Boolean(
+      req.headers["x-forwarded-for"] ||
+      req.headers["cf-connecting-ip"] ||
+      req.headers["forwarded"]
+    );
+
+    if (!isLoopback || hasForwardingHeader || !mgmtToken || authHeader !== `Bearer ${mgmtToken}`) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: "FORBIDDEN",
+          message: "Approval resolution requires local management authorization",
+        })
+      );
+      return;
+    }
+
+    const parts = pathname.split("/");
+    const reqId = parts[3];
+    const rawBody = await readRequestBody(req, 4096);
+    const body = parseFormOrJsonBody(rawBody, req.headers["content-type"]);
+    const action = body.action === "approve" ? "approve" : "deny";
+
+    const result = oauthStore.resolvePendingAuthRequest(reqId, action, "desktop-admin");
+    if (!result.success) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: result.error }));
+      return;
+    }
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        approved: action === "approve",
+        code: result.code,
+        redirectUrl: result.redirectUrl,
+      })
+    );
+    return;
+  }
+
   // 7. OAuth 2.0 Authorization Endpoint (RFC 6749)
   if (pathname === "/oauth/authorize") {
     if (req.method === "GET") {
@@ -281,24 +383,21 @@ const server = http.createServer(async (req, res) => {
       const codeChallengeMethod =
         (url.searchParams.get("code_challenge_method")?.trim() as "S256" | "plain") ||
         (codeChallenge ? "S256" : undefined);
-      const prompt = url.searchParams.get("prompt")?.trim();
-      const autoApproveParam = url.searchParams.get("auto_approve") === "true";
 
       if (!clientId) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end("<h3>OAuth Error: Missing required 'client_id' parameter</h3>");
+        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'client_id' parameter</h3>");
         return;
       }
 
       if (!redirectUri) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end("<h3>OAuth Error: Missing required 'redirect_uri' parameter</h3>");
+        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'redirect_uri' parameter</h3>");
         return;
       }
 
       if (!isRedirectUriAllowed(redirectUri)) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(
+        sendHtml(
+          res,
+          400,
           `<h3>OAuth Error: Unauthorized redirect_uri '${redirectUri}'. Only Google/Gemini official callbacks, configured production domain, or localhost are permitted.</h3>`
         );
         return;
@@ -306,8 +405,20 @@ const server = http.createServer(async (req, res) => {
 
       const client = oauthStore.getClient(clientId);
       if (!client) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(`<h3>OAuth Error: Unknown client_id '${clientId}'. Please register via /oauth/register.</h3>`);
+        sendHtml(
+          res,
+          400,
+          `<h3>OAuth Error: Unknown client_id '${clientId}'. Please register via /oauth/register.</h3>`
+        );
+        return;
+      }
+
+      if (!client.redirect_uris.includes(redirectUri)) {
+        sendHtml(
+          res,
+          400,
+          `<h3>OAuth Error: redirect_uri '${redirectUri}' is not registered for client '${clientId}'.</h3>`
+        );
         return;
       }
 
@@ -324,71 +435,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Check whether to auto-approve:
-      // 1. Explicit auto_approve=true parameter (for tests/internal API)
-      // 2. prompt=none (RFC 6749 / OIDC standard silent flow)
-      // 3. Trusted Gemini/Google client with an official Google/Gemini redirect URI
-      let shouldAutoApprove = autoApproveParam;
-
-      if (prompt === "none") {
-        shouldAutoApprove = true;
-      }
-
-      const isGoogleHost = (() => {
-        try {
-          const h = new URL(redirectUri).hostname.toLowerCase();
-          return (
-            h === "spark.gemini.google.com" ||
-            h === "aistudio.google.com" ||
-            h === "accounts.google.com" ||
-            h === "oauth-redirect.googleusercontent.com" ||
-            h.endsWith(".google.com") ||
-            h.endsWith(".googleusercontent.com")
-          );
-        } catch {
-          return false;
-        }
-      })();
-
-      const isTrustedGemini =
-        (clientId === "gemini-spark" ||
-          clientId === "google-gemini" ||
-          (client.client_name && client.client_name.toLowerCase().includes("gemini")) ||
-          (client.client_name && client.client_name.toLowerCase().includes("google"))) &&
-        isRedirectUriAllowed(redirectUri) &&
-        isGoogleHost;
-
-      if (isTrustedGemini) {
-        shouldAutoApprove = true;
-      }
-
-      if (shouldAutoApprove) {
-        try {
-          const code = oauthStore.createAuthorizationCode({
-            client_id: clientId,
-            redirect_uri: redirectUri,
-            scope: scope || DEFAULT_SCOPES,
-            state,
-            code_challenge: codeChallenge,
-            code_challenge_method: codeChallengeMethod,
-          });
-
-          const targetUrl = new URL(redirectUri);
-          targetUrl.searchParams.set("code", code);
-          if (typeof state === "string" && state.length > 0) {
-            targetUrl.searchParams.set("state", state);
-          }
-
-          res.writeHead(302, { Location: targetUrl.toString() });
-          res.end();
-          return;
-        } catch (err: any) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`<h3>OAuth Error: ${err.message}</h3>`);
-          return;
-        }
-      }
-
       // Render Authorization Consent Screen
       const clientName = client.client_name || "Gemini Spark";
       const html = renderOAuthConsentHtml({
@@ -402,54 +448,112 @@ const server = http.createServer(async (req, res) => {
         codeChallengeMethod,
       });
 
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html);
+      sendHtml(res, 200, html);
       return;
     }
 
     if (req.method === "POST") {
-      const rawBody = await readRequestBody(req);
+      const rawBody = await readRequestBody(req, 16 * 1024);
       const body = parseFormOrJsonBody(rawBody, req.headers["content-type"]);
 
-      const clientId = body.client_id || "gemini-spark";
+      const clientId = body.client_id;
       const redirectUri = body.redirect_uri;
       const scope = body.scope || DEFAULT_SCOPES;
       const state = body.state;
       const codeChallenge = body.code_challenge;
       const codeChallengeMethod = body.code_challenge_method as "S256" | "plain";
-      const action = body.action || "approve";
+      const action = body.action;
 
-      if (!redirectUri) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end("<h3>OAuth Error: Missing required 'redirect_uri'</h3>");
+      // 1. action missing or not "approve" is strictly treated as DENIED
+      if (!action || action !== "approve") {
+        if (redirectUri && isRedirectUriAllowed(redirectUri)) {
+          const targetUrl = new URL(redirectUri);
+          targetUrl.searchParams.set("error", "access_denied");
+          targetUrl.searchParams.set("error_description", "User denied authorization request");
+          if (typeof state === "string" && state.length > 0) targetUrl.searchParams.set("state", state);
+          res.writeHead(302, { Location: targetUrl.toString() });
+          res.end();
+          return;
+        }
+        sendHtml(res, 400, "<h3>OAuth Error: Authorization denied</h3>");
         return;
       }
 
-      if (!isRedirectUriAllowed(redirectUri)) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(`<h3>OAuth Error: Unauthorized redirect_uri '${redirectUri}'</h3>`);
+      // 2. client_id must be provided and registered
+      if (!clientId) {
+        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'client_id'</h3>");
         return;
       }
 
       const client = oauthStore.getClient(clientId);
       if (!client) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(`<h3>OAuth Error: Unknown client_id '${clientId}'</h3>`);
+        sendHtml(res, 400, `<h3>OAuth Error: Unknown client_id '${clientId}'</h3>`);
         return;
       }
 
-      const targetUrl = new URL(redirectUri);
-      if (action !== "approve") {
-        targetUrl.searchParams.set("error", "access_denied");
-        targetUrl.searchParams.set("error_description", "User denied authorization request");
-        if (typeof state === "string" && state.length > 0) targetUrl.searchParams.set("state", state);
-        res.writeHead(302, { Location: targetUrl.toString() });
-        res.end();
+      // 3. redirect_uri must be provided and registered for this client
+      if (!redirectUri) {
+        sendHtml(res, 400, "<h3>OAuth Error: Missing required 'redirect_uri'</h3>");
         return;
       }
 
+      if (!isRedirectUriAllowed(redirectUri)) {
+        sendHtml(res, 400, `<h3>OAuth Error: Unauthorized redirect_uri '${redirectUri}'</h3>`);
+        return;
+      }
+
+      if (!client.redirect_uris.includes(redirectUri)) {
+        sendHtml(
+          res,
+          400,
+          `<h3>OAuth Error: redirect_uri '${redirectUri}' is not registered for client '${clientId}'</h3>`
+        );
+        return;
+      }
+
+      // 4. Authorization must bind to local user: check if local desktop admin
+      const remoteAddr = req.socket.remoteAddress || "";
+      const isLoopback =
+        remoteAddr === "127.0.0.1" ||
+        remoteAddr === "::1" ||
+        remoteAddr === "::ffff:127.0.0.1";
+      const authHeader = req.headers.authorization || "";
+      const mgmtToken = process.env.LOCALBRIDGE_MANAGEMENT_TOKEN || process.env.NEXUS_MANAGEMENT_TOKEN;
+      const hasForwardingHeader = Boolean(
+        req.headers["x-forwarded-for"] ||
+        req.headers["cf-connecting-ip"] ||
+        req.headers["forwarded"]
+      );
+      const isLocalAdmin = isLoopback && !hasForwardingHeader && Boolean(mgmtToken) && authHeader === `Bearer ${mgmtToken}`;
+
+      if (isLocalAdmin) {
+        // Direct issuance allowed only for authenticated local desktop administrator
+        try {
+          const code = oauthStore.createAuthorizationCode({
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            scope,
+            state,
+            code_challenge: codeChallenge,
+            code_challenge_method: codeChallengeMethod,
+          });
+
+          const targetUrl = new URL(redirectUri);
+          targetUrl.searchParams.set("code", code);
+          if (typeof state === "string" && state.length > 0) targetUrl.searchParams.set("state", state);
+
+          res.writeHead(302, { Location: targetUrl.toString() });
+          res.end();
+          return;
+        } catch (err: any) {
+          sendHtml(res, 400, `<h3>OAuth Error: ${err.message}</h3>`);
+          return;
+        }
+      }
+
+      // Public request: MUST NOT directly issue code! Create pending authorization request
       try {
-        const code = oauthStore.createAuthorizationCode({
+        const pending = oauthStore.createPendingAuthRequest({
           client_id: clientId,
           redirect_uri: redirectUri,
           scope,
@@ -458,15 +562,63 @@ const server = http.createServer(async (req, res) => {
           code_challenge_method: codeChallengeMethod,
         });
 
-        targetUrl.searchParams.set("code", code);
-        if (typeof state === "string" && state.length > 0) targetUrl.searchParams.set("state", state);
+        const acceptsJson = (req.headers.accept || "").includes("application/json");
+        if (acceptsJson) {
+          res.writeHead(202, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              status: "pending",
+              requestId: pending.id,
+              clientName: client.client_name,
+              message: "Authorization request pending. Requires local approval in Nexus Desktop.",
+              checkUrl: `${baseUrl}/oauth/requests/${pending.id}/status`,
+            })
+          );
+          return;
+        }
 
-        res.writeHead(302, { Location: targetUrl.toString() });
-        res.end();
+        // HTML response for browser form submission
+        const waitHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Approval Required - Nexus Desktop</title>
+  <meta http-equiv="refresh" content="3">
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 32px; max-width: 480px; text-align: center; }
+    h2 { margin-top: 0; color: #a5b4fc; }
+    p { color: #94a3b8; line-height: 1.5; }
+    .spinner { display: inline-block; width: 36px; height: 36px; border: 4px solid #334155; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h2>Awaiting Local Approval</h2>
+    <p>Client <strong>${escapeHtml(client.client_name)}</strong> has requested access to Nexus.</p>
+    <p>Please open <strong>Nexus Desktop</strong> to approve this connection.</p>
+  </div>
+  <script>
+    setInterval(async () => {
+      try {
+        const res = await fetch('/oauth/requests/${pending.id}/status');
+        const data = await res.json();
+        if (data.status === 'approved' && data.redirectUrl) {
+          window.location.href = data.redirectUrl;
+        } else if (data.status === 'denied' || data.status === 'expired') {
+          window.location.reload();
+        }
+      } catch {}
+    }, 2000);
+  </script>
+</body>
+</html>`;
+        sendHtml(res, 202, waitHtml);
         return;
       } catch (err: any) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(`<h3>OAuth Error: ${err.message}</h3>`);
+        sendHtml(res, 400, `<h3>OAuth Error: ${err.message}</h3>`);
         return;
       }
     }
