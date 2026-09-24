@@ -139,9 +139,17 @@ describe("Commit 3: Desktop Management Wiring & 6-Digit Pairing Code", () => {
       const host = item.redirect_host || item.redirect_uri_host;
       expect(host).toBe("spark.gemini.google.com");
       expect(host).not.toContain("/oauth/callback");
-      // 6-digit pairing code
-      const code = item.pairing_code || item.pairingCode;
-      expect(code).toMatch(/^\d{6}$/);
+      // pairing_code MUST NOT be exposed in GET /oauth/requests list
+      expect(item.pairing_code).toBeUndefined();
+      expect(item.pairingCode).toBeUndefined();
+      const serialized = JSON.stringify(data);
+      const secretPairingCode = created.pairing_code || created.pairingCode;
+      expect(secretPairingCode).toMatch(/^\d{6}$/);
+      expect(serialized).not.toContain(secretPairingCode);
+
+      // remaining attempts
+      const remaining = item.remaining_attempts ?? item.remainingAttempts;
+      expect(remaining).toBe(3);
     });
   });
 
@@ -261,13 +269,8 @@ describe("Commit 3: Desktop Management Wiring & 6-Digit Pairing Code", () => {
       const statusData = (await statusRes.json()) as any;
       expect(statusData.status).toBe("denied");
 
-      // Even with correct code, now denied
-      const listRes = await fetch(`${BRIDGE_URL}/oauth/requests`, {
-        headers: { Authorization: `Bearer ${MGMT_TOKEN}`, Host: `127.0.0.1:${TEST_PORT}` },
-      });
-      const list = (await listRes.json()) as any;
-      const item = (Array.isArray(list) ? list : list.requests).find((r: any) => r.id === created.requestId);
-      const actualCode = item?.pairing_code || item?.pairingCode || "999999";
+      // Even with correct code from waiting page, now denied
+      const actualCode = created.pairing_code || created.pairingCode || "999999";
 
       const res4 = await fetch(`${BRIDGE_URL}/oauth/requests/${created.requestId}/resolve`, {
         method: "POST",
@@ -285,14 +288,7 @@ describe("Commit 3: Desktop Management Wiring & 6-Digit Pairing Code", () => {
 
     it("approves with correct pairing code and issues code that can only be exchanged once", async () => {
       const created = await createPublicPendingRequest();
-
-      // Find actual pairing code
-      const listRes = await fetch(`${BRIDGE_URL}/oauth/requests`, {
-        headers: { Authorization: `Bearer ${MGMT_TOKEN}`, Host: `127.0.0.1:${TEST_PORT}` },
-      });
-      const list = (await listRes.json()) as any;
-      const item = (Array.isArray(list) ? list : list.requests).find((r: any) => r.id === created.requestId);
-      const actualCode = item.pairing_code || item.pairingCode;
+      const actualCode = created.pairing_code || created.pairingCode;
 
       const resolveRes = await fetch(`${BRIDGE_URL}/oauth/requests/${created.requestId}/resolve`, {
         method: "POST",

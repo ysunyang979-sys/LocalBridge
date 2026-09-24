@@ -43,31 +43,114 @@ const nexusClient = new NexusClient({
 });
 
 const oauthStore = new OAuthStore();
-const registrationRateLimits = new Map<string, number[]>();
-const authRateLimiter = new Map<string, number[]>();
 
-function checkAuthRateLimit(req: http.IncomingMessage): boolean {
+export class RateLimiter {
+  private limits = new Map<string, number[]>();
+  private readonly maxRequests: number;
+  private readonly windowMs: number;
+  private readonly maxCapacity: number;
+  private cleanupTimer: NodeJS.Timeout | null = null;
+
+  constructor(maxRequests: number, windowMs: number, maxCapacity = 10000) {
+    this.maxRequests = maxRequests;
+    this.windowMs = windowMs;
+    this.maxCapacity = maxCapacity;
+
+    this.cleanupTimer = setInterval(() => {
+      this.cleanup();
+    }, this.windowMs);
+    if (this.cleanupTimer.unref) {
+      this.cleanupTimer.unref();
+    }
+  }
+
+  public check(ip: string): boolean {
+    const now = Date.now();
+    let timestamps = this.limits.get(ip);
+    if (timestamps) {
+      timestamps = timestamps.filter((t) => now - t < this.windowMs);
+    } else {
+      timestamps = [];
+    }
+
+    if (timestamps.length >= this.maxRequests) {
+      this.limits.set(ip, timestamps);
+      return false;
+    }
+
+    // Capacity management: if map reaches maxCapacity, clean up expired entries
+    if (!this.limits.has(ip) && this.limits.size >= this.maxCapacity) {
+      this.cleanup();
+      // If still at capacity, evict the oldest key (FIFO)
+      if (this.limits.size >= this.maxCapacity) {
+        const oldestKey = this.limits.keys().next().value;
+        if (oldestKey !== undefined) {
+          this.limits.delete(oldestKey);
+        }
+      }
+    }
+
+    timestamps.push(now);
+    this.limits.set(ip, timestamps);
+    return true;
+  }
+
+  public cleanup(): void {
+    const now = Date.now();
+    for (const [key, timestamps] of this.limits.entries()) {
+      const active = timestamps.filter((t) => now - t < this.windowMs);
+      if (active.length === 0) {
+        this.limits.delete(key);
+      } else {
+        this.limits.set(key, active);
+      }
+    }
+  }
+
+  public clear(): void {
+    this.limits.clear();
+  }
+
+  public get size(): number {
+    return this.limits.size;
+  }
+
+  public get(ip: string): number[] | undefined {
+    return this.limits.get(ip);
+  }
+
+  public set(ip: string, timestamps: number[]): void {
+    this.limits.set(ip, timestamps);
+  }
+}
+
+export function getTrustedClientIp(req: http.IncomingMessage): string {
   const remoteAddr = req.socket.remoteAddress || "";
   const isLoopback =
     remoteAddr === "127.0.0.1" ||
     remoteAddr === "::1" ||
     remoteAddr === "::ffff:127.0.0.1";
 
-  let clientIp = remoteAddr;
   if (isLoopback && req.headers["cf-connecting-ip"]) {
-    clientIp = String(req.headers["cf-connecting-ip"]).trim();
+    const raw = Array.isArray(req.headers["cf-connecting-ip"])
+      ? req.headers["cf-connecting-ip"][0]
+      : req.headers["cf-connecting-ip"];
+    return String(raw).split(",")[0].trim();
   }
+  return remoteAddr || "unknown";
+}
 
-  const now = Date.now();
-  const windowMs = 60 * 1000;
-  const maxRequests = 5;
-  const timestamps = (authRateLimiter.get(clientIp) || []).filter((t) => now - t < windowMs);
-  if (timestamps.length >= maxRequests) {
-    return false;
-  }
-  timestamps.push(now);
-  authRateLimiter.set(clientIp, timestamps);
-  return true;
+export const authRateLimiter = new RateLimiter(5, 60 * 1000, 10000);
+export const registrationRateLimits = new RateLimiter(10, 60 * 1000, 10000);
+
+export function resetRateLimits(): void {
+  authRateLimiter.clear();
+  registrationRateLimits.clear();
+}
+
+function checkAuthRateLimit(req: http.IncomingMessage): boolean {
+  const clientIp = getTrustedClientIp(req);
+  return authRateLimiter.check(clientIp);
 }
 
 function isLoopbackHost(hostHeader?: string): boolean {
@@ -356,14 +439,8 @@ const server = http.createServer(async (req, res) => {
   // 6. Dynamic Client Registration (RFC 7591)
   if (req.method === "POST" && pathname === "/oauth/register") {
     try {
-      const regIp =
-        (req.headers["cf-connecting-ip"] as string)?.split(",")[0]?.trim() ||
-        (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
-        req.socket.remoteAddress ||
-        "unknown";
-      const now = Date.now();
-      const timestamps = (registrationRateLimits.get(regIp) || []).filter((t) => now - t < 60000);
-      if (timestamps.length >= 10) {
+      const regIp = getTrustedClientIp(req);
+      if (!registrationRateLimits.check(regIp)) {
         res.writeHead(429, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -373,8 +450,6 @@ const server = http.createServer(async (req, res) => {
         );
         return;
       }
-      timestamps.push(now);
-      registrationRateLimits.set(regIp, timestamps);
 
       const rawBody = await readRequestBody(req, 16 * 1024);
       const data = parseFormOrJsonBody(rawBody, req.headers["content-type"]);
@@ -656,47 +731,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // 5. Authorization must bind to local user: check if local desktop admin
-      const remoteAddr = req.socket.remoteAddress || "";
-      const isLoopback =
-        remoteAddr === "127.0.0.1" ||
-        remoteAddr === "::1" ||
-        remoteAddr === "::ffff:127.0.0.1";
-      const authHeader = req.headers.authorization || "";
-      const mgmtToken = process.env.LOCALBRIDGE_MANAGEMENT_TOKEN || process.env.NEXUS_MANAGEMENT_TOKEN;
-      const hasForwardingHeader = Boolean(
-        req.headers["x-forwarded-for"] ||
-        req.headers["cf-connecting-ip"] ||
-        req.headers["forwarded"]
-      );
-      const isLocalAdmin = isLoopback && !hasForwardingHeader && Boolean(mgmtToken) && authHeader === `Bearer ${mgmtToken}`;
-
-      if (isLocalAdmin) {
-        // Direct issuance allowed only for authenticated local desktop administrator
-        try {
-          const code = oauthStore.createAuthorizationCode({
-            client_id: clientId,
-            redirect_uri: redirectUri,
-            scope,
-            state,
-            code_challenge: codeChallenge,
-            code_challenge_method: codeChallengeMethod,
-          });
-
-          const targetUrl = new URL(redirectUri);
-          targetUrl.searchParams.set("code", code);
-          if (typeof state === "string" && state.length > 0) targetUrl.searchParams.set("state", state);
-
-          res.writeHead(302, { Location: targetUrl.toString() });
-          res.end();
-          return;
-        } catch (err: any) {
-          sendErrorHtml(res, 400, err.message);
-          return;
-        }
-      }
-
-      // Public request: MUST NOT directly issue code! Check rate limit first
+      // 5. All authorizations require desktop approval: check rate limit first
       const acceptsJson = (req.headers.accept || "").includes("application/json");
       if (!checkAuthRateLimit(req)) {
         if (acceptsJson) {

@@ -285,10 +285,12 @@ describe("Commit 2: Mandatory PKCE & RFC 7636 Hardening", () => {
 
   describe("HTTP POST /oauth/token endpoint PKCE verification", () => {
     it("fails token exchange without code_verifier", async () => {
+      // Direct issuance is removed: even with Bearer admin token, POST /oauth/authorize must return 202 pending
       const authRes = await fetch(`${BRIDGE_URL}/oauth/authorize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
           Authorization: "Bearer lm_pkce_hardening_token_9876543210",
         },
         body: new URLSearchParams({
@@ -300,9 +302,27 @@ describe("Commit 2: Mandatory PKCE & RFC 7636 Hardening", () => {
         }),
         redirect: "manual",
       });
-      const location = authRes.headers.get("location") || "";
-      const locUrl = new URL(location);
-      const code = locUrl.searchParams.get("code") || "";
+      expect(authRes.status).toBe(202);
+      const pendingData = (await authRes.json()) as any;
+      expect(pendingData.status).toBe("pending");
+      expect(authRes.headers.get("location")).toBeNull();
+
+      // Resolve via loopback with pairing code to get authorization code
+      const resolveRes = await fetch(`${BRIDGE_URL}/oauth/requests/${pendingData.requestId}/resolve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer lm_pkce_hardening_token_9876543210",
+        },
+        body: JSON.stringify({
+          action: "approve",
+          pairing_code: pendingData.pairingCode || pendingData.pairing_code,
+        }),
+      });
+      expect(resolveRes.status).toBe(200);
+      const resolveData = (await resolveRes.json()) as any;
+      const code = resolveData.code;
+      expect(code).toBeDefined();
 
       const res = await fetch(`${BRIDGE_URL}/oauth/token`, {
         method: "POST",
@@ -316,7 +336,7 @@ describe("Commit 2: Mandatory PKCE & RFC 7636 Hardening", () => {
       });
 
       expect(res.status).toBe(400);
-      const body = await res.json() as any;
+      const body = (await res.json()) as any;
       expect(body.error).toBe("invalid_grant");
       expect(body.error_description).toMatch(/code_verifier/i);
     });

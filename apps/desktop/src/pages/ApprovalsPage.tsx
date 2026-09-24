@@ -275,6 +275,9 @@ export const ApprovalsPage: React.FC<ApprovalsPageProps> = ({
                             <span className="text-theme-muted">
                               请求时间: {createdAtStr}
                             </span>
+                            <span className="text-amber-500 font-mono">
+                              剩余尝试: {req.remaining_attempts ?? req.remainingAttempts ?? 3} 次
+                            </span>
                           </div>
 
                           <p className="text-xs text-theme-muted">

@@ -371,8 +371,8 @@ export class OAuthStore {
     redirect_uri_host: string;
     created_at: number;
     createdAt: number;
-    pairing_code: string;
-    pairingCode: string;
+    remaining_attempts: number;
+    remainingAttempts: number;
     status: string;
   }> {
     const now = Date.now();
@@ -385,6 +385,7 @@ export class OAuthStore {
         } catch {
           host = "unknown";
         }
+        const remaining = Math.max(0, 3 - (req.pairingAttempts || 0));
         result.push({
           id: req.id,
           client_name: req.clientName,
@@ -393,8 +394,8 @@ export class OAuthStore {
           redirect_uri_host: host,
           created_at: req.createdAt,
           createdAt: req.createdAt,
-          pairing_code: req.pairingCode,
-          pairingCode: req.pairingCode,
+          remaining_attempts: remaining,
+          remainingAttempts: remaining,
           status: req.status,
         });
       }
@@ -1028,4 +1029,18 @@ export function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+export function generateCodeVerifier(): string {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+export function generateCodeChallenge(verifier: string): string {
+  return crypto.createHash("sha256").update(verifier).digest("base64url");
+}
+
+export function generatePkcePair(): { verifier: string; challenge: string } {
+  const verifier = generateCodeVerifier();
+  const challenge = generateCodeChallenge(verifier);
+  return { verifier, challenge };
 }

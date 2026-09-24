@@ -67,8 +67,8 @@ export interface OAuthPendingRequest {
   redirect_uri_host?: string;
   created_at: number;
   createdAt?: number;
-  pairing_code: string;
-  pairingCode?: string;
+  remaining_attempts: number;
+  remainingAttempts?: number;
   status: "pending" | "approved" | "denied" | "expired";
 }
 

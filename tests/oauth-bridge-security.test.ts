@@ -62,60 +62,70 @@ describe("P0 OAuth Bridge Security Regressions", () => {
     expect(res.error).toMatch(/redirect_uri/i);
   });
 
-  // 3. /oauth/authorize consent screen anti-embedding headers
-  it("includes X-Frame-Options and Content-Security-Policy frame-ancestors headers on consent page", async () => {
+  // 3. /oauth/authorize consent screen anti-embedding headers on 200 page
+  it("includes X-Frame-Options and Content-Security-Policy frame-ancestors headers on consent page (200)", async () => {
     const res = await fetch(
-      `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=https://spark.gemini.google.com/oauth/callback&response_type=code`,
+      `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=https://spark.gemini.google.com/oauth/callback&response_type=code&code_challenge=${testChallenge}&code_challenge_method=S256`,
       { redirect: "manual" }
     );
+    expect(res.status).toBe(200);
     const xfo = res.headers.get("x-frame-options");
     const csp = res.headers.get("content-security-policy");
+    const nosniff = res.headers.get("x-content-type-options");
 
-    // On unpatched code, neither header is present
     expect(xfo).toBe("DENY");
     expect(csp).toContain("frame-ancestors 'none'");
+    expect(nosniff).toBe("nosniff");
   });
 
   // 4. POST /oauth/authorize default action must be DENIED, not approved
-  it("rejects authorization when action parameter is missing (default deny)", async () => {
+  it("rejects authorization when action parameter is missing (default deny, Location has error=access_denied and no code=)", async () => {
     const res = await fetch(`${BRIDGE_URL}/oauth/authorize`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Forwarded-For": "203.0.113.61",
+      },
       body: new URLSearchParams({
         client_id: "gemini-spark",
         redirect_uri: "https://spark.gemini.google.com/oauth/callback",
+        code_challenge: testChallenge,
+        code_challenge_method: "S256",
         // action omitted!
       }),
       redirect: "manual",
     });
 
+    expect(res.status).toBe(302);
     const location = res.headers.get("location") || "";
-    // On unpatched code, omitting action defaults to approve and issues ?code=...
-    // Security requirement: MUST NOT issue code, must be access_denied
-    expect(location).not.toContain("code=oa_code_");
     expect(location).toContain("error=access_denied");
+    expect(location).not.toContain("code=");
   });
 
   // 5. POST /oauth/authorize public request cannot directly obtain authorization code
-  it("does not directly issue authorization code to public POST request without local approval", async () => {
+  it("does not directly issue authorization code to public POST request without local approval (returns 202, no code= in body or Location)", async () => {
     const res = await fetch(`${BRIDGE_URL}/oauth/authorize`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "X-Forwarded-For": "203.0.113.50", // simulated public internet request
+        "X-Forwarded-For": "203.0.113.62",
       },
       body: new URLSearchParams({
         client_id: "gemini-spark",
         redirect_uri: "https://spark.gemini.google.com/oauth/callback",
         action: "approve",
+        code_challenge: testChallenge,
+        code_challenge_method: "S256",
       }),
       redirect: "manual",
     });
 
+    expect(res.status).toBe(202);
     const location = res.headers.get("location") || "";
-    // On unpatched code, public POST directly receives 302 with ?code=oa_code_...
-    // Security requirement: MUST NOT directly issue code to public request without local approval!
-    expect(location).not.toContain("code=oa_code_");
+    expect(location).not.toContain("code=");
+    const text = await res.text();
+    expect(text).not.toContain("code=oa_code_");
+    expect(text).not.toContain("code=");
   });
 
   // 6. Local loopback with lm_ token CAN approve a pending OAuth authorization request

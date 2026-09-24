@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { generatePkcePair } from "../apps/bridge/src/oauth.js";
 
 const TEST_PORT = 18788;
 const BRIDGE_URL = `http://127.0.0.1:${TEST_PORT}`;
 
 describe("Commit 1: OAuth Page XSS Defense & Security Response Headers", () => {
+  const { challenge } = generatePkcePair();
+  let ipSeq = 1;
+
   beforeAll(async () => {
     process.env.PORT = String(TEST_PORT);
     process.env.NEXUS_BRIDGE_PORT = String(TEST_PORT);
@@ -44,54 +48,103 @@ describe("Commit 1: OAuth Page XSS Defense & Security Response Headers", () => {
 
   describe("GET /oauth/authorize XSS Prevention & Headers", () => {
     for (const payload of xssPayloads) {
-      it(`escapes XSS payload in client_id: ${payload}`, async () => {
+      it(`escapes XSS payload in client_id (error page 400): ${payload}`, async () => {
+        const ip = `203.0.113.${ipSeq++}`;
         const res = await fetch(
-          `${BRIDGE_URL}/oauth/authorize?client_id=${encodeURIComponent(payload)}&redirect_uri=https://spark.gemini.google.com/oauth/callback`,
-          { redirect: "manual" }
+          `${BRIDGE_URL}/oauth/authorize?client_id=${encodeURIComponent(payload)}&redirect_uri=https://spark.gemini.google.com/oauth/callback&response_type=code&code_challenge=${challenge}&code_challenge_method=S256`,
+          {
+            headers: { "X-Forwarded-For": ip, "CF-Connecting-IP": ip },
+            redirect: "manual",
+          }
         );
+        expect(res.status).toBe(400);
         const text = await res.text();
         assertSecurityHeaders(res.headers);
         expect(text).not.toContain("<script>alert(1)</script>");
         expect(text).not.toContain("' onmouseover=");
       });
 
-      it(`escapes XSS payload in redirect_uri: ${payload}`, async () => {
+      it(`escapes XSS payload in redirect_uri (error page 400): ${payload}`, async () => {
+        const ip = `203.0.113.${ipSeq++}`;
         const res = await fetch(
-          `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=${encodeURIComponent(payload)}`,
-          { redirect: "manual" }
+          `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=${encodeURIComponent(payload)}&response_type=code&code_challenge=${challenge}&code_challenge_method=S256`,
+          {
+            headers: { "X-Forwarded-For": ip, "CF-Connecting-IP": ip },
+            redirect: "manual",
+          }
         );
+        expect(res.status).toBe(400);
         const text = await res.text();
         assertSecurityHeaders(res.headers);
         expect(text).not.toContain("<script>alert(1)</script>");
         expect(text).not.toContain("' onmouseover=");
       });
 
-      it(`escapes XSS payload in state: ${payload}`, async () => {
+      it(`escapes XSS payload in state (consent page 200): ${payload}`, async () => {
+        const ip = `203.0.113.${ipSeq++}`;
         const res = await fetch(
-          `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=https://spark.gemini.google.com/oauth/callback&state=${encodeURIComponent(
+          `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=https://spark.gemini.google.com/oauth/callback&response_type=code&code_challenge=${challenge}&code_challenge_method=S256&state=${encodeURIComponent(
             payload
           )}`,
-          { redirect: "manual" }
+          {
+            headers: { "X-Forwarded-For": ip, "CF-Connecting-IP": ip },
+            redirect: "manual",
+          }
         );
+        expect(res.status).toBe(200);
         const text = await res.text();
         assertSecurityHeaders(res.headers);
         expect(text).not.toContain("<script>alert(1)</script>");
         expect(text).not.toContain("' onmouseover=");
       });
 
-      it(`escapes XSS payload in scope: ${payload}`, async () => {
+      it(`escapes XSS payload in scope (consent page 200): ${payload}`, async () => {
+        const ip = `203.0.113.${ipSeq++}`;
         const res = await fetch(
-          `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=https://spark.gemini.google.com/oauth/callback&scope=${encodeURIComponent(
+          `${BRIDGE_URL}/oauth/authorize?client_id=gemini-spark&redirect_uri=https://spark.gemini.google.com/oauth/callback&response_type=code&code_challenge=${challenge}&code_challenge_method=S256&scope=${encodeURIComponent(
             payload
           )}`,
-          { redirect: "manual" }
+          {
+            headers: { "X-Forwarded-For": ip, "CF-Connecting-IP": ip },
+            redirect: "manual",
+          }
         );
+        expect(res.status).toBe(200);
         const text = await res.text();
         assertSecurityHeaders(res.headers);
         expect(text).not.toContain("<script>alert(1)</script>");
         expect(text).not.toContain("' onmouseover=");
       });
     }
+  });
+
+  describe("Waiting page (202) security response headers", () => {
+    it("asserts strict security headers on 202 waiting page", async () => {
+      const ip = `203.0.113.${ipSeq++}`;
+      const res = await fetch(`${BRIDGE_URL}/oauth/authorize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "text/html",
+          "X-Forwarded-For": ip,
+          "CF-Connecting-IP": ip,
+        },
+        body: new URLSearchParams({
+          client_id: "gemini-spark",
+          redirect_uri: "https://spark.gemini.google.com/oauth/callback",
+          action: "approve",
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+        }).toString(),
+        redirect: "manual",
+      });
+
+      expect(res.status).toBe(202);
+      assertSecurityHeaders(res.headers);
+      const html = await res.text();
+      expect(html).toContain("Awaiting Local Approval");
+      expect(html).toContain("配对码 / Pairing Code");
+    });
   });
 
   describe("POST /oauth/authorize XSS Prevention & Headers", () => {
@@ -114,17 +167,20 @@ describe("Commit 1: OAuth Page XSS Defense & Security Response Headers", () => {
             action: "approve",
             scope: "openid",
             state: "test-state",
-            code_challenge: "abc123xyz456",
+            code_challenge: challenge,
             code_challenge_method: "S256",
           };
 
           bodyParams[field] = payload;
+          const ip = `203.0.113.${ipSeq++}`;
 
           const res = await fetch(`${BRIDGE_URL}/oauth/authorize`, {
             method: "POST",
             headers: {
               "Content-Type": "application/x-www-form-urlencoded",
-              "X-Forwarded-For": "203.0.113.199",
+              Accept: "text/html",
+              "X-Forwarded-For": ip,
+              "CF-Connecting-IP": ip,
             },
             body: new URLSearchParams(bodyParams).toString(),
             redirect: "manual",
