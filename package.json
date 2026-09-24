@@ -2,6 +2,7 @@
   "name": "localbridge-monorepo",
   "version": "1.2.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Secure Model Context Protocol (MCP) Bridge for Local Development",
   "packageManager": "pnpm@10.14.0",
   "engines": {
@@ -19,6 +20,7 @@
     "verify:resources": "tsx scripts/verify-bundled-resources.ts",
     "sbom:generate": "tsx scripts/generate-sbom.ts",
     "sbom:check": "tsx scripts/generate-sbom.ts --check",
+    "notices:generate": "node scripts/generate-third-party-notices.js",
     "clean": "pnpm -r run clean"
   },
   "devDependencies": {

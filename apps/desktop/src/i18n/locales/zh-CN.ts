@@ -935,6 +935,7 @@ export const zhCN: I18nDictionary = {
     downloadLayaBtn: "下载 Laya",
     getStartedBtn: "开始使用",
     skipForNowBtn: "暂时跳过",
+    licenseAgreementText: "本项目遵循 PolyForm Noncommercial 1.0.0 协议发布（source-available，非商业用途免费，商用需授权）。继续即表示您同意该许可协议。",
   },
   statusMap: {
     running: "运行中",

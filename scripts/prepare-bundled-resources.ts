@@ -176,7 +176,7 @@ async function main() {
   // Server package.json
   fs.writeFileSync(
     path.join(serverDir, "package.json"),
-    JSON.stringify({ name: "@localbridge/server-runtime", type: "module" }, null, 2),
+    JSON.stringify({ name: "@localbridge/server-runtime", type: "module", license: "PolyForm-Noncommercial-1.0.0" }, null, 2),
     "utf-8"
   );
 
@@ -192,7 +192,7 @@ async function main() {
 
   fs.writeFileSync(
     path.join(runnerDir, "package.json"),
-    JSON.stringify({ name: "@localbridge/runner-runtime", type: "module" }, null, 2),
+    JSON.stringify({ name: "@localbridge/runner-runtime", type: "module", license: "PolyForm-Noncommercial-1.0.0" }, null, 2),
     "utf-8"
   );
   console.log(`-> Bundled runner to ${runnerOut}`);
@@ -231,7 +231,7 @@ async function main() {
 
   fs.writeFileSync(
     path.join(lspDir, "package.json"),
-    JSON.stringify({ name: "@localbridge/lsp-runtime", type: "module", private: true }, null, 2),
+    JSON.stringify({ name: "@localbridge/lsp-runtime", type: "module", license: "PolyForm-Noncommercial-1.0.0", private: true }, null, 2),
     "utf-8"
   );
 
@@ -255,7 +255,7 @@ async function main() {
 
   fs.writeFileSync(
     path.join(bridgeDir, "package.json"),
-    JSON.stringify({ name: "@localbridge/bridge-runtime", type: "module", private: true }, null, 2),
+    JSON.stringify({ name: "@localbridge/bridge-runtime", type: "module", license: "PolyForm-Noncommercial-1.0.0", private: true }, null, 2),
     "utf-8"
   );
   console.log(`-> Bundled MCP bridge to ${bridgeOut}`);

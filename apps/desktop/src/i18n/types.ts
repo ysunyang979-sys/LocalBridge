@@ -935,6 +935,7 @@ export interface I18nDictionary {
     downloadLayaBtn: string;
     getStartedBtn: string;
     skipForNowBtn: string;
+    licenseAgreementText: string;
   };
   statusMap: {
     running: string;

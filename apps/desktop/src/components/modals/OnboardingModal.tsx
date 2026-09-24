@@ -1,5 +1,5 @@
 import React from "react";
-import { FolderGit2, Sparkles, CheckCircle2, Cpu, ArrowRight, X } from "lucide-react";
+import { FolderGit2, Sparkles, CheckCircle2, Cpu, ArrowRight, X, ShieldCheck } from "lucide-react";
 import { useTranslation } from "../../i18n/useTranslation.js";
 import nexusLogo from "../../assets/nexus.png";
 
@@ -143,6 +143,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* License Agreement Notice */}
+        <div className="p-3 rounded-xl bg-theme-card-muted/70 border border-theme-subtle flex items-start gap-2.5 text-[11px] text-theme-muted">
+          <ShieldCheck className="w-4 h-4 text-theme-secondary shrink-0 mt-0.5" />
+          <div className="leading-relaxed">
+            {t.onboarding.licenseAgreementText}
           </div>
         </div>
 

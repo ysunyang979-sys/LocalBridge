@@ -2,6 +2,7 @@
   "name": "@localbridge/desktop",
   "version": "1.2.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
