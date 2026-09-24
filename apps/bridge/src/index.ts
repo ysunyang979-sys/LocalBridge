@@ -408,10 +408,8 @@ const server = http.createServer(async (req, res) => {
       const responseType = url.searchParams.get("response_type")?.trim() || "";
       const scope = url.searchParams.get("scope")?.trim() || DEFAULT_SCOPES;
       const state = url.searchParams.get("state")?.trim() || undefined;
-      const codeChallenge = url.searchParams.get("code_challenge")?.trim() || undefined;
-      const codeChallengeMethod =
-        (url.searchParams.get("code_challenge_method")?.trim() as "S256" | "plain") ||
-        (codeChallenge ? "S256" : undefined);
+      const codeChallenge = url.searchParams.get("code_challenge")?.trim() || "";
+      const codeChallengeMethod = url.searchParams.get("code_challenge_method")?.trim() || "";
 
       if (!clientId) {
         sendErrorHtml(res, 400, "Missing required 'client_id' parameter");
@@ -420,6 +418,16 @@ const server = http.createServer(async (req, res) => {
 
       if (!redirectUri) {
         sendErrorHtml(res, 400, "Missing required 'redirect_uri' parameter");
+        return;
+      }
+
+      if (!codeChallenge) {
+        sendErrorHtml(res, 400, "Missing required 'code_challenge' parameter (PKCE is mandatory)");
+        return;
+      }
+
+      if (!codeChallengeMethod || codeChallengeMethod !== "S256") {
+        sendErrorHtml(res, 400, "Invalid 'code_challenge_method'. Only 'S256' is supported.");
         return;
       }
 
@@ -487,12 +495,12 @@ const server = http.createServer(async (req, res) => {
       const rawBody = await readRequestBody(req, 16 * 1024);
       const body = parseFormOrJsonBody(rawBody, req.headers["content-type"]);
 
-      const clientId = body.client_id;
-      const redirectUri = body.redirect_uri;
+      const clientId = body.client_id?.trim() || "";
+      const redirectUri = body.redirect_uri?.trim() || "";
       const scope = body.scope || DEFAULT_SCOPES;
       const state = body.state;
-      const codeChallenge = body.code_challenge;
-      const codeChallengeMethod = body.code_challenge_method as "S256" | "plain";
+      const codeChallenge = body.code_challenge?.trim() || "";
+      const codeChallengeMethod = body.code_challenge_method?.trim() || "";
       const action = body.action;
 
       // 1. action missing or not "approve" is strictly treated as DENIED
@@ -542,7 +550,18 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // 4. Authorization must bind to local user: check if local desktop admin
+      // 4. PKCE parameters must be present and valid
+      if (!codeChallenge) {
+        sendErrorHtml(res, 400, "Missing required 'code_challenge' parameter (PKCE is mandatory)");
+        return;
+      }
+
+      if (!codeChallengeMethod || codeChallengeMethod !== "S256") {
+        sendErrorHtml(res, 400, "Invalid 'code_challenge_method'. Only 'S256' is supported.");
+        return;
+      }
+
+      // 5. Authorization must bind to local user: check if local desktop admin
       const remoteAddr = req.socket.remoteAddress || "";
       const isLoopback =
         remoteAddr === "127.0.0.1" ||

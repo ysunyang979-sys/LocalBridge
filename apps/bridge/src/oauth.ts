@@ -17,8 +17,8 @@ export interface AuthorizationCodeRecord {
   redirect_uri: string;
   scope: string;
   state?: string;
-  code_challenge?: string;
-  code_challenge_method?: "S256" | "plain";
+  code_challenge: string;
+  code_challenge_method: "S256";
   expiresAt: number;
   used: boolean;
 }
@@ -40,9 +40,10 @@ export interface PendingAuthRequest {
   redirectUri: string;
   scope: string;
   state?: string;
-  codeChallenge?: string;
-  codeChallengeMethod?: "S256" | "plain";
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
   codeChallengeHash: string;
+  pairingCode?: string;
   createdAt: number;
   expiresAt: number;
   status: "pending" | "approved" | "denied" | "expired";
@@ -302,11 +303,17 @@ export class OAuthStore {
       );
     }
 
+    if (!params.code_challenge) {
+      throw new Error("Missing required 'code_challenge' parameter (PKCE is mandatory)");
+    }
+
+    if (!params.code_challenge_method || params.code_challenge_method !== "S256") {
+      throw new Error("Invalid 'code_challenge_method'. Only 'S256' is supported.");
+    }
+
     const id = `oauth_req_${crypto.randomBytes(16).toString("hex")}`;
     const codeChallenge = params.code_challenge;
-    const codeChallengeHash = codeChallenge
-      ? crypto.createHash("sha256").update(codeChallenge).digest("hex")
-      : "";
+    const codeChallengeHash = crypto.createHash("sha256").update(codeChallenge).digest("hex");
 
     const req: PendingAuthRequest = {
       id,
@@ -316,7 +323,7 @@ export class OAuthStore {
       scope: params.scope || DEFAULT_SCOPES,
       state: params.state,
       codeChallenge,
-      codeChallengeMethod: params.code_challenge_method || "S256",
+      codeChallengeMethod: "S256",
       codeChallengeHash,
       createdAt: Date.now(),
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
@@ -401,7 +408,7 @@ export class OAuthStore {
     scope?: string;
     state?: string;
     code_challenge?: string;
-    code_challenge_method?: "S256" | "plain";
+    code_challenge_method?: "S256" | "plain" | string;
   }): string {
     if (!isRedirectUriAllowed(params.redirect_uri)) {
       throw new Error(`Unauthorized redirect_uri: '${params.redirect_uri}'`);
@@ -418,6 +425,14 @@ export class OAuthStore {
       );
     }
 
+    if (!params.code_challenge) {
+      throw new Error("Missing required 'code_challenge' parameter (PKCE is mandatory)");
+    }
+
+    if (!params.code_challenge_method || params.code_challenge_method !== "S256") {
+      throw new Error("Invalid 'code_challenge_method'. Only 'S256' is supported.");
+    }
+
     const code = `oa_code_${crypto.randomBytes(24).toString("hex")}`;
     const record: AuthorizationCodeRecord = {
       code,
@@ -426,7 +441,7 @@ export class OAuthStore {
       scope: params.scope || DEFAULT_SCOPES,
       state: params.state,
       code_challenge: params.code_challenge,
-      code_challenge_method: params.code_challenge_method || "S256",
+      code_challenge_method: "S256",
       expiresAt: Date.now() + 5 * 60 * 1000,
       used: false,
     };
@@ -483,22 +498,32 @@ export class OAuthStore {
       }
     }
 
-    // Verify PKCE if challenge was registered
-    if (record.code_challenge) {
-      if (!params.code_verifier) {
-        return { success: false, error: "Missing required code_verifier for PKCE" };
-      }
+    // Strict PKCE enforcement (RFC 7636)
+    if (!record.code_challenge) {
+      return { success: false, error: "Authorization code lacks PKCE challenge" };
+    }
 
-      if (record.code_challenge_method === "S256") {
-        const hash = crypto.createHash("sha256").update(params.code_verifier).digest("base64url");
-        if (hash !== record.code_challenge) {
-          return { success: false, error: "PKCE verification failed: S256 challenge mismatch" };
-        }
-      } else {
-        if (params.code_verifier !== record.code_challenge) {
-          return { success: false, error: "PKCE verification failed: plain challenge mismatch" };
-        }
-      }
+    if (!params.code_verifier) {
+      return { success: false, error: "Missing required 'code_verifier' parameter for PKCE" };
+    }
+
+    const RFC7636_VERIFIER_REGEX = /^[A-Za-z0-9\-._~]{43,128}$/;
+    if (!RFC7636_VERIFIER_REGEX.test(params.code_verifier)) {
+      return {
+        success: false,
+        error: "Invalid 'code_verifier': must be 43-128 unreserved characters ([A-Za-z0-9-._~]) per RFC 7636",
+      };
+    }
+
+    if (record.code_challenge_method !== "S256") {
+      return { success: false, error: "Unsupported code_challenge_method. Only S256 is supported" };
+    }
+
+    const hash = crypto.createHash("sha256").update(params.code_verifier).digest("base64url");
+    const hashBuf = Buffer.from(hash);
+    const challengeBuf = Buffer.from(record.code_challenge);
+    if (hashBuf.length !== challengeBuf.length || !crypto.timingSafeEqual(hashBuf, challengeBuf)) {
+      return { success: false, error: "PKCE verification failed: S256 challenge mismatch" };
     }
 
     // Mark code as used immediately

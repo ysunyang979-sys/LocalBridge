@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
+import crypto from "node:crypto";
 import { isRedirectUriAllowed, OAuthStore } from "../apps/bridge/src/oauth.js";
 
 const TEST_PORT = 18787;
 const BRIDGE_URL = `http://127.0.0.1:${TEST_PORT}`;
+const testVerifier = "E9Melhoa2OwvFrGMTJguCH5rtG6j30-CzUMq-3FF8UU_test_pkce";
+const testChallenge = crypto.createHash("sha256").update(testVerifier).digest("base64url");
 
 describe("P0 OAuth Bridge Security Regressions", () => {
   let bridgeProcess: any = null;
@@ -42,12 +45,15 @@ describe("P0 OAuth Bridge Security Regressions", () => {
     const code = store.createAuthorizationCode({
       client_id: "gemini-spark",
       redirect_uri: "https://spark.gemini.google.com/oauth/callback",
+      code_challenge: testChallenge,
+      code_challenge_method: "S256",
     });
 
     // Exchange without redirect_uri parameter
     const res = store.exchangeCode({
       code,
       client_id: "gemini-spark",
+      code_verifier: testVerifier,
     });
 
     // On unpatched code, omitting redirect_uri succeeds!
@@ -126,6 +132,8 @@ describe("P0 OAuth Bridge Security Regressions", () => {
         client_id: "gemini-spark",
         redirect_uri: "https://spark.gemini.google.com/oauth/callback",
         action: "approve",
+        code_challenge: testChallenge,
+        code_challenge_method: "S256",
       }),
       redirect: "manual",
     });
