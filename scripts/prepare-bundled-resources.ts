@@ -161,8 +161,11 @@ async function main() {
   fs.cpSync(path.join(betterSqlite3Root, "lib"), path.join(destBetterSqlite, "lib"), { recursive: true });
 
   const prebuildsSrc = path.join(betterSqlite3Root, "prebuilds");
-  if (fs.existsSync(prebuildsSrc)) {
-    fs.cpSync(prebuildsSrc, path.join(destBetterSqlite, "prebuilds"), { recursive: true });
+  const destPrebuilds = path.join(destBetterSqlite, "prebuilds");
+  fs.mkdirSync(destPrebuilds, { recursive: true });
+  const hostPrebuildFile = `${process.platform}-${process.arch}.node`;
+  if (fs.existsSync(path.join(prebuildsSrc, hostPrebuildFile))) {
+    fs.copyFileSync(path.join(prebuildsSrc, hostPrebuildFile), path.join(destPrebuilds, hostPrebuildFile));
   }
 
   const destRelease = path.join(destBetterSqlite, "build/Release");
