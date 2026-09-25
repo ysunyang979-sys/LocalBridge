@@ -71,6 +71,7 @@ export function createGitStageHandler(
         timeoutMs: 300000,
         decisionSource: evalResult.decisionSource,
         isProtectedFile: evalResult.decisionSource === "protected-file",
+        callerPurpose: params.callerPurpose,
       });
     }
 

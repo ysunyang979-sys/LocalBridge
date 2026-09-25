@@ -67,7 +67,37 @@ export const MCP_TOOL_SCOPE: Readonly<Record<string, McpScope>> = Object.freeze(
   localbridge_job_cancel: "execute",
   localbridge_build_start: "execute",
   localbridge_test_start: "execute",
+
+  // Terminal tools
+  localbridge_terminal_start: "execute",
+  localbridge_terminal_write: "execute",
+  localbridge_terminal_read: "read",
+  localbridge_terminal_resize: "execute",
+  localbridge_terminal_status: "read",
+  localbridge_terminal_stop: "execute",
+  localbridge_terminal_list: "read",
+
+  // Process tools
+  localbridge_process_list: "read",
+  localbridge_process_status: "read",
+  localbridge_process_kill: "execute",
+  localbridge_process_tree: "read",
+
+  // Port tools
+  localbridge_port_list: "read",
+  localbridge_port_kill: "execute",
+
+  // Long-term Agent Task tools
+  localbridge_agent_task_create: "execute",
+  localbridge_agent_task_status: "read",
+  localbridge_agent_task_logs: "read",
+  localbridge_agent_task_cancel: "execute",
+  localbridge_agent_task_pause: "execute",
+  localbridge_agent_task_resume: "execute",
+  localbridge_agent_task_list: "read",
+  localbridge_agent_task_approve: "execute",
 });
+
 
 export function requiredScopeForTool(toolName: string): McpScope | undefined {
   return MCP_TOOL_SCOPE[toolName];

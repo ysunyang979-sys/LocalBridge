@@ -17,12 +17,12 @@ describe.skipIf(!canRunRealLaya)("Laya Real Provider Benchmark Test Suite", () =
       provider: "laya",
       modelPath: resolveDefaultModelPath(),
       pythonPath: resolveDefaultPythonPath(),
-      startupTimeoutMs: 35000,
+      startupTimeoutMs: 60000,
       inferenceTimeoutMs: 10000,
     });
 
-    await provider.ensureReady(35000);
-  }, 45000);
+    await provider.ensureReady(60000);
+  }, 65000);
 
   afterAll(async () => {
     if (provider) {

@@ -124,13 +124,148 @@ import {
   type ProjectDetectParams,
   type ProjectDetectResult,
 } from "../environment/index.js";
+import {
+  TerminalStartParamsSchema,
+  TerminalStartResultSchema,
+  TerminalWriteParamsSchema,
+  TerminalWriteResultSchema,
+  TerminalReadParamsSchema,
+  TerminalReadResultSchema,
+  TerminalResizeParamsSchema,
+  TerminalResizeResultSchema,
+  TerminalStatusParamsSchema,
+  TerminalStatusResultSchema,
+  TerminalStopParamsSchema,
+  TerminalStopResultSchema,
+  TerminalListParamsSchema,
+  TerminalListResultSchema,
+  type TerminalStartParams,
+  type TerminalStartResult,
+  type TerminalWriteParams,
+  type TerminalWriteResult,
+  type TerminalReadParams,
+  type TerminalReadResult,
+  type TerminalResizeParams,
+  type TerminalResizeResult,
+  type TerminalStatusParams,
+  type TerminalStatusResult,
+  type TerminalStopParams,
+  type TerminalStopResult,
+  type TerminalListParams,
+  type TerminalListResult,
+} from "../terminal/index.js";
+import {
+  ProcessListParamsSchema,
+  ProcessListResultSchema,
+  ProcessStatusParamsSchema,
+  ProcessStatusResultSchema,
+  ProcessKillParamsSchema,
+  ProcessKillResultSchema,
+  ProcessTreeParamsSchema,
+  ProcessTreeResultSchema,
+  type ProcessListParams,
+  type ProcessListResult,
+  type ProcessStatusParams,
+  type ProcessStatusResult,
+  type ProcessKillParams,
+  type ProcessKillResult,
+  type ProcessTreeParams,
+  type ProcessTreeResult,
+} from "../process/index.js";
+import {
+  PortListParamsSchema,
+  PortListResultSchema,
+  PortKillParamsSchema,
+  PortKillResultSchema,
+  type PortListParams,
+  type PortListResult,
+  type PortKillParams,
+  type PortKillResult,
+} from "../port/index.js";
+import {
+  AgentTaskCreateParamsSchema,
+  AgentTaskCreateResultSchema,
+  AgentTaskStatusParamsSchema,
+  AgentTaskStatusResultSchema,
+  AgentTaskLogsParamsSchema,
+  AgentTaskLogsResultSchema,
+  AgentTaskCancelParamsSchema,
+  AgentTaskCancelResultSchema,
+  AgentTaskPauseParamsSchema,
+  AgentTaskPauseResultSchema,
+  AgentTaskResumeParamsSchema,
+  AgentTaskResumeResultSchema,
+  AgentTaskListParamsSchema,
+  AgentTaskListResultSchema,
+  AgentTaskApproveParamsSchema,
+  AgentTaskApproveResultSchema,
+  type AgentTaskCreateParams,
+  type AgentTaskCreateResult,
+  type AgentTaskStatusParams,
+  type AgentTaskStatusResult,
+  type AgentTaskLogsParams,
+  type AgentTaskLogsResult,
+  type AgentTaskCancelParams,
+  type AgentTaskCancelResult,
+  type AgentTaskPauseParams,
+  type AgentTaskPauseResult,
+  type AgentTaskResumeParams,
+  type AgentTaskResumeResult,
+  type AgentTaskListParams,
+  type AgentTaskListResult,
+  type AgentTaskApproveParams,
+  type AgentTaskApproveResult,
+} from "../agent-task/index.js";
 
 export type {
   EnvironmentDetectParams,
   EnvironmentDetectResult,
   ProjectDetectParams,
   ProjectDetectResult,
+  TerminalStartParams,
+  TerminalStartResult,
+  TerminalWriteParams,
+  TerminalWriteResult,
+  TerminalReadParams,
+  TerminalReadResult,
+  TerminalResizeParams,
+  TerminalResizeResult,
+  TerminalStatusParams,
+  TerminalStatusResult,
+  TerminalStopParams,
+  TerminalStopResult,
+  TerminalListParams,
+  TerminalListResult,
+  ProcessListParams,
+  ProcessListResult,
+  ProcessStatusParams,
+  ProcessStatusResult,
+  ProcessKillParams,
+  ProcessKillResult,
+  ProcessTreeParams,
+  ProcessTreeResult,
+  PortListParams,
+  PortListResult,
+  PortKillParams,
+  PortKillResult,
+  AgentTaskCreateParams,
+  AgentTaskCreateResult,
+  AgentTaskStatusParams,
+  AgentTaskStatusResult,
+  AgentTaskLogsParams,
+  AgentTaskLogsResult,
+  AgentTaskCancelParams,
+  AgentTaskCancelResult,
+  AgentTaskPauseParams,
+  AgentTaskPauseResult,
+  AgentTaskResumeParams,
+  AgentTaskResumeResult,
+  AgentTaskListParams,
+  AgentTaskListResult,
+  AgentTaskApproveParams,
+  AgentTaskApproveResult,
 };
+
 
 
 export const OperationIdSchema = z
@@ -608,6 +743,7 @@ export const GitStageParamsSchema = z
     paths: z.array(z.string().min(1)).min(1).max(128),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type GitStageParams = z.infer<typeof GitStageParamsSchema>;
@@ -646,6 +782,7 @@ export const GitUnstageParamsSchema = z
     paths: z.array(z.string().min(1)).min(1).max(128),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type GitUnstageParams = z.infer<typeof GitUnstageParamsSchema>;
@@ -685,6 +822,7 @@ export const GitBranchCreateParamsSchema = z
     startPoint: z.string().max(128).optional(),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type GitBranchCreateParams = z.infer<typeof GitBranchCreateParamsSchema>;
@@ -725,6 +863,7 @@ export const GitBranchSwitchParamsSchema = z
     branchName: z.string().min(1).max(255),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
   })
   .strict();
 export type GitBranchSwitchParams = z.infer<typeof GitBranchSwitchParamsSchema>;
@@ -1949,6 +2088,98 @@ export interface RunnerRpcMap {
     params: FsMkdirParams;
     result: FsMkdirResult;
   };
+  [RunnerRpcMethods.EnvironmentDetect]: {
+    params: EnvironmentDetectParams;
+    result: EnvironmentDetectResult;
+  };
+  [RunnerRpcMethods.ProjectDetect]: {
+    params: ProjectDetectParams;
+    result: ProjectDetectResult;
+  };
+  [RunnerRpcMethods.TerminalStart]: {
+    params: TerminalStartParams;
+    result: TerminalStartResult;
+  };
+  [RunnerRpcMethods.TerminalWrite]: {
+    params: TerminalWriteParams;
+    result: TerminalWriteResult;
+  };
+  [RunnerRpcMethods.TerminalRead]: {
+    params: TerminalReadParams;
+    result: TerminalReadResult;
+  };
+  [RunnerRpcMethods.TerminalResize]: {
+    params: TerminalResizeParams;
+    result: TerminalResizeResult;
+  };
+  [RunnerRpcMethods.TerminalStatus]: {
+    params: TerminalStatusParams;
+    result: TerminalStatusResult;
+  };
+  [RunnerRpcMethods.TerminalStop]: {
+    params: TerminalStopParams;
+    result: TerminalStopResult;
+  };
+  [RunnerRpcMethods.TerminalList]: {
+    params: TerminalListParams;
+    result: TerminalListResult;
+  };
+  [RunnerRpcMethods.ProcessList]: {
+    params: ProcessListParams;
+    result: ProcessListResult;
+  };
+  [RunnerRpcMethods.ProcessStatus]: {
+    params: ProcessStatusParams;
+    result: ProcessStatusResult;
+  };
+  [RunnerRpcMethods.ProcessKill]: {
+    params: ProcessKillParams;
+    result: ProcessKillResult;
+  };
+  [RunnerRpcMethods.ProcessTree]: {
+    params: ProcessTreeParams;
+    result: ProcessTreeResult;
+  };
+  [RunnerRpcMethods.PortList]: {
+    params: PortListParams;
+    result: PortListResult;
+  };
+  [RunnerRpcMethods.PortKill]: {
+    params: PortKillParams;
+    result: PortKillResult;
+  };
+  [RunnerRpcMethods.AgentTaskCreate]: {
+    params: AgentTaskCreateParams;
+    result: AgentTaskCreateResult;
+  };
+  [RunnerRpcMethods.AgentTaskStatus]: {
+    params: AgentTaskStatusParams;
+    result: AgentTaskStatusResult;
+  };
+  [RunnerRpcMethods.AgentTaskLogs]: {
+    params: AgentTaskLogsParams;
+    result: AgentTaskLogsResult;
+  };
+  [RunnerRpcMethods.AgentTaskCancel]: {
+    params: AgentTaskCancelParams;
+    result: AgentTaskCancelResult;
+  };
+  [RunnerRpcMethods.AgentTaskPause]: {
+    params: AgentTaskPauseParams;
+    result: AgentTaskPauseResult;
+  };
+  [RunnerRpcMethods.AgentTaskResume]: {
+    params: AgentTaskResumeParams;
+    result: AgentTaskResumeResult;
+  };
+  [RunnerRpcMethods.AgentTaskList]: {
+    params: AgentTaskListParams;
+    result: AgentTaskListResult;
+  };
+  [RunnerRpcMethods.AgentTaskApprove]: {
+    params: AgentTaskApproveParams;
+    result: AgentTaskApproveResult;
+  };
 }
 
 export type RunnerRpcMethodName = keyof RunnerRpcMap;
@@ -2254,6 +2485,90 @@ export const RunnerRpcSchemas = {
   [RunnerRpcMethods.ProjectDetect]: {
     params: ProjectDetectParamsSchema,
     result: ProjectDetectResultSchema,
+  },
+  [RunnerRpcMethods.TerminalStart]: {
+    params: TerminalStartParamsSchema,
+    result: TerminalStartResultSchema,
+  },
+  [RunnerRpcMethods.TerminalWrite]: {
+    params: TerminalWriteParamsSchema,
+    result: TerminalWriteResultSchema,
+  },
+  [RunnerRpcMethods.TerminalRead]: {
+    params: TerminalReadParamsSchema,
+    result: TerminalReadResultSchema,
+  },
+  [RunnerRpcMethods.TerminalResize]: {
+    params: TerminalResizeParamsSchema,
+    result: TerminalResizeResultSchema,
+  },
+  [RunnerRpcMethods.TerminalStatus]: {
+    params: TerminalStatusParamsSchema,
+    result: TerminalStatusResultSchema,
+  },
+  [RunnerRpcMethods.TerminalStop]: {
+    params: TerminalStopParamsSchema,
+    result: TerminalStopResultSchema,
+  },
+  [RunnerRpcMethods.TerminalList]: {
+    params: TerminalListParamsSchema,
+    result: TerminalListResultSchema,
+  },
+  [RunnerRpcMethods.ProcessList]: {
+    params: ProcessListParamsSchema,
+    result: ProcessListResultSchema,
+  },
+  [RunnerRpcMethods.ProcessStatus]: {
+    params: ProcessStatusParamsSchema,
+    result: ProcessStatusResultSchema,
+  },
+  [RunnerRpcMethods.ProcessKill]: {
+    params: ProcessKillParamsSchema,
+    result: ProcessKillResultSchema,
+  },
+  [RunnerRpcMethods.ProcessTree]: {
+    params: ProcessTreeParamsSchema,
+    result: ProcessTreeResultSchema,
+  },
+  [RunnerRpcMethods.PortList]: {
+    params: PortListParamsSchema,
+    result: PortListResultSchema,
+  },
+  [RunnerRpcMethods.PortKill]: {
+    params: PortKillParamsSchema,
+    result: PortKillResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskCreate]: {
+    params: AgentTaskCreateParamsSchema,
+    result: AgentTaskCreateResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskStatus]: {
+    params: AgentTaskStatusParamsSchema,
+    result: AgentTaskStatusResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskLogs]: {
+    params: AgentTaskLogsParamsSchema,
+    result: AgentTaskLogsResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskCancel]: {
+    params: AgentTaskCancelParamsSchema,
+    result: AgentTaskCancelResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskPause]: {
+    params: AgentTaskPauseParamsSchema,
+    result: AgentTaskPauseResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskResume]: {
+    params: AgentTaskResumeParamsSchema,
+    result: AgentTaskResumeResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskList]: {
+    params: AgentTaskListParamsSchema,
+    result: AgentTaskListResultSchema,
+  },
+  [RunnerRpcMethods.AgentTaskApprove]: {
+    params: AgentTaskApproveParamsSchema,
+    result: AgentTaskApproveResultSchema,
   },
 } as const;
 

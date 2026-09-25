@@ -78,6 +78,7 @@ describe("P3-C Managed Worktree / Isolated Development Workspace Comprehensive E
       name: "Worktree-E2E-MCP-Token",
       type: "mcp",
       scopes: ["read", "write", "execute"],
+      purpose: "chatgpt",
     });
     mcpToken = mcpTokenRecord.token;
 
@@ -551,7 +552,7 @@ describe("P3-C Managed Worktree / Isolated Development Workspace Comprehensive E
       expect(stageRes.isError).toBeFalsy();
 
       // Commit under session
-      const commitRes = (await client.callTool({
+      let commitRes = (await client.callTool({
         name: "localbridge_git_commit",
         arguments: {
           projectId,
@@ -559,6 +560,22 @@ describe("P3-C Managed Worktree / Isolated Development Workspace Comprehensive E
           sessionId,
         },
       })) as any;
+      if (commitRes.isError) {
+        const approvals = (runner as any).approvalManager.list();
+        const pending = approvals.find((a: any) => a.operation === "git.commit" && a.status === "pending");
+        if (pending) {
+          (runner as any).approvalManager.resolve({ approvalId: pending.id, action: "approve" });
+          commitRes = (await client.callTool({
+            name: "localbridge_git_commit",
+            arguments: {
+              projectId,
+              message: "feat: add isolated feature and update math",
+              sessionId,
+              approvalId: pending.id,
+            },
+          })) as any;
+        }
+      }
       expect(commitRes.isError).toBeFalsy();
       const commitData = JSON.parse(commitRes.content[0].text);
       expect(commitData.commitHash).toBeDefined();

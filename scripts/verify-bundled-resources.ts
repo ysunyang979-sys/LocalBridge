@@ -110,8 +110,8 @@ async function verifyBundledServerMcpSchema() {
       headers: { authorization: `Bearer ${mgmtToken}` },
     });
     const statusData = (await statusRes.json()) as any;
-    if (statusData.toolsCount !== 66) {
-      throw new Error(`Bundled server /api/mcp/status toolsCount mismatch: expected 66, got ${statusData.toolsCount}`);
+    if (statusData.toolsCount !== 87) {
+      throw new Error(`Bundled server /api/mcp/status toolsCount mismatch: expected 87, got ${statusData.toolsCount}`);
     }
 
     // Check /api/skills endpoint on bundled server
@@ -180,8 +180,8 @@ async function verifyBundledServerMcpSchema() {
     const listData = await listRes.json();
     const tools = listData.result?.tools ?? [];
 
-    if (tools.length !== 66) {
-      throw new Error(`Bundled server tools/list returned ${tools.length} tools, expected exactly 66!`);
+    if (tools.length !== 87) {
+      throw new Error(`Bundled server tools/list returned ${tools.length} tools, expected exactly 87!`);
     }
 
     const requiredEnvTools = [
@@ -212,6 +212,35 @@ async function verifyBundledServerMcpSchema() {
     for (const lt of requiredLayaTools) {
       if (!tools.find((t: any) => t.name === lt)) {
         throw new Error(`Bundled server tools/list is missing required laya tool: ${lt}`);
+      }
+    }
+
+    const requiredNexus2Tools = [
+      "localbridge_terminal_start",
+      "localbridge_terminal_write",
+      "localbridge_terminal_read",
+      "localbridge_terminal_resize",
+      "localbridge_terminal_status",
+      "localbridge_terminal_stop",
+      "localbridge_terminal_list",
+      "localbridge_process_list",
+      "localbridge_process_status",
+      "localbridge_process_kill",
+      "localbridge_process_tree",
+      "localbridge_port_list",
+      "localbridge_port_kill",
+      "localbridge_agent_task_create",
+      "localbridge_agent_task_status",
+      "localbridge_agent_task_logs",
+      "localbridge_agent_task_cancel",
+      "localbridge_agent_task_pause",
+      "localbridge_agent_task_resume",
+      "localbridge_agent_task_list",
+      "localbridge_agent_task_approve",
+    ];
+    for (const n2t of requiredNexus2Tools) {
+      if (!tools.find((t: any) => t.name === n2t)) {
+        throw new Error(`Bundled server tools/list is missing required Nexus 2.0 tool: ${n2t}`);
       }
     }
 

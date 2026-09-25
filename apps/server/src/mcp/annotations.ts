@@ -80,4 +80,34 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   // Laya Decision Intelligence tools
   localbridge_laya_status: { readOnlyHint: true },
   localbridge_laya_assess: { readOnlyHint: true },
+
+  // Terminal tools
+  localbridge_terminal_start: { readOnlyHint: false, openWorldHint: true },
+  localbridge_terminal_write: { readOnlyHint: false, openWorldHint: true },
+  localbridge_terminal_read: { readOnlyHint: true },
+  localbridge_terminal_resize: { readOnlyHint: false, idempotentHint: true },
+  localbridge_terminal_status: { readOnlyHint: true },
+  localbridge_terminal_stop: { readOnlyHint: false, destructiveHint: true },
+  localbridge_terminal_list: { readOnlyHint: true },
+
+  // Process tools
+  localbridge_process_list: { readOnlyHint: true },
+  localbridge_process_status: { readOnlyHint: true },
+  localbridge_process_kill: { readOnlyHint: false, destructiveHint: true },
+  localbridge_process_tree: { readOnlyHint: true },
+
+  // Port tools
+  localbridge_port_list: { readOnlyHint: true },
+  localbridge_port_kill: { readOnlyHint: false, destructiveHint: true },
+
+  // Long-term Agent Task tools
+  localbridge_agent_task_create: { readOnlyHint: false, openWorldHint: true },
+  localbridge_agent_task_status: { readOnlyHint: true },
+  localbridge_agent_task_logs: { readOnlyHint: true },
+  localbridge_agent_task_cancel: { readOnlyHint: false, destructiveHint: true },
+  localbridge_agent_task_pause: { readOnlyHint: false },
+  localbridge_agent_task_resume: { readOnlyHint: false },
+  localbridge_agent_task_list: { readOnlyHint: true },
+  localbridge_agent_task_approve: { readOnlyHint: false },
 };
+

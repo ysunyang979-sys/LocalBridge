@@ -66,7 +66,8 @@ export function createFileReadHandler(
     };
     const pHash = canonicalPayloadHash(payload);
 
-    const isProtected = evalResult.decisionSource === "protected-file" || isProtectedFile(params.path);
+    const isFollowPolicy = project.trustPolicy?.protectedFilesPolicy === "follow-policy" && evalResult.decision === "allow";
+    const isProtected = !isFollowPolicy && (evalResult.decisionSource === "protected-file" || isProtectedFile(params.path));
     const needsApproval = evalResult.decision === "ask" || isProtected;
 
     if (needsApproval) {

@@ -21,3 +21,8 @@ export * from "./connections/index.js";
 export * from "./full-control/index.js";
 export * from "./skills/index.js";
 export * from "./environment/index.js";
+export * from "./resource-ownership/index.js";
+export * from "./terminal/index.js";
+export * from "./process/index.js";
+export * from "./port/index.js";
+export * from "./agent-task/index.js";

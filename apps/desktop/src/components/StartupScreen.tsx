@@ -65,7 +65,7 @@ export const StartupScreen: React.FC<StartupScreenProps> = ({
     {
       id: "mcp",
       title: "MCP Tools",
-      subtitle: "66 Standardized Security Tools",
+      subtitle: "87 Standardized Security Tools",
       icon: ShieldCheck,
       status: startupError
         ? "failed"

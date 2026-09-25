@@ -14,6 +14,10 @@ import { registerRuntimeTools } from "./tools/runtime.js";
 import { registerSkillTools } from "./tools/skills.js";
 import { registerLayaTools } from "./tools/laya.js";
 import { registerEnvironmentTools } from "./tools/environment.js";
+import { registerTerminalTools } from "./tools/terminal.js";
+import { registerProcessTools } from "./tools/process.js";
+import { registerPortTools } from "./tools/port.js";
+import { registerAgentTaskTools } from "./tools/agent-task.js";
 
 export interface McpServerOptions {
   name?: string;
@@ -37,7 +41,7 @@ export function createLocalBridgeMcpServer(
   // Set negotiated protocol version to 2026-07-28 so the wire codec resolves server/discover and other 2026-era methods
   (server.server as any)._negotiatedProtocolVersion = MCP_PROTOCOL_VERSION;
 
-  // Register all tools (projects, filesystem, git, command, jobs, approvals, code, session, worktree, runtime, skills, laya)
+  // Register all tools (projects, filesystem, git, command, jobs, approvals, code, session, worktree, runtime, skills, laya, environment, terminal, process, port, agent-task)
   registerProjectTools(server, context);
   registerFilesystemTools(server, context);
   registerGitTools(server, context);
@@ -51,6 +55,11 @@ export function createLocalBridgeMcpServer(
   registerSkillTools(server, context);
   registerLayaTools(server, context);
   registerEnvironmentTools(server, context);
+  registerTerminalTools(server, context);
+  registerProcessTools(server, context);
+  registerPortTools(server, context);
+  registerAgentTaskTools(server, context);
 
   return server;
 }
+

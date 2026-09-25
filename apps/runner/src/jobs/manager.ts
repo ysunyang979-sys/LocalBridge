@@ -405,7 +405,7 @@ export class JobManager {
       }
     }
 
-    let targetTool: "node" | "npm" | "pnpm" | "python" = "node";
+    let targetTool: string = "node";
     let commandArgs: string[] = [];
 
     switch (command.kind) {

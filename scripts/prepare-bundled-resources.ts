@@ -186,9 +186,38 @@ async function main() {
   const runnerOut = path.join(runnerDir, "index.js");
 
   child_process.execSync(
-    `${esbuildCmd} "${runnerEntry}" --bundle --platform=node --format=esm --target=node24 --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="${runnerOut}"`,
+    `${esbuildCmd} "${runnerEntry}" --bundle --platform=node --format=esm --target=node24 --external:koffi --external:@koromix/koffi-win32-x64 --external:node-pty --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" --outfile="${runnerOut}"`,
     { cwd: rootDir, stdio: "inherit" }
   );
+
+  const runnerNodeModules = path.join(runnerDir, "node_modules");
+  fs.mkdirSync(runnerNodeModules, { recursive: true });
+
+  try {
+    const koffiRoot = findPnpmPackage("koffi");
+    fs.cpSync(koffiRoot, path.join(runnerNodeModules, "koffi"), { recursive: true });
+    console.log(`-> Packaged koffi into ${runnerNodeModules}`);
+  } catch (err) {
+    console.warn("Could not copy koffi:", err);
+  }
+
+  try {
+    const koffiWinRoot = findPnpmPackage("@koromix/koffi-win32-x64");
+    const koromixDir = path.join(runnerNodeModules, "@koromix");
+    fs.mkdirSync(koromixDir, { recursive: true });
+    fs.cpSync(koffiWinRoot, path.join(koromixDir, "koffi-win32-x64"), { recursive: true });
+    console.log(`-> Packaged @koromix/koffi-win32-x64 into ${runnerNodeModules}`);
+  } catch (err) {
+    console.warn("Could not copy @koromix/koffi-win32-x64:", err);
+  }
+
+  try {
+    const nodePtyRoot = findPnpmPackage("node-pty");
+    fs.cpSync(nodePtyRoot, path.join(runnerNodeModules, "node-pty"), { recursive: true });
+    console.log(`-> Packaged node-pty into ${runnerNodeModules}`);
+  } catch (err) {
+    console.warn("Could not copy node-pty:", err);
+  }
 
   fs.writeFileSync(
     path.join(runnerDir, "package.json"),

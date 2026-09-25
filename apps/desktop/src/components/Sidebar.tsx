@@ -333,11 +333,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     {mcpStatus?.paused
                       ? (t.control?.mcpPaused || "PAUSED")
-                      : `${mcpStatus?.toolsCount ?? 66} ${t.intelligence?.statusReady || "READY"}`}
+                      : `${mcpStatus?.toolsCount ?? 87} ${t.intelligence?.statusReady || "READY"}`}
                   </span>
                 </span>
               </div>
             </div>
+
           )
         ) : (
           <div className="flex flex-col items-center gap-2.5 py-2">

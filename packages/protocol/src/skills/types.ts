@@ -237,6 +237,7 @@ export interface SkillBatchImportResult {
     name: string;
     sourceType?: string;
     sourceName?: string;
+    count?: number;
     totalSkills: number;
     skills: string[];
     importedAt?: string;
@@ -257,7 +258,7 @@ export interface SkillImportResult {
   collection?: {
     id: string;
     name: string;
-    count: number;
+    count?: number;
     totalSkills?: number;
     skills?: string[];
     sourceType?: string;

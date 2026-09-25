@@ -355,8 +355,8 @@ export class SkillResolver {
     // Sort descending by confidence score
     scoredList.sort((a, b) => b.score - a.score);
 
-    if (scoredList.length > 0) {
-      const top = scoredList[0];
+    const top = scoredList[0];
+    if (top) {
       const related = scoredList.slice(1);
 
       const topNameStr = typeof top.skill.name === "string" ? top.skill.name : top.skill.name?.["zh-CN"] || top.skill.name?.["en-US"] || top.skill.id;

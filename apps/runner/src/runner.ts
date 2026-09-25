@@ -109,8 +109,33 @@ import {
   createFsCopyHandler,
   createFsMkdirHandler,
 } from "./rpc/handlers/fs-universal.js";
+import { ProcessOwnershipTracker } from "./process/ownership-tracker.js";
+import { TerminalManager } from "./terminal/terminal-manager.js";
+import { AgentTaskManager } from "./agent-task/agent-task-manager.js";
+import { createTerminalStartHandler } from "./rpc/handlers/terminal-start.js";
+import { createTerminalWriteHandler } from "./rpc/handlers/terminal-write.js";
+import { createTerminalReadHandler } from "./rpc/handlers/terminal-read.js";
+import { createTerminalResizeHandler } from "./rpc/handlers/terminal-resize.js";
+import { createTerminalStatusHandler } from "./rpc/handlers/terminal-status.js";
+import { createTerminalStopHandler } from "./rpc/handlers/terminal-stop.js";
+import { createTerminalListHandler } from "./rpc/handlers/terminal-list.js";
+import { createProcessListHandler } from "./rpc/handlers/process-list.js";
+import { createProcessStatusHandler } from "./rpc/handlers/process-status.js";
+import { createProcessKillHandler } from "./rpc/handlers/process-kill.js";
+import { createProcessTreeHandler } from "./rpc/handlers/process-tree.js";
+import { createPortListHandler } from "./rpc/handlers/port-list.js";
+import { createPortKillHandler } from "./rpc/handlers/port-kill.js";
+import { createAgentTaskCreateHandler } from "./rpc/handlers/agent-task-create.js";
+import { createAgentTaskStatusHandler } from "./rpc/handlers/agent-task-status.js";
+import { createAgentTaskLogsHandler } from "./rpc/handlers/agent-task-logs.js";
+import { createAgentTaskCancelHandler } from "./rpc/handlers/agent-task-cancel.js";
+import { createAgentTaskPauseHandler } from "./rpc/handlers/agent-task-pause.js";
+import { createAgentTaskResumeHandler } from "./rpc/handlers/agent-task-resume.js";
+import { createAgentTaskListHandler } from "./rpc/handlers/agent-task-list.js";
+import { createAgentTaskApproveHandler } from "./rpc/handlers/agent-task-approve.js";
 
-export const RUNNER_VERSION = "1.1.0";
+export const RUNNER_VERSION = "2.0.0";
+
 
 export type RunnerLifecycleState = "idle" | "connecting" | "handshaking" | "online" | "reconnecting" | "stopped";
 
@@ -138,7 +163,11 @@ export class LocalBridgeRunner {
   readonly workspaceResolver: WorkspaceResolver;
   readonly runtimeManager: PersistentRuntimeManager;
   readonly projectDetectionService: ProjectDetectionService;
+  readonly ownershipTracker: ProcessOwnershipTracker;
+  readonly terminalManager: TerminalManager;
+  readonly agentTaskManager: AgentTaskManager;
   readonly runnerStateDir: string;
+
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
     this.config = config;
@@ -249,6 +278,18 @@ export class LocalBridgeRunner {
       this.lspManager.onFileModified(projectId, path, content).catch(() => {});
     });
 
+    this.ownershipTracker = new ProcessOwnershipTracker(
+      runnerStateDir,
+      this.projectRegistry,
+      this.logger
+    );
+
+    this.terminalManager = new TerminalManager(
+      this.projectRegistry,
+      this.ownershipTracker,
+      this.logger
+    );
+
     this.runtimeManager = new PersistentRuntimeManager(
       this.projectRegistry,
       this.executableRegistry,
@@ -258,12 +299,21 @@ export class LocalBridgeRunner {
     );
     this.runtimeManager.setWorkspaceResolver(this.workspaceResolver);
 
+    this.agentTaskManager = new AgentTaskManager(
+      runnerStateDir,
+      this.ownershipTracker,
+      this.terminalManager,
+      this.runtimeManager,
+      this.logger
+    );
+
     this.projectDetectionService = new ProjectDetectionService(this.projectRegistry);
     this.projectDetectionService.setWorkspaceResolver(this.workspaceResolver);
 
     this.rpcRouter = new RpcRouter(this.logger);
     this.registerDefaultHandlers();
   }
+
 
   private registerDefaultHandlers(): void {
     const systemInfo: RunnerSystemInfo = collectSystemInfo();
@@ -701,7 +751,100 @@ export class LocalBridgeRunner {
       RunnerRpcMethods.ProjectDetect,
       createProjectDetectHandler(this.projectDetectionService)
     );
+
+    // Terminal Handlers
+    this.rpcRouter.register(
+      RunnerRpcMethods.TerminalStart,
+      createTerminalStartHandler(this.terminalManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.TerminalWrite,
+      createTerminalWriteHandler(this.terminalManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.TerminalRead,
+      createTerminalReadHandler(this.terminalManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.TerminalResize,
+      createTerminalResizeHandler(this.terminalManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.TerminalStatus,
+      createTerminalStatusHandler(this.terminalManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.TerminalStop,
+      createTerminalStopHandler(this.terminalManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.TerminalList,
+      createTerminalListHandler(this.terminalManager)
+    );
+
+    // Process Handlers
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProcessList,
+      createProcessListHandler(this.ownershipTracker)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProcessStatus,
+      createProcessStatusHandler(this.ownershipTracker)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProcessKill,
+      createProcessKillHandler(this.ownershipTracker)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProcessTree,
+      createProcessTreeHandler(this.ownershipTracker)
+    );
+
+    // Port Handlers
+    this.rpcRouter.register(
+      RunnerRpcMethods.PortList,
+      createPortListHandler(this.ownershipTracker)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.PortKill,
+      createPortKillHandler(this.ownershipTracker)
+    );
+
+    // Agent Task Handlers
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskCreate,
+      createAgentTaskCreateHandler(this.agentTaskManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskStatus,
+      createAgentTaskStatusHandler(this.agentTaskManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskLogs,
+      createAgentTaskLogsHandler(this.agentTaskManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskCancel,
+      createAgentTaskCancelHandler(this.agentTaskManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskPause,
+      createAgentTaskPauseHandler(this.agentTaskManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskResume,
+      createAgentTaskResumeHandler(this.agentTaskManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskList,
+      createAgentTaskListHandler(this.agentTaskManager)
+    );
+    this.rpcRouter.register(
+      RunnerRpcMethods.AgentTaskApprove,
+      createAgentTaskApproveHandler(this.agentTaskManager)
+    );
   }
+
 
   get router(): RpcRouter {
     return this.rpcRouter;

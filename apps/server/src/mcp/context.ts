@@ -61,6 +61,9 @@ export interface SafeAuditMetadata {
   clientId?: string;
   clientType?: string;
   clientName?: string;
+  skillId?: string;
+  collectionId?: string;
+  [key: string]: unknown;
 }
 
 export type AuditRecord = SafeAuditMetadata;
@@ -530,6 +533,7 @@ export class McpContext {
       clientId?: string;
       clientType?: string;
       clientName?: string;
+      [key: string]: unknown;
     }
   ): void {
     // Explicit whitelist construction - strictly drops any unlisted properties

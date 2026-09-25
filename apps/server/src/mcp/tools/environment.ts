@@ -16,13 +16,14 @@ function resolveRunner(context: McpContext, projectId?: string): string {
     return context.resolveProjectRunner(projectId);
   }
   const runners = context.runnerRegistry.list();
-  if (runners.length === 0) {
+  const first = runners[0];
+  if (!first) {
     throw new LocalBridgeError(
       LocalBridgeErrorCode.RUNNER_OFFLINE,
       "No runner is currently connected and online"
     );
   }
-  return runners[0].id;
+  return first.id;
 }
 
 export function registerEnvironmentTools(server: McpServer, context: McpContext): void {
@@ -48,7 +49,7 @@ export function registerEnvironmentTools(server: McpServer, context: McpContext)
         const result = await context.request(
           runnerId,
           RunnerRpcMethods.EnvironmentDetect,
-          { projectId, tools }
+          { tools }
         );
 
         context.logAudit("mcp_tool_completed", {

@@ -26,7 +26,7 @@ export interface JobRecord {
   errorCode?: string;
   errorMessage?: string;
   commandSpec?: CommandSpec;
-  targetTool?: "node" | "npm" | "pnpm" | "python";
+  targetTool?: string;
   commandArgs?: string[];
   workingDir?: string;
   safeEnv?: NodeJS.ProcessEnv;

@@ -12,6 +12,7 @@ import {
 import { hasToolScope, requiredScopeForTool } from "./scope-policy.js";
 import { checkLoopbackAndSecurity } from "../routes/management.js";
 import { readActiveTunnelHostFromDisk } from "../auth/origin-resolver.js";
+import { RunnerRpcSchemas } from "@localbridge/protocol";
 
 export interface McpRoutesOptions {
   tokenService: TokenService;
@@ -472,7 +473,11 @@ export const mcpRoutes: FastifyPluginAsync<McpRoutesOptions> = async (
       const scopedContext = Object.create(mcpContext);
       scopedContext.request = async (runnerId: string, method: any, params: any) => {
         const enrichedParams = { ...params };
-        if (callerPurpose && enrichedParams.callerPurpose === undefined) {
+        const methodSchema = (RunnerRpcSchemas as any)[method]?.params;
+        const acceptsCallerPurpose = Boolean(
+          methodSchema && "shape" in methodSchema && "callerPurpose" in methodSchema.shape
+        );
+        if (callerPurpose && acceptsCallerPurpose && enrichedParams.callerPurpose === undefined) {
           enrichedParams.callerPurpose = callerPurpose;
         }
         return mcpContext.request(runnerId, method, enrichedParams);

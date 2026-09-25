@@ -64,8 +64,8 @@ describe("Production Bundled LSP Packaging & Runtime Verification", () => {
   });
 
   it("5. End-to-end LSP protocol on Myweb/app.js returns real symbols and diagnostics", async () => {
-    if (!fs.existsSync(mywebDir)) {
-      console.warn("Myweb directory not present, skipping live Myweb test");
+    if (!fs.existsSync(mywebDir) || !fs.existsSync(path.join(mywebDir, "app.js"))) {
+      console.warn("Myweb directory or app.js not present, skipping live Myweb test");
       return;
     }
 
@@ -123,7 +123,7 @@ describe("Production Bundled LSP Packaging & Runtime Verification", () => {
   });
 
   it("6. Real MCP Code Intelligence tools on Myweb return valid data and avoid LSP_NOT_AVAILABLE", async () => {
-    if (!fs.existsSync(mywebDir)) return;
+    if (!fs.existsSync(mywebDir) || !fs.existsSync(path.join(mywebDir, "app.js"))) return;
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "lb-mcp-lsp-prod-"));
     const dbFilePath = path.join(tmpDir, "mcp-lsp.db");

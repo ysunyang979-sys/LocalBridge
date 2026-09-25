@@ -23,6 +23,8 @@
     "@localbridge/protocol": "workspace:*",
     "@localbridge/security": "workspace:*",
     "@localbridge/shared": "workspace:*",
+    "koffi": "^3.3.1",
+    "node-pty": "^1.1.0",
     "typescript-language-server": "^6.0.0",
     "ws": "^8.18.0",
     "zod": "^3.24.2"

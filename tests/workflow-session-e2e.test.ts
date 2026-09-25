@@ -85,6 +85,7 @@ describe("P3-B Workflow Session / Persistent Development Context Comprehensive E
       name: "Session-E2E-MCP-Token",
       type: "mcp",
       scopes: ["read", "write", "execute"],
+      purpose: "chatgpt",
     });
     mcpToken = mcpTokenRecord.token;
 
@@ -480,13 +481,28 @@ describe("P3-B Workflow Session / Persistent Development Context Comprehensive E
     });
 
     it("Scenario 12: attributes localbridge_git_commit as GIT_COMMIT", async () => {
-      const res = await client.callTool({
+      let res = await client.callTool({
         name: "localbridge_git_commit",
         arguments: {
           projectId,
           message: "test: stage git-test.txt",
         },
       });
+      if ((res as any).isError) {
+        const approvals = (runner as any).approvalManager.list();
+        const pending = approvals.find((a: any) => a.operation === "git.commit" && a.status === "pending");
+        if (pending) {
+          (runner as any).approvalManager.resolve({ approvalId: pending.id, action: "approve" });
+          res = await client.callTool({
+            name: "localbridge_git_commit",
+            arguments: {
+              projectId,
+              message: "test: stage git-test.txt",
+              approvalId: pending.id,
+            },
+          });
+        }
+      }
       parseToolResult(res);
 
       const eventsRes = await client.callTool({

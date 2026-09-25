@@ -15,7 +15,6 @@ import {
   type SkillRisk,
   type SkillValidationStatus,
   type SkillCandidate,
-  extractMarkdownMetadata,
   evaluateCandidateQuality,
   resolveRawSkillName,
 } from "@localbridge/protocol";
@@ -847,7 +846,7 @@ export class SkillImporter {
             } else if (candDocs.some((d) => d.toLowerCase() === "readme.md")) {
               primaryDocName = candDocs.find((d) => d.toLowerCase() === "readme.md")!;
             } else if (candDocs.length > 0) {
-              primaryDocName = candDocs[0];
+              primaryDocName = candDocs[0] || "SKILL.md";
             }
 
             let docContent = "";
@@ -1030,7 +1029,7 @@ export class SkillImporter {
           : fs.existsSync(readmeZhPath)
           ? readmeZhPath
           : candidateDocs.length > 0
-          ? path.join(stagingDir, candidateDocs[0])
+          ? path.join(stagingDir, candidateDocs[0]!)
           : null;
 
         if (!activeDocPath) {
@@ -1633,7 +1632,7 @@ export class SkillImporter {
               : fs.existsSync(readmeZhPath)
               ? readmeZhPath
               : candDocs.length > 0
-              ? path.join(candStaging, candDocs[0])
+              ? path.join(candStaging, candDocs[0]!)
               : null;
 
             const primaryDocName = activeDocPath
@@ -1874,7 +1873,7 @@ export class SkillImporter {
             } else if (candDocs.some((d) => d.toLowerCase() === "readme.md")) {
               primaryDocName = candDocs.find((d) => d.toLowerCase() === "readme.md")!;
             } else if (candDocs.length > 0) {
-              primaryDocName = candDocs[0];
+              primaryDocName = candDocs[0] || "SKILL.md";
             }
 
             let docContent = "";
@@ -2092,7 +2091,7 @@ export class SkillImporter {
           : fs.existsSync(readmeZhPath)
           ? readmeZhPath
           : candidateDocs.length > 0
-          ? path.join(stagingDir, candidateDocs[0])
+          ? path.join(stagingDir, candidateDocs[0]!)
           : null;
 
         if (!activeDocPath) {

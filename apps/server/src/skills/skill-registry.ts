@@ -204,11 +204,11 @@ export class SkillRegistry {
     collectionId: string,
     enabled: boolean,
     projectId?: string
-  ): { success: boolean; modifiedCount: number; skills: SkillDefinition[] } {
+  ): { success: boolean; modifiedCount: number; skills: SkillMetadata[] } {
     const list = this.listSkills({ collectionId, projectId });
     let modified = 0;
     for (const skill of list) {
-      if (this.toggleSkill(skill.id, enabled, projectId)) {
+      if (this.toggleSkill(skill.id, enabled)) {
         modified++;
       }
     }

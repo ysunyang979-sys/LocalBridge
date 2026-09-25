@@ -29,7 +29,7 @@ export interface PersistentRuntimeRecord {
   sessionId?: string;
   worktreeId?: string;
   name?: string;
-  kind: "package-script" | "registered-command";
+  kind: "package-script" | "registered-command" | "shell-command";
   commandCategory: CommandCategory;
   state: RuntimeState;
   generation: number;

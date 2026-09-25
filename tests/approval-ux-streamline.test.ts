@@ -338,7 +338,7 @@ describe("Nexus Desktop Approval UX Streamline & Provider Architecture", () => {
 
     // 2. In chat mode: executes without throwing APPROVAL_REQUIRED (no double approval)
     manager.setRoutingMode("chat");
-    const chatRes = await handler(samplePayload as any);
+    const chatRes = await handler({ ...samplePayload, callerPurpose: "chatgpt" } as any);
     expect(chatRes).toEqual({ deleted: true });
     const chatApprovals = manager.list().filter((a) => a.decisionSource === "chat");
     expect(chatApprovals.length).toBeGreaterThan(0);

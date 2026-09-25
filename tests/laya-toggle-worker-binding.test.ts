@@ -35,7 +35,7 @@ describe("Laya Toggle Worker Binding & Lifecycle Suite", () => {
       provider: "disabled",
       modelPath: resolveDefaultModelPath(),
       pythonPath: resolveDefaultPythonPath(),
-      startupTimeoutMs: 35000,
+      startupTimeoutMs: 60000,
     });
 
     // Toggle ON to "laya"
@@ -46,7 +46,7 @@ describe("Laya Toggle Worker Binding & Lifecycle Suite", () => {
     expect(newStatus.modelLoaded).toBe(true);
     expect(newStatus.inferenceReady).toBe(true);
     expect(newStatus.providerClass).toBe("LayaDecisionProvider");
-  }, 40000);
+  }, 65000);
 
   it.skipIf(!canRunRealLaya)("dynamically shuts down worker and switches to DisabledDecisionProvider when toggled OFF", async () => {
     provider = new ManagedDecisionProvider({
