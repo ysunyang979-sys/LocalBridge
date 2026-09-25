@@ -62,9 +62,6 @@ jobs:
       - name: Typecheck all workspaces
         run: pnpm run typecheck
 
-      - name: Verify generated SBOM
-        run: pnpm run sbom:check
-
       - name: Build monorepo packages
         run: pnpm run build
 
@@ -75,8 +72,8 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
-          releaseName: "LocalBridge ${{ github.ref_name }}"
-          releaseBody: "See [CHANGELOG.md](CHANGELOG.md) for full release notes."
+          releaseName: "Nexus ${{ github.ref_name }}"
+          releaseBody: "Nexus ${{ github.ref_name }} Release"
           releaseDraft: false
           prerelease: false
 

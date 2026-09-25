@@ -489,17 +489,14 @@ LocalBridge v1.0 标志着功能冻结（Feature Freeze）与生产级全方位�
 - **状态完整性与崩溃自动恢复**：数据库迁移前自动生成时间戳备份快照（`<dbPath>.pre-migration.bak`），Runner 启动时自动清理历史孤立临时文件（`.localbridge-*.tmp`）。
 - **全量测试基线**：75 个自动化测试套件共 450 个测试用例，达成 100% 通过率。
 
-### 安全与隐私文档指引
+### 核心架构与安全文档
 
-- [安全政策与漏洞披露流程 (SECURITY.md)](SECURITY.md)
 - [STRIDE 威胁建模与 14 类威胁防御规范 (THREAT_MODEL.md)](docs/THREAT_MODEL.md)
-- [隐私政策与零遥测承诺 (PRIVACY.md)](PRIVACY.md)
-- [版本变更日志 (CHANGELOG.md)](CHANGELOG.md)
-- [软件物料清单 (SBOM)](sbom.json)
-- [发行版 SHA-256 校验和 (SHA256SUMS.txt)](SHA256SUMS.txt)
+- [系统架构设计 (architecture.md)](docs/architecture.md)
+- [Nexus 产品概览 (NEXUS_OVERVIEW.md)](docs/NEXUS_OVERVIEW.md)
 
 ---
 
 ## 开源协议
 
-[MIT](LICENSE)
+本项目遵循 [Apache-2.0](LICENSE) 开源许可证发布。

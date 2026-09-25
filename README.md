@@ -485,14 +485,11 @@ LocalBridge v1.0 marks the formal Feature Freeze and production hardening of the
 - **State Integrity & Crash Recovery**: Automatic pre-migration SQLite snapshots (`<dbPath>.pre-migration.bak`) and orphan temp file purges (`.localbridge-*.tmp`) ensure clean boot recovery.
 - **Verification Baseline**: 75 automated test suites comprising 450 tests passing with a 100% success rate.
 
-### Security & Privacy Resources
+### Architecture & Security Resources
 
-- [Security Policy & Vulnerability Reporting](SECURITY.md)
 - [Comprehensive STRIDE Threat Model (14 Vectors)](docs/THREAT_MODEL.md)
-- [Privacy Policy & Zero-Telemetry Commitment](PRIVACY.md)
-- [Project Changelog](CHANGELOG.md)
-- [Software Bill of Materials (SBOM)](sbom.json)
-- [Release Checksums (SHA-256)](SHA256SUMS.txt)
+- [System Architecture](docs/architecture.md)
+- [Nexus Overview](docs/NEXUS_OVERVIEW.md)
 
 ---
 

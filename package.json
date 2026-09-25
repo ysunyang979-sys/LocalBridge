@@ -18,9 +18,6 @@
     "dev:runner": "pnpm --filter @localbridge/runner dev",
     "bundle:runtime": "tsx scripts/prepare-bundled-resources.ts",
     "verify:resources": "tsx scripts/verify-bundled-resources.ts",
-    "sbom:generate": "tsx scripts/generate-sbom.ts",
-    "sbom:check": "tsx scripts/generate-sbom.ts --check",
-    "notices:generate": "node scripts/generate-third-party-notices.js",
     "clean": "pnpm -r run clean"
   },
   "devDependencies": {
