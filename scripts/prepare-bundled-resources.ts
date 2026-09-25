@@ -52,10 +52,18 @@ function getEsbuildRunner(): string {
     const esbuildPkg = findPnpmPackage("esbuild");
     const esbuildBin = path.join(esbuildPkg, "bin/esbuild");
     if (fs.existsSync(esbuildBin)) {
-      return `node "${esbuildBin}"`;
+      const header = fs.readFileSync(esbuildBin).slice(0, 32).toString("utf-8");
+      if (header.startsWith("#!") || header.includes("use strict")) {
+        return `node "${esbuildBin}"`;
+      } else {
+        try {
+          fs.chmodSync(esbuildBin, 0o755);
+        } catch {}
+        return `"${esbuildBin}"`;
+      }
     }
   } catch {}
-  return "npx esbuild";
+  return "pnpm exec esbuild";
 }
 
 async function main() {
@@ -116,6 +124,7 @@ async function main() {
     if (!fs.existsSync(compatNode)) {
       fs.copyFileSync(nodeSrc, compatNode);
     }
+    fs.chmodSync(compatNode, 0o755);
   }
   console.log(`-> Copied verified ${nodeExeName} to ${destNodeExe}`);
 
@@ -328,6 +337,7 @@ async function main() {
       if (!fs.existsSync(compatLauncher)) {
         fs.copyFileSync(launcherOut, compatLauncher);
       }
+      fs.chmodSync(compatLauncher, 0o755);
     }
     const pdb = path.join(bridgeDir, "nexus-mcp-bridge.pdb");
     if (fs.existsSync(pdb)) fs.rmSync(pdb, { force: true });

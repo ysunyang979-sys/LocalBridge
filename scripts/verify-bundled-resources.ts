@@ -60,7 +60,9 @@ console.log("Bundled resources contain verified tunnel runtime, bundled language
 async function verifyBundledServerMcpSchema() {
   console.log("Verifying bundled server MCP tools/list schema...");
   const serverDir = path.join(resources, "server");
-  const nodeExe = fs.existsSync(path.join(resources, "runtime/node.exe")) ? path.join(resources, "runtime/node.exe") : path.join(resources, "runtime/node");
+  const nodeExe = isWin
+    ? path.join(resources, "runtime/node.exe")
+    : (fs.existsSync(path.join(resources, "runtime/node")) ? path.join(resources, "runtime/node") : path.join(resources, "runtime/node.exe"));
 
   if (!fs.existsSync(path.join(serverDir, "index.js")) || !fs.existsSync(nodeExe)) {
     throw new Error("Bundled server or runtime missing for schema verification.");
