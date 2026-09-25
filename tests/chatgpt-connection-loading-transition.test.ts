@@ -65,7 +65,7 @@ describe("chatgpt-connection-loading-transition.test - Loading to Loaded Transit
         )
       )
     );
-    expect(loadedHtml).toContain("64");
+    expect(loadedHtml).toContain("66");
     expect(loadedHtml).toContain("Secure MCP Tunnel");
 
     spy.mockRestore();

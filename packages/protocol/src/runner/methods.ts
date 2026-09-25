@@ -73,6 +73,8 @@ export const RunnerRpcMethods = {
   FsMove: "fs.move",
   FsCopy: "fs.copy",
   FsMkdir: "fs.mkdir",
+  EnvironmentDetect: "environment.detect",
+  ProjectDetect: "project.detect",
 } as const;
 
 export type RunnerRpcMethod =
@@ -121,6 +123,9 @@ export const RunnerMethod = {
   FS_MOVE: RunnerRpcMethods.FsMove,
   FS_COPY: RunnerRpcMethods.FsCopy,
   FS_MKDIR: RunnerRpcMethods.FsMkdir,
+  ENVIRONMENT_DETECT: RunnerRpcMethods.EnvironmentDetect,
+  PROJECT_DETECT: RunnerRpcMethods.ProjectDetect,
 } as const;
 
 export type RunnerMethod = (typeof RunnerMethod)[keyof typeof RunnerMethod];
+

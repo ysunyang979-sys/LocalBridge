@@ -13,6 +13,7 @@ import { registerWorktreeTools } from "./tools/worktree.js";
 import { registerRuntimeTools } from "./tools/runtime.js";
 import { registerSkillTools } from "./tools/skills.js";
 import { registerLayaTools } from "./tools/laya.js";
+import { registerEnvironmentTools } from "./tools/environment.js";
 
 export interface McpServerOptions {
   name?: string;
@@ -49,6 +50,7 @@ export function createLocalBridgeMcpServer(
   registerRuntimeTools(server, context);
   registerSkillTools(server, context);
   registerLayaTools(server, context);
+  registerEnvironmentTools(server, context);
 
   return server;
 }

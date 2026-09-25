@@ -159,7 +159,10 @@ export class CommandExecutionService {
         summaryText = `run package script "${params.script}" via ${params.manager}`;
       } else if (params.kind === "tool-version") {
         summaryText = `check ${params.tool} version`;
+      } else if (params.kind === "shell-command") {
+        summaryText = `run shell command "${params.command} ${(params.args ?? []).join(" ")}"`;
       }
+
 
       this.approvalManager.handleOperationApproval({
         projectId: params.projectId,
@@ -215,7 +218,7 @@ export class CommandExecutionService {
     }
 
     // 5. Spec-specific validations and command preparation
-    let targetExecutableTool: "node" | "npm" | "pnpm" | "python";
+    let targetExecutableTool: string;
     let commandArgs: string[] = [];
 
     switch (params.kind) {
@@ -364,6 +367,21 @@ export class CommandExecutionService {
         break;
       }
 
+      case "shell-command": {
+        const cmd = params.command.trim();
+        if (cmd.startsWith("./") || cmd.startsWith(".\\") || cmd.includes("/") || cmd.includes("\\")) {
+          const resolved = resolveProjectPath(effectiveRoot, cmd, {
+            mustExist: true,
+            allowSensitive: false,
+          });
+          targetExecutableTool = resolved.canonicalPath;
+        } else {
+          targetExecutableTool = cmd;
+        }
+        commandArgs = params.args ? [...params.args] : [];
+        break;
+      }
+
       default: {
         throw new LocalBridgeError(
           LocalBridgeErrorCode.COMMAND_UNSUPPORTED,
@@ -372,17 +390,93 @@ export class CommandExecutionService {
       }
     }
 
-    // 6. Resolve trusted host executable
-    const resolvedTool = await this.executableRegistry.getExecutable(targetExecutableTool);
-    const finalArgs = [...(resolvedTool.prependArgs ?? []), ...commandArgs];
+    // 6. Resolve trusted host executable and arguments
+    let executablePath: string;
+    let finalArgs: string[];
 
-    // 7. Build hardened environment
+    const requestedShell = params.kind === "shell-command" ? params.shell : undefined;
+
+    if (requestedShell) {
+      if (requestedShell === "powershell") {
+        executablePath = this.executableRegistry.findBinaryOnPath("powershell") || "powershell.exe";
+        finalArgs = [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          `${targetExecutableTool} ${commandArgs.map((a) => `"${a.replace(/"/g, '`"')}"`).join(" ")}`.trim(),
+        ];
+      } else if (requestedShell === "pwsh") {
+        executablePath = this.executableRegistry.findBinaryOnPath("pwsh") || "pwsh.exe";
+        finalArgs = [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `${targetExecutableTool} ${commandArgs.map((a) => `"${a.replace(/"/g, '`"')}"`).join(" ")}`.trim(),
+        ];
+      } else if (requestedShell === "cmd") {
+        executablePath = this.executableRegistry.findBinaryOnPath("cmd") || "cmd.exe";
+        finalArgs = ["/d", "/c", targetExecutableTool, ...commandArgs];
+      } else if (requestedShell === "bash") {
+        executablePath = this.executableRegistry.findBinaryOnPath("bash") || "bash";
+        finalArgs = [
+          "-c",
+          `${targetExecutableTool} ${commandArgs.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ")}`.trim(),
+        ];
+      } else {
+        executablePath = this.executableRegistry.findBinaryOnPath("sh") || "sh";
+        finalArgs = [
+          "-c",
+          `${targetExecutableTool} ${commandArgs.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ")}`.trim(),
+        ];
+      }
+    } else {
+      if (path.isAbsolute(targetExecutableTool)) {
+        executablePath = targetExecutableTool;
+        finalArgs = [...commandArgs];
+      } else {
+        const resolvedTool = await this.executableRegistry.getExecutable(targetExecutableTool);
+        executablePath = resolvedTool.executablePath;
+        finalArgs = [...(resolvedTool.prependArgs ?? []), ...commandArgs];
+      }
+
+      // On Windows, if target executable is a .cmd or .bat file and not wrapped by node, invoke via cmd.exe
+      if (
+        process.platform === "win32" &&
+        (executablePath.toLowerCase().endsWith(".cmd") || executablePath.toLowerCase().endsWith(".bat"))
+      ) {
+        const cmdExe = this.executableRegistry.findBinaryOnPath("cmd") || "cmd.exe";
+        finalArgs = ["/d", "/c", executablePath, ...commandArgs];
+        executablePath = cmdExe;
+      }
+    }
+
+    // 7. Build hardened environment with sanitized custom env vars
     const safeEnv = buildSafeProcessEnv(this.runnerStateDir);
+    if ("env" in params && params.env && typeof params.env === "object") {
+      const BLOCKED_ENV_KEYS = new Set([
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "COMSPEC",
+        "WINDIR",
+        "NODE_OPTIONS",
+        "PYTHONPATH",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+      ]);
+      for (const [k, v] of Object.entries(params.env)) {
+        if (!BLOCKED_ENV_KEYS.has(k.toUpperCase()) && typeof v === "string") {
+          safeEnv[k] = v;
+        }
+      }
+    }
 
     // 8. Execute subprocess with resource bounds and timeout
     const timeoutMs = "timeoutMs" in params ? params.timeoutMs : undefined;
     const execution = await this.processRunner.run({
-      executablePath: resolvedTool.executablePath,
+      executablePath,
       args: finalArgs,
       cwd: workingDir,
       env: safeEnv,
@@ -390,6 +484,7 @@ export class CommandExecutionService {
       canonicalProjectRoot: project.canonicalRoot,
       runnerStateDir: this.runnerStateDir,
     });
+
 
     return {
       projectId: params.projectId,

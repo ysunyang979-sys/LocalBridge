@@ -73,7 +73,10 @@ import {
   CommandExecutionService,
   ExecutableRegistry,
   ProcessRunner,
+  ProjectDetectionService,
 } from "./process/index.js";
+import { createEnvironmentDetectHandler } from "./rpc/handlers/environment-detect.js";
+import { createProjectDetectHandler } from "./rpc/handlers/project-detect.js";
 import { JobManager } from "./jobs/index.js";
 import { LspManager } from "./lsp/index.js";
 import { createCodeDocumentSymbolsHandler } from "./rpc/handlers/code-document-symbols.js";
@@ -134,6 +137,7 @@ export class LocalBridgeRunner {
   readonly worktreeService: ManagedWorktreeService;
   readonly workspaceResolver: WorkspaceResolver;
   readonly runtimeManager: PersistentRuntimeManager;
+  readonly projectDetectionService: ProjectDetectionService;
   readonly runnerStateDir: string;
 
   constructor(config: RunnerDaemonConfig, logger?: Logger) {
@@ -253,6 +257,9 @@ export class LocalBridgeRunner {
       { runnerStateDir, persistState: true }
     );
     this.runtimeManager.setWorkspaceResolver(this.workspaceResolver);
+
+    this.projectDetectionService = new ProjectDetectionService(this.projectRegistry);
+    this.projectDetectionService.setWorkspaceResolver(this.workspaceResolver);
 
     this.rpcRouter = new RpcRouter(this.logger);
     this.registerDefaultHandlers();
@@ -683,6 +690,16 @@ export class LocalBridgeRunner {
         this.projectRegistry,
         this.runnerStateDir
       )
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.EnvironmentDetect,
+      createEnvironmentDetectHandler(this.executableRegistry)
+    );
+
+    this.rpcRouter.register(
+      RunnerRpcMethods.ProjectDetect,
+      createProjectDetectHandler(this.projectDetectionService)
     );
   }
 

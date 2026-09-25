@@ -24,9 +24,27 @@ export const RuntimeLaunchSpecPackageScriptSchema = z
 export const RuntimeLaunchSpecRegisteredCommandSchema = z
   .object({
     kind: z.literal("registered-command"),
-    tool: z.enum(["node", "npm", "pnpm", "python"]),
+    tool: z.enum([
+      "node", "npm", "pnpm", "yarn", "bun", "deno",
+      "python", "pip", "uv", "java", "javac", "go",
+      "rustc", "cargo", "php", "composer", "ruby", "gem",
+      "dotnet", "gcc", "g++", "clang", "cmake", "powershell", "pwsh", "docker", "git",
+    ]),
     args: z.array(z.string()),
     relativeCwd: z.string().optional(),
+    name: z.string().max(100).optional(),
+    approvalId: z.string().optional(),
+  })
+  .strict();
+
+export const RuntimeLaunchSpecShellCommandSchema = z
+  .object({
+    kind: z.literal("shell-command"),
+    command: z.string().min(1, "command is required"),
+    args: z.array(z.string()).default([]),
+    relativeCwd: z.string().optional(),
+    shell: z.enum(["cmd", "powershell", "pwsh", "bash", "sh"]).optional(),
+    env: z.record(z.string()).optional(),
     name: z.string().max(100).optional(),
     approvalId: z.string().optional(),
   })
@@ -35,6 +53,7 @@ export const RuntimeLaunchSpecRegisteredCommandSchema = z
 export const RuntimeLaunchSpecSchema = z.discriminatedUnion("kind", [
   RuntimeLaunchSpecPackageScriptSchema,
   RuntimeLaunchSpecRegisteredCommandSchema,
+  RuntimeLaunchSpecShellCommandSchema,
 ]);
 
 export const RuntimeSummarySchema = z
@@ -48,7 +67,8 @@ export const RuntimeSummarySchema = z
     projectId: z.string(),
     sessionId: z.string().optional(),
     worktreeId: z.string().optional(),
-    kind: z.enum(["package-script", "registered-command"]),
+    kind: z.enum(["package-script", "registered-command", "shell-command"]),
+
     commandCategory: z.string(),
     workspaceMode: z.enum(["direct", "managed-worktree"]),
     startedAt: z.number().nullable().optional(),

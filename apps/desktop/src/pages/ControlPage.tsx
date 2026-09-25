@@ -646,7 +646,7 @@ export const ControlPage: React.FC<ControlPageProps> = ({
               <div className="text-xs font-semibold text-theme-primary">
                 {mcpStatus?.paused
                   ? (t.control?.mcpPaused || "Execution Paused")
-                  : `${mcpStatus?.toolsCount ?? 64} ${t.control?.mcpToolsActive || "Tools Active"}`}
+                  : `${mcpStatus?.toolsCount ?? 66} ${t.control?.mcpToolsActive || "Tools Active"}`}
               </div>
               <div className="text-[10px] font-mono text-theme-muted">
                 v{mcpStatus?.protocolVersion || "2024-11-05"}

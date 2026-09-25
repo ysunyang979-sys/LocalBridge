@@ -229,8 +229,17 @@ export class PersistentRuntimeManager {
         (a.relativeCwd ?? "") === (b.relativeCwd ?? "")
       );
     }
+    if (a.kind === "shell-command" && b.kind === "shell-command") {
+      return (
+        a.command === b.command &&
+        JSON.stringify(a.args ?? []) === JSON.stringify(b.args ?? []) &&
+        (a.relativeCwd ?? "") === (b.relativeCwd ?? "") &&
+        (a.shell ?? "") === (b.shell ?? "")
+      );
+    }
     return false;
   }
+
 
   private checkConcurrencyLimits(projectId: string, sessionId?: string): void {
     let globalActive = 0;
@@ -345,6 +354,19 @@ export class PersistentRuntimeManager {
       };
       assessment = CommandClassifier.classify(spec as any);
       commandCategory = CommandClassifier.classifyCategory(spec as any);
+    } else if (params.launch.kind === "shell-command") {
+      const spec = {
+        projectId: params.projectId,
+        cwd: initialCwd,
+        kind: "shell-command" as const,
+        command: params.launch.command,
+        args: params.launch.args ?? [],
+        shell: params.launch.shell,
+        env: params.launch.env,
+        timeoutMs: 0,
+      };
+      assessment = CommandClassifier.classify(spec as any);
+      commandCategory = CommandClassifier.classifyCategory(spec as any);
     } else {
       const rawCheck = CommandClassifier.checkRawCommand(
         params.launch.tool,
@@ -384,6 +406,17 @@ export class PersistentRuntimeManager {
             manager: params.launch.manager === "pnpm" ? "pnpm" : "npm",
             script: params.launch.script,
             args: params.launch.args ?? [],
+            timeoutMs: 0,
+          }
+        : params.launch.kind === "shell-command"
+        ? {
+            projectId: params.projectId,
+            cwd: initialCwd,
+            kind: "shell-command",
+            command: params.launch.command,
+            args: params.launch.args ?? [],
+            shell: params.launch.shell,
+            env: params.launch.env,
             timeoutMs: 0,
           }
         : {
@@ -447,7 +480,10 @@ export class PersistentRuntimeManager {
       const summaryText =
         params.launch.kind === "package-script"
           ? `run package script "${params.launch.script}" via ${params.launch.manager}`
+          : params.launch.kind === "shell-command"
+          ? `run shell command "${params.launch.command} ${(params.launch.args ?? []).join(" ")}"`
           : `run tool "${params.launch.tool}" with args ${params.launch.args.join(" ")}`;
+
 
       this.approvalManager.handleOperationApproval({
         projectId: params.projectId,
@@ -490,54 +526,12 @@ export class PersistentRuntimeManager {
       }
     }
 
-    // 6. Prepare target executable and arguments
-    let targetTool: "node" | "npm" | "pnpm" | "python";
-    let commandArgs: string[] = [];
-
-    if (params.launch.kind === "package-script") {
-      const packageJsonPath = path.join(workingDir, "package.json");
-      if (!fs.existsSync(packageJsonPath)) {
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.COMMAND_SCRIPT_NOT_FOUND,
-          `package.json not found in working directory '${workingDir}'`
-        );
-      }
-
-      let packageJsonContent: unknown;
-      try {
-        packageJsonContent = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-      } catch {
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.COMMAND_SCRIPT_NOT_FOUND,
-          `Failed to parse package.json in '${workingDir}'`
-        );
-      }
-
-      const scripts = (packageJsonContent as { scripts?: Record<string, unknown> })?.scripts;
-      if (!scripts || typeof scripts[params.launch.script] !== "string") {
-        throw new LocalBridgeError(
-          LocalBridgeErrorCode.COMMAND_SCRIPT_NOT_FOUND,
-          `Script '${params.launch.script}' is not defined in package.json scripts`
-        );
-      }
-
-      targetTool = params.launch.manager as "npm" | "pnpm";
-      commandArgs = [
-        "run",
-        params.launch.script,
-        ...(params.launch.args && params.launch.args.length > 0 ? ["--", ...params.launch.args] : []),
-      ];
-    } else {
-      targetTool = params.launch.tool;
-      commandArgs = [...params.launch.args];
-    }
-
-    const resolvedTool = await this.executableRegistry.getExecutable(targetTool);
-    const finalArgs = [...(resolvedTool.prependArgs ?? []), ...commandArgs];
-    const runnerStateDir =
-      this.options?.runnerStateDir ||
-      (this.persistencePath ? path.dirname(this.persistencePath) : process.cwd());
-    const safeEnv = buildSafeProcessEnv(runnerStateDir);
+    // 6. Prepare target executable, arguments, and environment
+    const { executablePath, finalArgs, safeEnv } = await this.resolveLaunchCommand(
+      params.launch,
+      effectiveRoot,
+      workingDir
+    );
 
     // 7. Create runtime record
     const runtimeId = `rt_${crypto.randomUUID()}`;
@@ -578,7 +572,8 @@ export class PersistentRuntimeManager {
 
     // 8. Spawn process
     try {
-      this.spawnGeneration(record, 1, resolvedTool.executablePath, finalArgs, workingDir, safeEnv);
+      this.spawnGeneration(record, 1, executablePath, finalArgs, workingDir, safeEnv);
+
     } catch (err) {
       record.state = "failed";
       record.lastErrorCode = LocalBridgeErrorCode.RUNTIME_START_FAILED;
@@ -969,6 +964,19 @@ export class PersistentRuntimeManager {
       };
       assessment = CommandClassifier.classify(spec as any);
       commandCategory = CommandClassifier.classifyCategory(spec as any);
+    } else if (record.launchSpec.kind === "shell-command") {
+      const spec = {
+        projectId: record.projectId,
+        cwd: record.effectiveCwd,
+        kind: "shell-command" as const,
+        command: record.launchSpec.command,
+        args: record.launchSpec.args ?? [],
+        shell: record.launchSpec.shell,
+        env: record.launchSpec.env,
+        timeoutMs: 0,
+      };
+      assessment = CommandClassifier.classify(spec as any);
+      commandCategory = CommandClassifier.classifyCategory(spec as any);
     } else {
       const rawCheck = CommandClassifier.checkRawCommand(
         record.launchSpec.tool,
@@ -1008,6 +1016,17 @@ export class PersistentRuntimeManager {
             manager: record.launchSpec.manager === "pnpm" ? "pnpm" : "npm",
             script: record.launchSpec.script,
             args: record.launchSpec.args ?? [],
+            timeoutMs: 0,
+          }
+        : record.launchSpec.kind === "shell-command"
+        ? {
+            projectId: record.projectId,
+            cwd: record.effectiveCwd,
+            kind: "shell-command",
+            command: record.launchSpec.command,
+            args: record.launchSpec.args ?? [],
+            shell: record.launchSpec.shell,
+            env: record.launchSpec.env,
             timeoutMs: 0,
           }
         : {
@@ -1077,27 +1096,11 @@ export class PersistentRuntimeManager {
       workingDir = resolved.canonicalPath;
     }
 
-    let targetTool: "node" | "npm" | "pnpm" | "python";
-    let commandArgs: string[] = [];
-
-    if (record.launchSpec.kind === "package-script") {
-      targetTool = record.launchSpec.manager as "npm" | "pnpm";
-      commandArgs = [
-        "run",
-        record.launchSpec.script,
-        ...(record.launchSpec.args && record.launchSpec.args.length > 0 ? ["--", ...record.launchSpec.args] : []),
-      ];
-    } else {
-      targetTool = record.launchSpec.tool;
-      commandArgs = [...record.launchSpec.args];
-    }
-
-    const resolvedTool = await this.executableRegistry.getExecutable(targetTool);
-    const finalArgs = [...(resolvedTool.prependArgs ?? []), ...commandArgs];
-    const runnerStateDir =
-      this.options?.runnerStateDir ||
-      (this.persistencePath ? path.dirname(this.persistencePath) : process.cwd());
-    const safeEnv = buildSafeProcessEnv(runnerStateDir);
+    const { executablePath, finalArgs, safeEnv } = await this.resolveLaunchCommand(
+      record.launchSpec,
+      effectiveRoot,
+      workingDir
+    );
 
     // Increment generation and restart count
     record.generation += 1;
@@ -1118,11 +1121,12 @@ export class PersistentRuntimeManager {
       this.spawnGeneration(
         record,
         record.generation,
-        resolvedTool.executablePath,
+        executablePath,
         finalArgs,
         workingDir,
         safeEnv
       );
+
     } catch (err) {
       record.state = "failed";
       record.lastErrorCode = LocalBridgeErrorCode.RUNTIME_RESTART_FAILED;
@@ -1145,7 +1149,153 @@ export class PersistentRuntimeManager {
     };
   }
 
+  private async resolveLaunchCommand(
+    launch: RuntimeLaunchSpec,
+    effectiveRoot: string,
+    workingDir: string
+  ): Promise<{ executablePath: string; finalArgs: string[]; safeEnv: NodeJS.ProcessEnv }> {
+    let executablePath: string;
+    let finalArgs: string[];
+
+    if (launch.kind === "package-script") {
+      const packageJsonPath = path.join(workingDir, "package.json");
+      if (!fs.existsSync(packageJsonPath)) {
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.COMMAND_SCRIPT_NOT_FOUND,
+          `package.json not found in working directory '${workingDir}'`
+        );
+      }
+
+      let packageJsonContent: unknown;
+      try {
+        packageJsonContent = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+      } catch {
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.COMMAND_SCRIPT_NOT_FOUND,
+          `Failed to parse package.json in '${workingDir}'`
+        );
+      }
+
+      const scripts = (packageJsonContent as { scripts?: Record<string, unknown> })?.scripts;
+      if (!scripts || typeof scripts[launch.script] !== "string") {
+        throw new LocalBridgeError(
+          LocalBridgeErrorCode.COMMAND_SCRIPT_NOT_FOUND,
+          `Script '${launch.script}' is not defined in package.json scripts`
+        );
+      }
+
+      const targetTool = launch.manager;
+      const commandArgs = [
+        "run",
+        launch.script,
+        ...(launch.args && launch.args.length > 0 ? ["--", ...launch.args] : []),
+      ];
+      const resolvedTool = await this.executableRegistry.getExecutable(targetTool);
+      executablePath = resolvedTool.executablePath;
+      finalArgs = [...(resolvedTool.prependArgs ?? []), ...commandArgs];
+    } else if (launch.kind === "shell-command") {
+      const cmd = launch.command.trim();
+      const rawArgs = launch.args ? [...launch.args] : [];
+      let targetCmd = cmd;
+      if (cmd.startsWith("./") || cmd.startsWith(".\\") || cmd.includes("/") || cmd.includes("\\")) {
+        const resolved = resolveProjectPath(effectiveRoot, cmd, {
+          mustExist: true,
+          allowSensitive: false,
+        });
+        targetCmd = resolved.canonicalPath;
+      }
+
+      const requestedShell = launch.shell;
+      if (requestedShell) {
+        if (requestedShell === "powershell") {
+          executablePath = this.executableRegistry.findBinaryOnPath("powershell") || "powershell.exe";
+          finalArgs = [
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            `${targetCmd} ${rawArgs.map((a) => `"${a.replace(/"/g, '`"')}"`).join(" ")}`.trim(),
+          ];
+        } else if (requestedShell === "pwsh") {
+          executablePath = this.executableRegistry.findBinaryOnPath("pwsh") || "pwsh.exe";
+          finalArgs = [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `${targetCmd} ${rawArgs.map((a) => `"${a.replace(/"/g, '`"')}"`).join(" ")}`.trim(),
+          ];
+        } else if (requestedShell === "cmd") {
+          executablePath = this.executableRegistry.findBinaryOnPath("cmd") || "cmd.exe";
+          finalArgs = ["/d", "/c", targetCmd, ...rawArgs];
+        } else if (requestedShell === "bash") {
+          executablePath = this.executableRegistry.findBinaryOnPath("bash") || "bash";
+          finalArgs = [
+            "-c",
+            `${targetCmd} ${rawArgs.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ")}`.trim(),
+          ];
+        } else {
+          executablePath = this.executableRegistry.findBinaryOnPath("sh") || "sh";
+          finalArgs = [
+            "-c",
+            `${targetCmd} ${rawArgs.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ")}`.trim(),
+          ];
+        }
+      } else {
+        if (path.isAbsolute(targetCmd)) {
+          executablePath = targetCmd;
+          finalArgs = [...rawArgs];
+        } else {
+          const resolvedTool = await this.executableRegistry.getExecutable(targetCmd);
+          executablePath = resolvedTool.executablePath;
+          finalArgs = [...(resolvedTool.prependArgs ?? []), ...rawArgs];
+        }
+        if (
+          process.platform === "win32" &&
+          (executablePath.toLowerCase().endsWith(".cmd") || executablePath.toLowerCase().endsWith(".bat"))
+        ) {
+          const cmdExe = this.executableRegistry.findBinaryOnPath("cmd") || "cmd.exe";
+          finalArgs = ["/d", "/c", executablePath, ...rawArgs];
+          executablePath = cmdExe;
+        }
+      }
+    } else {
+      const targetTool = launch.tool;
+      const commandArgs = [...launch.args];
+      const resolvedTool = await this.executableRegistry.getExecutable(targetTool);
+      executablePath = resolvedTool.executablePath;
+      finalArgs = [...(resolvedTool.prependArgs ?? []), ...commandArgs];
+    }
+
+    const runnerStateDir =
+      this.options?.runnerStateDir ||
+      (this.persistencePath ? path.dirname(this.persistencePath) : process.cwd());
+    const safeEnv = buildSafeProcessEnv(runnerStateDir);
+
+    if (launch.kind === "shell-command" && launch.env && typeof launch.env === "object") {
+      const BLOCKED_ENV_KEYS = new Set([
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "COMSPEC",
+        "WINDIR",
+        "NODE_OPTIONS",
+        "PYTHONPATH",
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+      ]);
+      for (const [k, v] of Object.entries(launch.env)) {
+        if (!BLOCKED_ENV_KEYS.has(k.toUpperCase()) && typeof v === "string") {
+          safeEnv[k] = v;
+        }
+      }
+    }
+
+    return { executablePath, finalArgs, safeEnv };
+  }
+
   list(params: RuntimeListParams): RuntimeListResult {
+
     let list = Array.from(this.runtimes.values());
 
     if (params.projectId) {

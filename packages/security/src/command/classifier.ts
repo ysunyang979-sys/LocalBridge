@@ -8,6 +8,8 @@ import {
   PROHIBITED_SHELL_EXECUTABLES,
   PROHIBITED_SHELL_ARGS,
   ALLOWED_TOOLCHAIN_EXECUTABLES,
+  EXTREME_DANGEROUS_COMMANDS,
+  PROHIBITED_COMMAND_INJECTION_PATTERN,
   validateCommandArguments,
 } from "./rules.js";
 
@@ -94,8 +96,114 @@ export class CommandClassifier {
         }
         return "package-script";
       }
+
+      case "shell-command": {
+        const cmd = spec.command.trim().toLowerCase();
+        const firstArg = spec.args[0]?.trim().toLowerCase() ?? "";
+
+        // inspect / version
+        if (
+          (cmd === "cargo" && (firstArg === "check" || firstArg === "clippy" || firstArg === "--version")) ||
+          (cmd === "go" && (firstArg === "version" || firstArg === "vet")) ||
+          (cmd === "dotnet" && (firstArg === "--version" || firstArg === "--info")) ||
+          (cmd === "docker" && (firstArg === "ps" || firstArg === "version" || firstArg === "images")) ||
+          firstArg === "--version" ||
+          firstArg === "-v" ||
+          firstArg === "version" ||
+          firstArg === "status"
+        ) {
+          if (firstArg === "check" || firstArg === "clippy" || firstArg === "vet") return "typecheck";
+          return "inspect";
+        }
+
+        // test
+        if (
+          firstArg === "test" ||
+          firstArg.startsWith("test:") ||
+          cmd === "pytest" ||
+          cmd.includes("test")
+        ) {
+          return "test";
+        }
+
+        // lint
+        if (
+          firstArg === "lint" ||
+          firstArg.startsWith("lint:") ||
+          cmd === "eslint" ||
+          cmd === "flake8" ||
+          cmd === "pylint" ||
+          cmd === "golangci-lint" ||
+          cmd === "rustfmt"
+        ) {
+          return "lint";
+        }
+
+        // typecheck
+        if (
+          firstArg === "check" ||
+          firstArg === "typecheck" ||
+          cmd === "mypy" ||
+          cmd === "pyright" ||
+          cmd === "tsc"
+        ) {
+          return "typecheck";
+        }
+
+        // build / compile
+        if (
+          firstArg === "build" ||
+          firstArg === "compile" ||
+          firstArg === "publish" ||
+          (cmd === "cargo" && firstArg === "build") ||
+          (cmd === "go" && (firstArg === "build" || firstArg === "generate")) ||
+          (cmd === "mvn" && (firstArg === "compile" || firstArg === "package")) ||
+          (cmd === "gradle" && (firstArg === "build" || firstArg === "assemble")) ||
+          (cmd === "dotnet" && (firstArg === "build" || firstArg === "publish")) ||
+          cmd === "cmake" ||
+          cmd === "make" ||
+          cmd === "ninja" ||
+          cmd === "gcc" ||
+          cmd === "g++" ||
+          cmd === "clang" ||
+          cmd === "clang++"
+        ) {
+          return "build";
+        }
+
+        // package-install
+        if (
+          firstArg === "install" ||
+          firstArg === "add" ||
+          (cmd === "composer" && (firstArg === "install" || firstArg === "update" || firstArg === "require")) ||
+          (cmd === "cargo" && (firstArg === "add" || firstArg === "install")) ||
+          (cmd === "pip" && firstArg === "install") ||
+          (cmd === "uv" && (firstArg === "pip" || firstArg === "add")) ||
+          (cmd === "go" && firstArg === "get") ||
+          (cmd === "dotnet" && (firstArg === "add" || firstArg === "restore")) ||
+          (cmd === "gem" && firstArg === "install")
+        ) {
+          return "package-install";
+        }
+
+        // dev-server / long running
+        if (
+          firstArg === "dev" ||
+          firstArg === "start" ||
+          firstArg === "serve" ||
+          firstArg === "watch" ||
+          (cmd === "docker" && firstArg === "compose") ||
+          cmd === "docker-compose"
+        ) {
+          return "dev-server";
+        }
+
+        return "package-script";
+      }
     }
   }
+
+
 
   /**
    * Pre-execution validation against raw shell commands or unknown executables.
@@ -388,8 +496,115 @@ export class CommandClassifier {
           mayAccessNetwork: true,
         };
       }
+
+      case "shell-command": {
+        const cmd = spec.command.trim();
+        const lowerCmd = cmd.toLowerCase();
+        const baseCmd = lowerCmd.split(/[/\\]/).pop() ?? lowerCmd;
+
+        // 1. Prohibited shell meta-characters / injection sequences
+        const hasInjectionInCommand = PROHIBITED_COMMAND_INJECTION_PATTERN.test(spec.command);
+        const hasInjectionInArgs =
+          spec.args &&
+          Array.isArray(spec.args) &&
+          spec.args.some((arg) => PROHIBITED_COMMAND_INJECTION_PATTERN.test(arg));
+
+        if (hasInjectionInCommand || hasInjectionInArgs) {
+          return {
+            risk: "DANGEROUS",
+            category,
+            reasons: ["Command or arguments contain prohibited shell meta-characters or injection sequences"],
+            executesProjectCode: true,
+            mayModifyFiles: true,
+            mayAccessNetwork: true,
+          };
+        }
+
+        // 2. Prohibited extreme dangerous commands
+        if (EXTREME_DANGEROUS_COMMANDS.has(baseCmd)) {
+          return {
+            risk: "DANGEROUS",
+            category,
+            reasons: [`Command "${spec.command}" is classified as an extremely dangerous system administration utility and is strictly prohibited`],
+            executesProjectCode: true,
+            mayModifyFiles: true,
+            mayAccessNetwork: true,
+          };
+        }
+
+        // 3. Prohibited argument length and count
+        const argValidation = validateCommandArguments(spec.args);
+        if (!argValidation.valid) {
+          return {
+            risk: "DANGEROUS",
+            category,
+            reasons: [argValidation.reason || "Invalid command arguments"],
+            executesProjectCode: true,
+            mayModifyFiles: true,
+            mayAccessNetwork: true,
+          };
+        }
+
+        // 4. Prohibited root deletion arguments
+        if (spec.args && Array.isArray(spec.args)) {
+          const joinedArgs = spec.args.map((a) => a.toLowerCase());
+          if (
+            (joinedArgs.includes("-rf") && (joinedArgs.includes("/") || joinedArgs.includes("/*") || joinedArgs.includes("c:\\") || joinedArgs.includes("c:/"))) ||
+            (joinedArgs.includes("/s") && joinedArgs.includes("/q") && joinedArgs.some((a) => a.includes("c:\\")))
+          ) {
+            return {
+              risk: "DANGEROUS",
+              category,
+              reasons: ["Destructive root filesystem modification command detected"],
+              executesProjectCode: true,
+              mayModifyFiles: true,
+              mayAccessNetwork: true,
+            };
+          }
+        }
+
+        // 5. Allowed toolchain check
+        const isAllowedTool =
+          ALLOWED_TOOLCHAIN_EXECUTABLES.has(baseCmd) ||
+          baseCmd.startsWith("./") ||
+          baseCmd.startsWith(".\\");
+
+        if (!isAllowedTool) {
+          return {
+            risk: "DANGEROUS",
+            category,
+            reasons: [`Executable '${spec.command}' is not in the allowed LocalBridge toolchain list`],
+            executesProjectCode: true,
+            mayModifyFiles: true,
+            mayAccessNetwork: true,
+          };
+        }
+
+        // 6. Safe inspection commands
+        if (category === "inspect") {
+          return {
+            risk: "SAFE",
+            category,
+            reasons: [`Shell command "${spec.command}" runs a safe inspection without modifying project state`],
+            executesProjectCode: false,
+            mayModifyFiles: false,
+            mayAccessNetwork: false,
+          };
+        }
+
+        return {
+          risk: "CAUTION",
+          category,
+          reasons: [`Shell command "${spec.command}" executes within project context`],
+          executesProjectCode: true,
+          mayModifyFiles: category === "build" || category === "package-install" || category === "package-script",
+          mayAccessNetwork: true,
+        };
+      }
+
     }
   }
+
 
   classify(spec: CommandSpec): CommandRiskAssessment {
     return CommandClassifier.classify(spec);

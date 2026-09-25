@@ -2,6 +2,8 @@ import type { ToolAnnotations } from "./types.js";
 
 export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   // Read-only tools
+  localbridge_environment_detect: { readOnlyHint: true },
+  localbridge_project_detect: { readOnlyHint: true },
   localbridge_project_list: { readOnlyHint: true },
   localbridge_project_info: { readOnlyHint: true },
   localbridge_directory_list: { readOnlyHint: true },

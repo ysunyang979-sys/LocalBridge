@@ -114,6 +114,24 @@ import {
   type FsMkdirParams,
   type FsMkdirResult,
 } from "../full-control/index.js";
+import {
+  EnvironmentDetectParamsSchema,
+  EnvironmentDetectResultSchema,
+  ProjectDetectParamsSchema,
+  ProjectDetectResultSchema,
+  type EnvironmentDetectParams,
+  type EnvironmentDetectResult,
+  type ProjectDetectParams,
+  type ProjectDetectResult,
+} from "../environment/index.js";
+
+export type {
+  EnvironmentDetectParams,
+  EnvironmentDetectResult,
+  ProjectDetectParams,
+  ProjectDetectResult,
+};
+
 
 export const OperationIdSchema = z
   .string()
@@ -805,7 +823,12 @@ export const ToolVersionCommandSchema = z
   .object({
     kind: z.literal("tool-version"),
     projectId: z.string(),
-    tool: z.enum(["node", "npm", "pnpm", "python"]),
+    tool: z.enum([
+      "node", "npm", "pnpm", "yarn", "bun", "deno",
+      "python", "pip", "uv", "java", "javac", "go",
+      "rustc", "cargo", "php", "composer", "ruby", "gem",
+      "dotnet", "gcc", "g++", "clang", "cmake", "powershell", "pwsh", "docker", "git",
+    ]),
     approvalId: z.string().optional(),
     sessionId: z.string().optional(),
     callerPurpose: z.string().optional(),
@@ -847,7 +870,7 @@ export const PackageScriptCommandSchema = z
   .object({
     kind: z.literal("package-script"),
     projectId: z.string(),
-    manager: z.enum(["npm", "pnpm"]),
+    manager: z.enum(["npm", "pnpm", "yarn", "bun"]),
     script: z.string(),
     args: z.array(z.string()).max(64).default([]),
     cwd: z.string().default("."),
@@ -859,12 +882,30 @@ export const PackageScriptCommandSchema = z
   .strict();
 export type PackageScriptCommand = z.infer<typeof PackageScriptCommandSchema>;
 
+export const ShellCommandSchema = z
+  .object({
+    kind: z.literal("shell-command"),
+    projectId: z.string(),
+    command: z.string().min(1, "command is required"),
+    args: z.array(z.string()).max(64).default([]),
+    cwd: z.string().default("."),
+    env: z.record(z.string()).optional(),
+    shell: z.enum(["cmd", "powershell", "pwsh", "bash", "sh"]).optional(),
+    timeoutMs: z.number().int().min(1000).max(300000).default(60000),
+    approvalId: z.string().optional(),
+    sessionId: z.string().optional(),
+    callerPurpose: z.string().optional(),
+  })
+  .strict();
+export type ShellCommand = z.infer<typeof ShellCommandSchema>;
+
 // CommandSpec Discriminated Union
 export const CommandSpecSchema = z.discriminatedUnion("kind", [
   ToolVersionCommandSchema,
   NodeScriptCommandSchema,
   PythonScriptCommandSchema,
   PackageScriptCommandSchema,
+  ShellCommandSchema,
 ]);
 export type CommandSpec = z.infer<typeof CommandSpecSchema>;
 
@@ -876,24 +917,28 @@ export type CommandSpec = z.infer<typeof CommandSpecSchema>;
 export const CommandSpecToolSchema = z.object({
   projectId: z.string().describe("Target project identifier"),
   kind: z
-    .enum(["tool-version", "node-script", "python-script", "package-script"])
+    .enum(["tool-version", "node-script", "python-script", "package-script", "shell-command"])
     .describe("Kind of command to execute"),
   tool: z
-    .enum(["node", "npm", "pnpm", "python"])
+    .string()
     .optional()
-    .describe("Tool name for tool-version inspection (node, npm, pnpm, python)"),
+    .describe("Tool name for tool-version inspection (node, npm, pnpm, python, cargo, go, etc.)"),
   path: z
     .string()
     .optional()
     .describe("Relative path to script within project (required for node-script/python-script)"),
   manager: z
-    .enum(["npm", "pnpm"])
+    .enum(["npm", "pnpm", "yarn", "bun"])
     .optional()
-    .describe("Package manager for package-script (npm, pnpm)"),
+    .describe("Package manager for package-script (npm, pnpm, yarn, bun)"),
   script: z
     .string()
     .optional()
     .describe("Package script name (e.g. build, test, lint)"),
+  command: z
+    .string()
+    .optional()
+    .describe("Command or executable name to run (for shell-command, e.g. cargo, go, bun, deno)"),
   args: z
     .array(z.string())
     .max(64)
@@ -903,6 +948,14 @@ export const CommandSpecToolSchema = z.object({
     .string()
     .default(".")
     .describe("Working directory relative to project root"),
+  env: z
+    .record(z.string())
+    .optional()
+    .describe("Optional additional environment variables"),
+  shell: z
+    .enum(["cmd", "powershell", "pwsh", "bash", "sh"])
+    .optional()
+    .describe("Optional shell to execute command within (cmd, powershell, pwsh, bash, sh)"),
   timeoutMs: z
     .number()
     .int()
@@ -991,8 +1044,18 @@ export function sanitizeCommandSpec(raw: any): any {
     if (raw.timeoutMs !== undefined && raw.timeoutMs !== null) base.timeoutMs = raw.timeoutMs;
     return base;
   }
+  if (kind === "shell-command") {
+    if (raw.command !== undefined && raw.command !== null) base.command = raw.command;
+    if (raw.args !== undefined && raw.args !== null) base.args = raw.args;
+    if (raw.cwd !== undefined && raw.cwd !== null) base.cwd = raw.cwd;
+    if (raw.env !== undefined && raw.env !== null) base.env = raw.env;
+    if (raw.shell !== undefined && raw.shell !== null) base.shell = raw.shell;
+    if (raw.timeoutMs !== undefined && raw.timeoutMs !== null) base.timeoutMs = raw.timeoutMs;
+    return base;
+  }
   return raw;
 }
+
 
 // 18. command.classify
 export const CommandClassifyParamsSchema = CommandSpecSchema;
@@ -2184,4 +2247,13 @@ export const RunnerRpcSchemas = {
     params: FsMkdirParamsSchema,
     result: FsMkdirResultSchema,
   },
+  [RunnerRpcMethods.EnvironmentDetect]: {
+    params: EnvironmentDetectParamsSchema,
+    result: EnvironmentDetectResultSchema,
+  },
+  [RunnerRpcMethods.ProjectDetect]: {
+    params: ProjectDetectParamsSchema,
+    result: ProjectDetectResultSchema,
+  },
 } as const;
+

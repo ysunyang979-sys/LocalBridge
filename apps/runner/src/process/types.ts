@@ -1,9 +1,10 @@
 export interface ResolvedExecutable {
-  tool: "node" | "npm" | "pnpm" | "python";
+  tool: string;
   executablePath: string;
   prependArgs?: string[];
   version: string;
 }
+
 
 export interface ProcessSpawnOptions {
   executablePath: string;

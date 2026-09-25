@@ -20,3 +20,4 @@ export * from "./intelligence.js";
 export * from "./connections/index.js";
 export * from "./full-control/index.js";
 export * from "./skills/index.js";
+export * from "./environment/index.js";

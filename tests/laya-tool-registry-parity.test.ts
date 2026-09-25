@@ -8,9 +8,9 @@ import { RunnerRegistry } from "../apps/server/src/runner/registry.js";
 import { RunnerRpcService } from "../apps/server/src/runner/rpc-service.js";
 
 describe("Laya Tool Registry & Scope Parity Suite", () => {
-  it("verifies MCP_TOOL_SCOPE has exactly 64 registered tools", () => {
+  it("verifies MCP_TOOL_SCOPE has exactly 66 registered tools", () => {
     const tools = Object.keys(MCP_TOOL_SCOPE);
-    expect(tools.length).toBe(64);
+    expect(tools.length).toBe(66);
   });
 
   it("verifies both Laya tools are registered with 'read' scope", () => {
@@ -48,7 +48,7 @@ describe("Laya Tool Registry & Scope Parity Suite", () => {
     const server = createLocalBridgeMcpServer(context);
     const registeredTools = (server as any)._registeredTools || (server as any).registeredTools || {};
     const toolNames = Object.keys(registeredTools);
-    expect(toolNames.length).toBe(64);
+    expect(toolNames.length).toBe(66);
     expect(toolNames).toContain("localbridge_laya_status");
     expect(toolNames).toContain("localbridge_laya_assess");
   });

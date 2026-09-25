@@ -73,7 +73,7 @@ describe("ChatGPT Connection & Settings 50x Continuous Cycle Verification", () =
           )
         );
         expect(html).toContain("ChatGPT");
-        expect(html).toContain("64");
+        expect(html).toContain("66");
         expect(html).toContain("lb_");
       }).not.toThrow();
 

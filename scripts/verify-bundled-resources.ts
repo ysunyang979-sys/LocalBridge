@@ -110,8 +110,8 @@ async function verifyBundledServerMcpSchema() {
       headers: { authorization: `Bearer ${mgmtToken}` },
     });
     const statusData = (await statusRes.json()) as any;
-    if (statusData.toolsCount !== 64) {
-      throw new Error(`Bundled server /api/mcp/status toolsCount mismatch: expected 64, got ${statusData.toolsCount}`);
+    if (statusData.toolsCount !== 66) {
+      throw new Error(`Bundled server /api/mcp/status toolsCount mismatch: expected 66, got ${statusData.toolsCount}`);
     }
 
     // Check /api/skills endpoint on bundled server
@@ -180,8 +180,18 @@ async function verifyBundledServerMcpSchema() {
     const listData = await listRes.json();
     const tools = listData.result?.tools ?? [];
 
-    if (tools.length !== 64) {
-      throw new Error(`Bundled server tools/list returned ${tools.length} tools, expected exactly 64!`);
+    if (tools.length !== 66) {
+      throw new Error(`Bundled server tools/list returned ${tools.length} tools, expected exactly 66!`);
+    }
+
+    const requiredEnvTools = [
+      "localbridge_environment_detect",
+      "localbridge_project_detect",
+    ];
+    for (const et of requiredEnvTools) {
+      if (!tools.find((t: any) => t.name === et)) {
+        throw new Error(`Bundled server tools/list is missing required environment tool: ${et}`);
+      }
     }
 
     const requiredSkillTools = [
