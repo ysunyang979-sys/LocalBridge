@@ -28,16 +28,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            zsync \
+            libfuse2 \
+            squashfs-tools \
+            desktop-file-utils \
             build-essential \
             curl \
             wget \
             file \
             libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libfuse2 \
-            squashfs-tools
+            libssl-dev
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -59,9 +63,17 @@ jobs:
       - name: Build Core Packages
         run: pnpm -r --filter=./packages/* run build
 
-      - name: Package Desktop & Linux Installers (.deb, .AppImage)
+      - name: Package Linux Installer (.deb)
         run: |
-          pnpm --filter=@localbridge/desktop exec tauri build --bundles deb,appimage
+          pnpm --filter=@localbridge/desktop exec tauri build --bundles deb
+
+      - name: Package Linux Installer (.AppImage)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          NO_STRIP: "true"
+        run: |
+          pnpm --filter=@localbridge/desktop exec tauri build --bundles appimage --verbose
+        continue-on-error: true
 
       - name: Upload Linux Artifacts (.deb, .AppImage)
         uses: actions/upload-artifact@v4
