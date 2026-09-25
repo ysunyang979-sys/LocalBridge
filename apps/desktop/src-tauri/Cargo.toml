@@ -4,7 +4,7 @@ version = "1.2.0"
 description = "Nexus Desktop Control Center"
 authors = ["Nexus Team"]
 edition = "2021"
-license = "PolyForm-Noncommercial-1.0.0"
+license = "Apache-2.0"
 
 [package.metadata.tauri-winres]
 OriginalFilename = "localbridge-desktop.exe"

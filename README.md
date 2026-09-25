@@ -498,8 +498,5 @@ LocalBridge v1.0 marks the formal Feature Freeze and production hardening of the
 
 ## License
 
-本项目遵循 [PolyForm Noncommercial License 1.0.0](LICENSE) 协议发布（source-available，非商业用途免费，商用需授权）。
+本项目遵循 [Apache-2.0](LICENSE) 开源许可证发布。
 
-- **非商业用途**: 个人学习、学术研究、业余爱好等非商业用途免费使用与修改。
-- **商业授权**: 商业使用请联系 `<邮箱>`。
-- **历史许可**: v1.2.0 及之前的版本按 MIT 协议发布，详见 [LICENSE-HISTORY.md](LICENSE-HISTORY.md)。

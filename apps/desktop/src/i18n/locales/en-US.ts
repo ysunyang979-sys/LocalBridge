@@ -935,7 +935,7 @@ export const enUS: I18nDictionary = {
     downloadLayaBtn: "Download Laya",
     getStartedBtn: "Get Started",
     skipForNowBtn: "Skip for Now",
-    licenseAgreementText: "Nexus is released under the PolyForm Noncommercial License 1.0.0 (source-available, free for noncommercial use, commercial use requires authorization). Continuing signifies your acceptance.",
+    licenseAgreementText: "Nexus is released under the Apache-2.0 License (open-source and free for both personal and commercial use). Continuing signifies your acceptance.",
   },
   statusMap: {
     running: "Running",

@@ -2,7 +2,7 @@
   "name": "localbridge-monorepo",
   "version": "1.2.0",
   "private": true,
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "Apache-2.0",
   "description": "Secure Model Context Protocol (MCP) Bridge for Local Development",
   "packageManager": "pnpm@10.14.0",
   "engines": {
