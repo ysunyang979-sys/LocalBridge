@@ -35,11 +35,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   } else if (userAgent.includes("linux")) {
     detectedOS = "linux";
+    if (linuxCard) {
+      linuxCard.classList.add("recommended");
+      winCard?.classList.remove("recommended");
+      macCard?.classList.remove("recommended");
+    }
     if (heroDownloadText) {
-      heroDownloadText.textContent = "查看下载版本 (Linux 即将推出)";
+      heroDownloadText.textContent = "下载 Linux 版 (.AppImage 便携版)";
     }
     if (heroDownloadBtn) {
-      heroDownloadBtn.href = "#download";
+      heroDownloadBtn.href = "../releases/Nexus_1.2.0_amd64.AppImage";
     }
   }
 
