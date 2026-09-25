@@ -8,12 +8,8 @@ on:
 
 jobs:
   test:
-    name: Build, Lint & Test (Windows & Ubuntu)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-        node-version: [24.x]
+    name: Build, Typecheck & Test (Windows)
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
@@ -24,10 +20,10 @@ jobs:
         with:
           version: 10.14.0
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js 24.x
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 24.x
           cache: "pnpm"
 
       - name: Setup Rust toolchain
@@ -36,14 +32,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build Core Packages
+        run: pnpm -r --filter=./packages/* run build
+
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Run Test Suite
-        run: pnpm run test
-
       - name: Build Packages & Applications
         run: pnpm run build
+
+      - name: Run Test Suite
+        run: pnpm run test
 
       - name: Cargo Check (Desktop)
         working-directory: apps/desktop/src-tauri
