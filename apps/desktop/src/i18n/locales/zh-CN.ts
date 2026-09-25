@@ -576,7 +576,7 @@ export const zhCN: I18nDictionary = {
       typeRunnerDesc: "用于受控的本地执行守护进程连接认证 (lb_run_...)",
       scopesLabel: "权限范围 / Scopes",
       scopeRead: "read (只读权限)",
-      scopeWrite: "write (读写权限)",
+      scopeWrite: "write (写入权限)",
       scopeExecute: "execute (执行权限)",
       submitBtn: "立即生成令牌",
       submitting: "正在生成...",

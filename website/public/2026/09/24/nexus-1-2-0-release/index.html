@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus 1.2.0 正式发布：为 ChatGPT 与 Gemini Spark 构筑零信任本地执行中枢 — Nexus Blog</title>
+  <meta name="description" content="详解 Nexus 1.2.0 如何通过原生 MCP 2.0、OAuth 2.0 PKCE 握手协议与本地零信任沙箱，让前沿大模型安全操作本地工程代码。">
+  <link rel="icon" type="image/png" href="/images/nexus.png">
+  <link rel="stylesheet" href="/css/style.css">
+<meta name="generator" content="Hexo 7.3.0"></head>
+<body>
+  <div class="container">
+    <header>
+      <a href="/" class="brand">
+        <img src="/images/nexus.png" alt="Nexus">
+        <span>Nexus Blog</span>
+      </a>
+      <nav>
+        <a href="/">文章</a>
+        <a href="/docs/">文档</a>
+        <a href="/about/">关于</a>
+        <a href="https://github.com" target="_blank">GitHub</a>
+        <button id="themeToggle" class="theme-toggle" title="Toggle theme">🌙</button>
+      </nav>
+    </header>
+
+    <main>
+      <article class="article-detail">
+  <div class="article-header">
+    <h1>Nexus 1.2.0 正式发布：为 ChatGPT 与 Gemini Spark 构筑零信任本地执行中枢</h1>
+    <div class="article-meta">
+      <time datetime="2026-09-24T02:00:00.000Z">2026-09-24</time>
+      <span>·</span>
+      <span>3 分钟阅读</span>
+      
+        <span>·</span>
+        <div class="tags">
+          
+            <a href="/tags/Release/" class="tag">#Release</a>
+          
+            <a href="/tags/MCP/" class="tag">#MCP</a>
+          
+            <a href="/tags/Architecture/" class="tag">#Architecture</a>
+          
+        </div>
+      
+    </div>
+  </div>
+
+  <div class="article-content">
+    <p>今天，我们非常自豪地宣布 <strong>Nexus 1.2.0</strong> 现已正式发布！</p>
+<p>Nexus 从诞生之初，就立志于解决开发者在拥抱自主 AI 软件工程师时面临的最大顾虑——<strong>安全与控制权</strong>。在 1.2.0 版本中，我们带来了对 <strong>Google Gemini Spark</strong> 的深度协议适配，以及对 <strong>OpenAI ChatGPT</strong> 专用网关的全面增强。</p>
+<hr>
+<h2 id="1-为什么我们需要-Nexus？"><a href="#1-为什么我们需要-Nexus？" class="headerlink" title="1. 为什么我们需要 Nexus？"></a>1. 为什么我们需要 Nexus？</h2><p>随着大语言模型（LLM）从单纯的“聊天对话”演进为能够调用工具、修改工程代码的“自主软件工程师”，开发者面临一个核心困境：</p>
+<ul>
+<li><strong>生产力爆发</strong>：开发者希望将本地庞大的项目源码、配置文件、Git 仓库与开发工具链开放给顶尖模型，实现自动化跨文件重构、错误诊断与项目分析。</li>
+<li><strong>安全底线</strong>：让远程 AI 直连本地存在巨大隐患。一旦外部模型遭遇提示词注入（Prompt Injection）或恶意代码投毒，未经受限的本地访问权限将导致敏感密钥泄露（如 <code>.env</code>、SSH 私钥）甚至远程代码执行（RCE）。</li>
+</ul>
+<p>Nexus 旨在解决这一矛盾：<strong>在保障本地计算机绝对安全、物理权限强可控的前提下，构建一条标准化、企业级、易穿透的双向控制桥梁。</strong></p>
+<hr>
+<h2 id="2-1-2-0-核心特性速览"><a href="#2-1-2-0-核心特性速览" class="headerlink" title="2. 1.2.0 核心特性速览"></a>2. 1.2.0 核心特性速览</h2><h3 id="2-1-深度对齐-Google-Gemini-Spark-规范"><a href="#2-1-深度对齐-Google-Gemini-Spark-规范" class="headerlink" title="2.1 深度对齐 Google Gemini Spark 规范"></a>2.1 深度对齐 Google Gemini Spark 规范</h3><p>针对 Google Gemini Spark 的连接规范，Nexus MCP Bridge 实现了严苛的标准对齐：</p>
+<ul>
+<li><strong>链路探测适配</strong>：针对 Google 后端探针，支持 <code>HEAD /mcp</code> 返回 <code>Link: &lt;.../.well-known/oauth-protected-resource&gt;; rel=&quot;oauth-protected-resource&quot;</code>，避免 405 Method Not Allowed 错误。</li>
+<li><strong>CORS 暴露标头</strong>：显式暴露 <code>WWW-Authenticate, Link, Mcp-Session-Id, Mcp-Protocol-Version, Content-Type</code>，确保浏览器端与 Google 边缘代理平稳通信。</li>
+<li><strong>动态客户端注册 (DCR)</strong>：支持 Gemini 后端在无预置凭据的情况下自动交换 <code>client_id</code>。</li>
+<li><strong>RFC 7636 PKCE S256</strong>：防篡改授权校验，保障授权重定向安全。</li>
+</ul>
+<h3 id="2-2-专有-ChatGPT-专用-AI-网关"><a href="#2-2-专有-ChatGPT-专用-AI-网关" class="headerlink" title="2.2 专有 ChatGPT 专用 AI 网关"></a>2.2 专有 ChatGPT 专用 AI 网关</h3><p>为 OpenAI ChatGPT 提供了经物理裁剪的专用通道，仅暴露 8 大安全核心工具，阻断任何非法的终端底层执行。</p>
+<h3 id="2-3-自包含运行时环境"><a href="#2-3-自包含运行时环境" class="headerlink" title="2.3 自包含运行时环境"></a>2.3 自包含运行时环境</h3><p>Nexus 1.2.0 Windows 安装包内置了独立验证的 Node.js 24 运行时环境、SQLite 引擎与语言服务器，无需开发者在宿主机上预先配置复杂的开发依赖。</p>
+<hr>
+<h2 id="3-立即体验"><a href="#3-立即体验" class="headerlink" title="3. 立即体验"></a>3. 立即体验</h2><p>访问 <a href="/about/">关于与下载页面</a> 即可获取最新的 <code>Nexus_1.2.0_x64-setup.exe</code> 独立安装包。</p>
+
+  </div>
+
+  <nav class="post-nav">
+    <div>
+      
+    </div>
+    <div>
+      
+        <a href="/2026/09/23/mcp-zero-trust-threat-model/" title="为什么说“无沙箱的 MCP 远程调用”是一场安全灾难：Nexus 威胁模型深度拆解">
+          下一篇: 为什么说“无沙箱的 MCP 远程调用”是一场安全灾难：Nexus 威胁模型深度拆解 →
+        </a>
+      
+    </div>
+  </nav>
+</article>
+
+    </main>
+
+    <footer>
+      <div>
+        <span>© 2026 Nexus Team</span>
+        <span> · </span>
+        <span>Local AI Control Plane</span>
+      </div>
+      <div>
+        <a href="/archives/">归档</a>
+        <span> · </span>
+        <a href="/about/">下载客户端</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

@@ -791,6 +791,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </ConnectionCenterErrorBoundary>
         )}
 
+
       {/* Tab 2: Security & Trust Policies */}
       {activeTab === "security" && (
         <div className="max-w-4xl space-y-6">

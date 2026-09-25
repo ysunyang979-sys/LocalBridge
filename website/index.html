@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus — 连接大模型与本地代码的零信任控制中枢</title>
+  <meta name="description" content="Nexus 是一款专为开发者打造的本地 AI 控制平面与安全 MCP 桥接工具。安全连接 ChatGPT、Gemini Spark 与 Claude 到本地代码库，具备零信任沙箱、逐项权限审批与毫秒级急停。">
+  <link rel="icon" type="image/png" href="assets/nexus.png">
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Google Fonts: Plus Jakarta Sans, Inter, JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* 舒适温和的阅读质感 */
+    :root {
+      --bg-page: #faf9f6;
+      --bg-surface: #ffffff;
+      --text-main: #1c1917;
+      --text-muted: #78716c;
+      --border-subtle: rgba(0, 0, 0, 0.07);
+      --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+      --card-hover-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+    }
+
+    .dark {
+      --bg-page: #141416;
+      --bg-surface: #1b1c20;
+      --text-main: #f5f5f4;
+      --text-muted: #a8a29e;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+      --card-hover-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    body {
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    .soft-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      box-shadow: var(--card-shadow);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .soft-card:hover {
+      box-shadow: var(--card-hover-shadow);
+    }
+
+    .terminal-box {
+      font-family: 'JetBrains Mono', monospace;
+      background-color: #16171d;
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-sky-500/20 selection:text-sky-700 dark:selection:text-sky-300">
+
+  <!-- Top Announcement Bar -->
+  <aside class="border-b border-black/[0.05] dark:border-white/[0.06] bg-amber-500/[0.06] dark:bg-amber-500/[0.08] text-[13px] py-2 px-4 text-center select-none">
+    <div class="max-w-7xl mx-auto flex items-center justify-center gap-2 text-stone-600 dark:text-stone-300">
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 font-medium text-xs">
+        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+        <span>v1.2.0 正式版</span>
+      </span>
+      <span class="hidden sm:inline" data-i18n="topbar.text">已原生支持 Google Gemini Spark 与 ChatGPT OAuth 2.0 PKCE 桥接</span>
+      <a href="#quickstart" class="font-medium text-sky-600 dark:text-sky-400 hover:underline inline-flex items-center gap-0.5 ml-1">
+        <span data-i18n="topbar.link">了解配置详情</span>
+        <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Navbar -->
+  <header class="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-[#141416]/80 border-b border-black/[0.06] dark:border-white/[0.06] transition-colors">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <!-- Logo -->
+      <a href="#" class="flex items-center gap-3 group">
+        <img src="assets/nexus.png" alt="Nexus Logo" class="w-8 h-8 rounded-xl object-cover shadow-sm border border-black/5 group-hover:scale-105 transition-transform">
+        <div class="leading-none">
+          <div class="text-[15px] font-bold tracking-tight text-stone-900 dark:text-white flex items-center gap-2">
+            <span>Nexus</span>
+            <span class="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400">1.2.0</span>
+          </div>
+          <span class="text-[10px] text-stone-600 dark:text-stone-400 tracking-wider">LOCAL AI CONTROL PLANE</span>
+        </div>
+      </a>
+
+      <!-- Center Links -->
+      <nav class="hidden md:flex items-center gap-7 text-[13px] font-medium text-stone-600 dark:text-stone-300">
+        <a href="#features" class="hover:text-stone-900 dark:hover:text-white transition" data-i18n="nav.features">功能特性</a>
+        <a href="#workflow" class="hover:text-stone-900 dark:hover:text-white transition" data-i18n="nav.workflow">工作流程</a>
+        <a href="#security" class="hover:text-stone-900 dark:hover:text-white transition" data-i18n="nav.security">安全设计</a>
+        <a href="#models" class="hover:text-stone-900 dark:hover:text-white transition" data-i18n="nav.models">模型生态</a>
+        <a href="#quickstart" class="hover:text-stone-900 dark:hover:text-white transition" data-i18n="nav.quickstart">下载与上手</a>
+        <a href="#faq" class="hover:text-stone-900 dark:hover:text-white transition" data-i18n="nav.faq">问答</a>
+      </nav>
+
+      <!-- Right Actions: Theme Toggle + Lang Toggle + Download -->
+      <div class="flex items-center gap-2.5">
+        <!-- Theme Toggle -->
+        <button id="themeToggle" class="p-2 rounded-lg text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800/60 transition" title="切换深色/浅色模式">
+          <i data-lucide="sun" id="sunIcon" class="w-4 h-4 hidden"></i>
+          <i data-lucide="moon" id="moonIcon" class="w-4 h-4"></i>
+        </button>
+
+        <!-- Language Toggle -->
+        <button id="langToggle" class="px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 text-xs font-mono text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800/60 transition flex items-center gap-1.5">
+          <i data-lucide="languages" class="w-3.5 h-3.5 text-sky-600 dark:text-sky-400"></i>
+          <span id="langLabel">EN</span>
+        </button>
+
+        <!-- GitHub Repository Link -->
+        <a href="https://github.com/ysunyang979-sys/Nexus-Web-ChatGPT" target="_blank" class="p-2 rounded-lg text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800/60 transition" title="GitHub 仓库">
+          <i data-lucide="github" class="w-4 h-4"></i>
+        </a>
+
+        <!-- Download CTA -->
+        <a href="../Nexus_1.2.0_x64-setup.exe" class="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-900 shadow-sm transition">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span data-i18n="nav.download">下载 Windows 版</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="pt-16 pb-20 px-4 sm:px-6 max-w-5xl mx-auto text-center">
+    <!-- Gentle Tag -->
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-stone-100 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700/60 text-xs font-medium text-stone-600 dark:text-stone-300 mb-6">
+      <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+      <span data-i18n="hero.tag">本地优先 · 零信任架构 · MCP 2.0 标准</span>
+    </div>
+
+    <!-- Main Headline -->
+    <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-stone-900 dark:text-white leading-[1.15] max-w-4xl mx-auto">
+      <span data-i18n="hero.headline_part1">连接前沿大模型与本地代码，</span><br>
+      <span class="text-sky-600 dark:text-sky-400" data-i18n="hero.headline_part2">安全、可控的 AI 控制中枢</span>
+    </h1>
+
+    <!-- Subtitle -->
+    <p class="mt-6 text-base sm:text-lg text-stone-600 dark:text-stone-300 max-w-2xl mx-auto leading-relaxed" data-i18n="hero.subtitle">
+      为 ChatGPT、Gemini Spark 与 Claude 赋予安全的本地开发与工程执行能力。本地沙箱隔离运行，代码绝不上传云端；逐项权限拦截与毫秒级急停，让 AI 真正成为值得托付的编程伙伴。
+    </p>
+
+    <!-- CTAs -->
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3.5">
+      <a href="../Nexus_1.2.0_x64-setup.exe" class="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition">
+        <i data-lucide="download" class="w-4 h-4"></i>
+        <span data-i18n="hero.btn_download">下载 Nexus 客户端 (v1.2.0)</span>
+      </a>
+
+      <a href="#quickstart" class="flex items-center gap-2 px-5 py-3 rounded-xl font-medium text-sm bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-750 text-stone-700 dark:text-stone-200 border border-stone-200 dark:border-stone-700 shadow-sm transition">
+        <i data-lucide="terminal" class="w-4 h-4 text-stone-400"></i>
+        <span data-i18n="hero.btn_quickstart">快速配置指引</span>
+      </a>
+
+      <a href="https://github.com/ysunyang979-sys/Nexus-Web-ChatGPT" target="_blank" class="flex items-center gap-1.5 px-4 py-3 rounded-xl font-medium text-sm text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 transition">
+        <i data-lucide="github" class="w-4 h-4"></i>
+        <span>GitHub</span>
+      </a>
+    </div>
+
+    <!-- Quiet Metrics Strip -->
+    <div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto text-left">
+      <div class="p-3.5 rounded-xl border border-stone-200/70 dark:border-stone-800 bg-white/60 dark:bg-stone-900/40">
+        <div class="text-xl font-bold text-stone-900 dark:text-white font-mono">100%</div>
+        <div class="text-xs text-stone-500 mt-0.5" data-i18n="metric.local">源码纯本地留存</div>
+      </div>
+      <div class="p-3.5 rounded-xl border border-stone-200/70 dark:border-stone-800 bg-white/60 dark:bg-stone-900/40">
+        <div class="text-xl font-bold text-sky-600 dark:text-sky-400 font-mono">MCP 2.0</div>
+        <div class="text-xs text-stone-500 mt-0.5" data-i18n="metric.mcp">标准开放协议</div>
+      </div>
+      <div class="p-3.5 rounded-xl border border-stone-200/70 dark:border-stone-800 bg-white/60 dark:bg-stone-900/40">
+        <div class="text-xl font-bold text-emerald-600 dark:text-emerald-400 font-mono">3-Tier</div>
+        <div class="text-xs text-stone-500 mt-0.5" data-i18n="metric.policy">三级人机安全策略</div>
+      </div>
+      <div class="p-3.5 rounded-xl border border-stone-200/70 dark:border-stone-800 bg-white/60 dark:bg-stone-900/40">
+        <div class="text-xl font-bold text-amber-600 dark:text-amber-400 font-mono">&lt; 10ms</div>
+        <div class="text-xs text-stone-500 mt-0.5" data-i18n="metric.halt">一键紧急制动断网</div>
+      </div>
+    </div>
+
+    <!-- Clean Product Mockup -->
+    <div class="mt-12 max-w-4xl mx-auto soft-card rounded-2xl overflow-hidden text-left border border-stone-200 dark:border-stone-800">
+      <!-- Mockup Header -->
+      <div class="px-4 py-2.5 bg-stone-100/70 dark:bg-stone-900/70 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between text-xs">
+        <div class="flex items-center gap-2">
+          <div class="flex gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-stone-300 dark:bg-stone-700"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-stone-300 dark:bg-stone-700"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-stone-300 dark:bg-stone-700"></span>
+          </div>
+          <span class="text-stone-500 font-mono text-[11px] ml-2">Nexus Control Center</span>
+        </div>
+        <div class="flex items-center gap-2 font-mono text-[11px]">
+          <span class="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            System Ready
+          </span>
+          <span class="text-stone-300 dark:text-stone-700">|</span>
+          <span class="text-stone-500">64 Tools Active</span>
+        </div>
+      </div>
+
+      <!-- Mockup Content: Elegant simulated workflow -->
+      <div class="p-5 sm:p-6 space-y-4 bg-white dark:bg-stone-900/50 text-xs font-mono">
+        <!-- Turn 1 -->
+        <div class="flex items-start gap-3">
+          <div class="w-6 h-6 rounded-lg bg-stone-100 dark:bg-stone-800 flex items-center justify-center text-stone-500 shrink-0 font-sans font-bold text-[10px]">
+            AI
+          </div>
+          <div class="space-y-2 flex-1">
+            <div class="text-stone-800 dark:text-stone-200 font-sans leading-relaxed">
+              正在分析仓库中的用户鉴权模块，发现一个潜在的事务并发问题。我将先进行代码只读排查：
+            </div>
+            <!-- Tool Call 1: Read File -->
+            <div class="p-2.5 rounded-lg border border-stone-200/80 dark:border-stone-800 bg-stone-50/60 dark:bg-stone-950/40 flex items-center justify-between text-[11px]">
+              <div class="flex items-center gap-2 text-stone-700 dark:text-stone-300">
+                <i data-lucide="file-code" class="w-3.5 h-3.5 text-sky-600 dark:text-sky-400"></i>
+                <span class="font-bold">read_file</span>
+                <span class="text-stone-500 truncate">src/services/auth.ts (lines 1-80)</span>
+              </div>
+              <span class="text-emerald-600 dark:text-emerald-400 font-semibold text-[10px]">✓ SAFE (Auto-Approved)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Turn 2: Caution Approval Card -->
+        <div class="flex items-start gap-3 pt-2">
+          <div class="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+            <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
+          </div>
+          <div class="space-y-2 flex-1 p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04]">
+            <div class="flex items-center justify-between">
+              <span class="font-sans font-semibold text-stone-800 dark:text-stone-100 text-xs">
+                拦截到代码修改请求（需要人工确认）
+              </span>
+              <span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold text-[10px]">
+                POLICY: CAUTION
+              </span>
+            </div>
+            <div class="text-stone-600 dark:text-stone-300 font-sans text-[11px] leading-relaxed">
+              AI 申请修改 <code class="px-1 rounded bg-stone-200/60 dark:bg-stone-800 text-stone-800 dark:text-stone-200">src/services/auth.ts</code> 以包裹数据库原子事务。
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-1 font-sans">
+              <button class="px-2.5 py-1 rounded-md text-xs text-stone-600 hover:text-stone-900 dark:text-stone-400 hover:bg-stone-200/50 transition">
+                拒绝 (Deny)
+              </button>
+              <button class="px-3 py-1 rounded-md text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition">
+                批准并应用修改 (Approve)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 Core Pillars -->
+  <section id="features" class="py-16 px-4 sm:px-6 max-w-5xl mx-auto border-t border-stone-200/70 dark:border-stone-800">
+    <div class="text-center max-w-2xl mx-auto mb-12">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-2" data-i18n="pillars.tag">WHY NEXUS</h2>
+      <p class="text-2xl sm:text-3xl font-bold text-stone-900 dark:text-white" data-i18n="pillars.title">让前沿 AI 在本地严密受控下大显身手</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Pillar 1 -->
+      <div class="soft-card rounded-2xl p-6 space-y-3">
+        <div class="w-10 h-10 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <h3 class="text-base font-bold text-stone-900 dark:text-white" data-i18n="p1.title">100% 本地优先</h3>
+        <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="p1.desc">
+          所有代码阅读、文件树检索、代码补丁均在用户电脑本地执行。支持目录白名单物理锁定（Jail 限制），绝无未经授权的代码上传云端风险。
+        </p>
+      </div>
+
+      <!-- Pillar 2 -->
+      <div class="soft-card rounded-2xl p-6 space-y-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+          <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+        </div>
+        <h3 class="text-base font-bold text-stone-900 dark:text-white" data-i18n="p2.title">三级人机协同审批</h3>
+        <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="p2.desc">
+          自动将操作划分为 SAFE（安全只读）、CAUTION（写入确认）与 DANGEROUS（高危阻断）。开发者拥有最终裁决权，并可随时发起限时免审会话。
+        </p>
+      </div>
+
+      <!-- Pillar 3 -->
+      <div class="soft-card rounded-2xl p-6 space-y-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+          <i data-lucide="zap" class="w-5 h-5"></i>
+        </div>
+        <h3 class="text-base font-bold text-stone-900 dark:text-white" data-i18n="p3.title">原生前沿模型生态</h3>
+        <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="p3.desc">
+          原生支持 Google Gemini Spark 与 OpenAI ChatGPT。搭载带 PKCE 的企业级 OAuth 2.0 验证规范，全兼容 Claude Desktop 与各类 MCP 客户端。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Detailed Features Grid -->
+  <section class="py-16 px-4 sm:px-6 max-w-5xl mx-auto">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <!-- Item 1: LSP -->
+      <div class="soft-card rounded-2xl p-5 flex items-start gap-4">
+        <div class="w-9 h-9 rounded-lg bg-stone-100 dark:bg-stone-800 flex items-center justify-center text-stone-700 dark:text-stone-200 shrink-0">
+          <i data-lucide="code-2" class="w-4 h-4"></i>
+        </div>
+        <div class="space-y-1">
+          <h4 class="text-sm font-bold text-stone-900 dark:text-white" data-i18n="grid1.title">LSP 语法级代码智能</h4>
+          <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="grid1.desc">
+            内置 TypeScript / ESLint Language Server。AI 能够以 AST 抽象语法树级别进行符号定义跳转、跨文件引用查询和编译报错诊断。
+          </p>
+        </div>
+      </div>
+
+      <!-- Item 2: Emergency Stop -->
+      <div class="soft-card rounded-2xl p-5 flex items-start gap-4">
+        <div class="w-9 h-9 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
+          <i data-lucide="octagon-alert" class="w-4 h-4"></i>
+        </div>
+        <div class="space-y-1">
+          <h4 class="text-sm font-bold text-stone-900 dark:text-white" data-i18n="grid2.title">硬件级瞬时急停 (Emergency Halt)</h4>
+          <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="grid2.desc">
+            一旦发现异常，一键发送系统级强杀信号（SIGKILL / Taskkill）并断开桥接端口，彻底阻断任何未完成的文件写入或网络请求。
+          </p>
+        </div>
+      </div>
+
+      <!-- Item 3: Skills System -->
+      <div class="soft-card rounded-2xl p-5 flex items-start gap-4">
+        <div class="w-9 h-9 rounded-lg bg-stone-100 dark:bg-stone-800 flex items-center justify-center text-stone-700 dark:text-stone-200 shrink-0">
+          <i data-lucide="box" class="w-4 h-4"></i>
+        </div>
+        <div class="space-y-1">
+          <h4 class="text-sm font-bold text-stone-900 dark:text-white" data-i18n="grid3.title">内置技能与合规验证</h4>
+          <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="grid3.desc">
+            预置针对代码排错、Git 审查、构建修复等 8 大开箱即用技能。支持从 ZIP 包热加载技能，严格校验权限清单防范恶意插件。
+          </p>
+        </div>
+      </div>
+
+      <!-- Item 4: Audit Ledger -->
+      <div class="soft-card rounded-2xl p-5 flex items-start gap-4">
+        <div class="w-9 h-9 rounded-lg bg-stone-100 dark:bg-stone-800 flex items-center justify-center text-stone-700 dark:text-stone-200 shrink-0">
+          <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+        </div>
+        <div class="space-y-1">
+          <h4 class="text-sm font-bold text-stone-900 dark:text-white" data-i18n="grid4.title">事务级本地审计日志</h4>
+          <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="grid4.desc">
+            基于 SQLite WAL 引擎记录每一步工具调用的时间戳、参数散列、耗时与审批结果，满足企业安全合规回溯需求。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works / Workflow -->
+  <section id="workflow" class="py-16 px-4 sm:px-6 max-w-5xl mx-auto border-t border-stone-200/70 dark:border-stone-800">
+    <div class="text-center max-w-2xl mx-auto mb-12">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-2" data-i18n="steps.tag">HOW IT WORKS</h2>
+      <p class="text-2xl sm:text-3xl font-bold text-stone-900 dark:text-white" data-i18n="steps.title">只需三步，建立安全编程桥梁</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="soft-card rounded-2xl p-6 space-y-3 relative">
+        <span class="text-3xl font-bold font-mono text-stone-200 dark:text-stone-800">01</span>
+        <h4 class="text-sm font-bold text-stone-900 dark:text-white" data-i18n="step1.title">启动客户端并授权仓库</h4>
+        <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="step1.desc">
+          下载安装 Nexus 客户端，添加你正在开发的代码目录。系统将自动锁定沙箱范围并启动后台服务。
+        </p>
+      </div>
+
+      <div class="soft-card rounded-2xl p-6 space-y-3 relative">
+        <span class="text-3xl font-bold font-mono text-stone-200 dark:text-stone-800">02</span>
+        <h4 class="text-sm font-bold text-stone-900 dark:text-white" data-i18n="step2.title">连接大模型 (MCP)</h4>
+        <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="step2.desc">
+          在 ChatGPT 或 Gemini Spark 中配置 Nexus 桥接地址，通过 OAuth 2.0 PKCE 协议完成安全配对。
+        </p>
+      </div>
+
+      <div class="soft-card rounded-2xl p-6 space-y-3 relative">
+        <span class="text-3xl font-bold font-mono text-stone-200 dark:text-stone-800">03</span>
+        <h4 class="text-sm font-bold text-stone-900 dark:text-white" data-i18n="step3.title">自然语言驱动工程执行</h4>
+        <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed" data-i18n="step3.desc">
+          向大模型提出编码或排错需求，AI 将自动调用代码阅读与补丁工具，一切高危改动均在你的授权下运行。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Models Support -->
+  <section id="models" class="py-16 px-4 sm:px-6 max-w-5xl mx-auto border-t border-stone-200/70 dark:border-stone-800">
+    <div class="text-center max-w-2xl mx-auto mb-10">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-2" data-i18n="modelsec.tag">COMPATIBILITY</h2>
+      <p class="text-2xl sm:text-3xl font-bold text-stone-900 dark:text-white" data-i18n="modelsec.title">原生适配主流大模型与工具</p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="soft-card rounded-xl p-5 text-center space-y-2">
+        <div class="text-base font-bold text-stone-900 dark:text-white">ChatGPT (OpenAI)</div>
+        <p class="text-xs text-stone-500">通过 Custom Actions 或 MCP Client 连接，赋予 GPT-4o 完整的本地环境操作能力。</p>
+        <span class="inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">已验证支持</span>
+      </div>
+
+      <div class="soft-card rounded-xl p-5 text-center space-y-2">
+        <div class="text-base font-bold text-stone-900 dark:text-white">Gemini Spark (Google)</div>
+        <p class="text-xs text-stone-500">内置针对 Gemini Spark 优化的流式传输管道与 OAuth 2.0 PKCE 授权交换链路。</p>
+        <span class="inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">原生深度优化</span>
+      </div>
+
+      <div class="soft-card rounded-xl p-5 text-center space-y-2">
+        <div class="text-base font-bold text-stone-900 dark:text-white">Claude Desktop / Cursor</div>
+        <p class="text-xs text-stone-500">将配置直接贴入 Claude 或 AI 编辑器配置文件中，开箱即用支持多项目调度。</p>
+        <span class="inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">标准协议兼容</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quickstart & Download -->
+  <section id="quickstart" class="py-16 px-4 sm:px-6 max-w-5xl mx-auto border-t border-stone-200/70 dark:border-stone-800">
+    <div class="text-center max-w-2xl mx-auto mb-10">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-sky-600 dark:text-sky-400 mb-2" data-i18n="qs.tag">DOWNLOAD & SETUP</h2>
+      <p class="text-2xl sm:text-3xl font-bold text-stone-900 dark:text-white" data-i18n="qs.title">立即体验 Nexus</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Card 1: Desktop App -->
+      <div class="soft-card rounded-2xl p-6 flex flex-col justify-between space-y-6">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold font-mono px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">Windows x64</span>
+            <span class="text-xs text-stone-400">约 60 MB</span>
+          </div>
+          <h3 class="text-xl font-bold text-stone-900 dark:text-white">桌面一键安装包 (推荐)</h3>
+          <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+            内置 Node.js 24 隔离运行时、核心服务与 MCP 桥接器。无需安装额外依赖，双击即可运行，拥有清爽的图形界面与系统托盘常驻。
+          </p>
+        </div>
+        <a href="../Nexus_1.2.0_x64-setup.exe" class="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-xs bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>下载 Nexus_1.2.0_x64-setup.exe</span>
+        </a>
+      </div>
+
+      <!-- Card 2: Developer Git -->
+      <div class="soft-card rounded-2xl p-6 flex flex-col justify-between space-y-6">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold font-mono px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">Developer Source</span>
+            <span class="text-xs text-stone-400">Node &gt;= 24</span>
+          </div>
+          <h3 class="text-xl font-bold text-stone-900 dark:text-white">源码构建与定制</h3>
+          <p class="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+            适合自行修改安全策略、开发私有扩展技能或在局域网内自建 MCP 网关：
+          </p>
+          <div class="terminal-box rounded-xl p-3 text-[11px] leading-relaxed relative">
+            <button onclick="copySnippet('git-code')" class="absolute top-2 right-2 p-1 text-stone-400 hover:text-white transition">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            </button>
+            <div id="git-code">
+              git clone https://github.com/ysunyang979-sys/Nexus-Web-ChatGPT.git<br>
+              cd Nexus-Web-ChatGPT && pnpm install && pnpm build<br>
+              pnpm --filter @localbridge/desktop dev
+            </div>
+          </div>
+        </div>
+        <a href="https://github.com/ysunyang979-sys/Nexus-Web-ChatGPT" target="_blank" class="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-medium text-xs bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 transition">
+          <i data-lucide="github" class="w-4 h-4"></i>
+          <span>在 GitHub 仓库中查阅代码</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section id="faq" class="py-16 px-4 sm:px-6 max-w-3xl mx-auto border-t border-stone-200/70 dark:border-stone-800">
+    <div class="text-center mb-10">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-stone-400 mb-1">FAQ</h2>
+      <p class="text-2xl font-bold text-stone-900 dark:text-white">常见问题</p>
+    </div>
+
+    <div class="space-y-3">
+      <details class="soft-card rounded-xl p-4 cursor-pointer select-none group">
+        <summary class="font-medium text-sm text-stone-900 dark:text-white flex items-center justify-between">
+          <span>Nexus 会把我的代码上传到第三方云服务器吗？</span>
+          <i data-lucide="chevron-down" class="w-4 h-4 text-stone-400 group-open:rotate-180 transition-transform"></i>
+        </summary>
+        <p class="mt-2.5 text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+          绝对不会。Nexus 是 100% 本地优先（Local-First）架构，所有代码检索、语法分析和补丁应用均在本地沙箱完成。只有在 AI 调用特定工具时，工具所产出的局部输出才会依规范返回给对应的大模型会话。
+        </p>
+      </details>
+
+      <details class="soft-card rounded-xl p-4 cursor-pointer select-none group">
+        <summary class="font-medium text-sm text-stone-900 dark:text-white flex items-center justify-between">
+          <span>什么是三级人机协同审批（Safe / Caution / Dangerous）？</span>
+          <i data-lucide="chevron-down" class="w-4 h-4 text-stone-400 group-open:rotate-180 transition-transform"></i>
+        </summary>
+        <p class="mt-2.5 text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+          只读查询（如读取文件、查找符号）归类为 SAFE 级别，自动通过无需打扰用户；文件修改或写操作归类为 CAUTION 级别，弹出审批提示由用户点击确认；危险指令（如跨目录删除、系统级提权命令）归类为 DANGEROUS，将被严格拦截。
+        </p>
+      </details>
+
+      <details class="soft-card rounded-xl p-4 cursor-pointer select-none group">
+        <summary class="font-medium text-sm text-stone-900 dark:text-white flex items-center justify-between">
+          <span>我不需要预先安装 Node.js 或 Rust 环境吗？</span>
+          <i data-lucide="chevron-down" class="w-4 h-4 text-stone-400 group-open:rotate-180 transition-transform"></i>
+        </summary>
+        <p class="mt-2.5 text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+          不需要。直接下载 Nexus Windows 安装包（`Nexus_1.2.0_x64-setup.exe`），安装包内已完整打包了经签名的 Node.js 运行时及全部内置服务，开箱即用。
+        </p>
+      </details>
+    </div>
+  </section>
+
+  <!-- Clean Bottom Banner -->
+  <section class="py-14 px-4 sm:px-6 max-w-4xl mx-auto text-center">
+    <div class="soft-card rounded-2xl p-8 sm:p-10 space-y-4 border border-stone-200 dark:border-stone-800">
+      <h3 class="text-2xl font-bold text-stone-900 dark:text-white">让前沿大模型安全落地于真实项目</h3>
+      <p class="text-xs text-stone-600 dark:text-stone-400 max-w-lg mx-auto leading-relaxed">
+        告别繁琐的手动复制粘贴代码，在坚不可摧的安全边界内享受高能 AI 编程体验。
+      </p>
+      <div class="pt-2 flex flex-wrap justify-center gap-3">
+        <a href="../Nexus_1.2.0_x64-setup.exe" class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs bg-sky-600 hover:bg-sky-500 text-white shadow-sm transition">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>免费下载 Windows 客户端</span>
+        </a>
+        <a href="https://github.com/ysunyang979-sys/Nexus-Web-ChatGPT" target="_blank" class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-medium text-xs bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 transition">
+          <i data-lucide="star" class="w-4 h-4 text-amber-500"></i>
+          <span>Star on GitHub</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-stone-200/70 dark:border-stone-800 py-10 px-4 sm:px-6 text-xs text-stone-500">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2.5">
+        <img src="assets/nexus.png" class="w-5 h-5 rounded-md">
+        <span class="font-bold text-stone-800 dark:text-stone-200">Nexus</span>
+        <span class="text-stone-400">· Local AI Control Plane &copy; 2026. PolyForm Noncommercial License 1.0.0 (非商业开源，商用需授权).</span>
+      </div>
+      <div class="flex items-center gap-5">
+        <a href="../README.md" class="hover:text-stone-800 dark:hover:text-stone-200 transition">文档说明</a>
+        <a href="../SECURITY.md" class="hover:text-stone-800 dark:hover:text-stone-200 transition">安全政策</a>
+        <a href="../PRIVACY.md" class="hover:text-stone-800 dark:hover:text-stone-200 transition">隐私规范</a>
+        <a href="https://github.com/ysunyang979-sys/Nexus-Web-ChatGPT" target="_blank" class="hover:text-stone-800 dark:hover:text-stone-200 transition">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts: Theme, Bilingual & Lucide Icons -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Clipboard copy helper
+    function copySnippet(id) {
+      const el = document.getElementById(id);
+      navigator.clipboard.writeText(el.innerText);
+      alert('已复制命令到剪贴板！');
+    }
+
+    // Theme Toggle (Default to clean Light Mode, supports Dark Mode)
+    const themeBtn = document.getElementById('themeToggle');
+    const sunIcon = document.getElementById('sunIcon');
+    const moonIcon = document.getElementById('moonIcon');
+
+    function applyTheme(isDark) {
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        sunIcon.classList.remove('hidden');
+        moonIcon.classList.add('hidden');
+        localStorage.setItem('nexus_theme', 'dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        sunIcon.classList.add('hidden');
+        moonIcon.classList.remove('hidden');
+        localStorage.setItem('nexus_theme', 'light');
+      }
+    }
+
+    // Check system preference or saved
+    const savedTheme = localStorage.getItem('nexus_theme');
+    if (savedTheme === 'dark') {
+      applyTheme(true);
+    } else {
+      applyTheme(false); // Default to clean, comfortable light mode
+    }
+
+    themeBtn.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.contains('dark');
+      applyTheme(!isDark);
+    });
+
+    // Bilingual Support
+    const i18nData = {
+      zh: {
+        'topbar.text': '已原生支持 Google Gemini Spark 与 ChatGPT OAuth 2.0 PKCE 桥接',
+        'topbar.link': '了解配置详情',
+        'nav.features': '功能特性',
+        'nav.workflow': '工作流程',
+        'nav.security': '安全设计',
+        'nav.models': '模型生态',
+        'nav.quickstart': '下载与上手',
+        'nav.faq': '问答',
+        'nav.download': '下载 Windows 版',
+        'hero.tag': '本地优先 · 零信任架构 · MCP 2.0 标准',
+        'hero.headline_part1': '连接前沿大模型与本地代码，',
+        'hero.headline_part2': '安全、可控的 AI 控制中枢',
+        'hero.subtitle': '为 ChatGPT、Gemini Spark 与 Claude 赋予安全的本地开发与工程执行能力。本地沙箱隔离运行，代码绝不上传云端；逐项权限拦截与毫秒级急停，让 AI 真正成为值得托付的编程伙伴。',
+        'hero.btn_download': '下载 Nexus 客户端 (v1.2.0)',
+        'hero.btn_quickstart': '快速配置指引',
+        'metric.local': '源码纯本地留存',
+        'metric.mcp': '标准开放协议',
+        'metric.policy': '三级人机安全策略',
+        'metric.halt': '一键紧急制动断网',
+        'pillars.tag': 'WHY NEXUS',
+        'pillars.title': '让前沿 AI 在本地严密受控下大显身手',
+        'p1.title': '100% 本地优先',
+        'p1.desc': '所有代码阅读、文件树检索、代码补丁均在用户电脑本地执行。支持目录白名单物理锁定（Jail 限制），绝无未经授权的代码上传云端风险。',
+        'p2.title': '三级人机协同审批',
+        'p2.desc': '自动将操作划分为 SAFE（安全只读）、CAUTION（写入确认）与 DANGEROUS（高危阻断）。开发者拥有最终裁决权，并可随时发起限时免审会话。',
+        'p3.title': '原生前沿模型生态',
+        'p3.desc': '原生支持 Google Gemini Spark 与 OpenAI ChatGPT。搭载带 PKCE 的企业级 OAuth 2.0 验证规范，全兼容 Claude Desktop 与各类 MCP 客户端。',
+        'grid1.title': 'LSP 语法级代码智能',
+        'grid1.desc': '内置 TypeScript / ESLint Language Server。AI 能够以 AST 抽象语法树级别进行符号定义跳转、跨文件引用查询和编译报错诊断。',
+        'grid2.title': '硬件级瞬时急停 (Emergency Halt)',
+        'grid2.desc': '一旦发现异常，一键发送系统级强杀信号（SIGKILL / Taskkill）并断开桥接端口，彻底阻断任何未完成的文件写入或网络请求。',
+        'grid3.title': '内置技能与合规验证',
+        'grid3.desc': '预置针对代码排错、Git 审查、构建修复等 8 大开箱即用技能。支持从 ZIP 包热加载技能，严格校验权限清单防范恶意插件。',
+        'grid4.title': '事务级本地审计日志',
+        'grid4.desc': '基于 SQLite WAL 引擎记录每一步工具调用的时间戳、参数散列、耗时与审批结果，满足企业安全合规回溯需求。',
+        'steps.tag': 'HOW IT WORKS',
+        'steps.title': '只需三步，建立安全编程桥梁',
+        'step1.title': '启动客户端并授权仓库',
+        'step1.desc': '下载安装 Nexus 客户端，添加你正在开发的代码目录。系统将自动锁定沙箱范围并启动后台服务。',
+        'step2.title': '连接大模型 (MCP)',
+        'step2.desc': '在 ChatGPT 或 Gemini Spark 中配置 Nexus 桥接地址，通过 OAuth 2.0 PKCE 协议完成安全配对。',
+        'step3.title': '自然语言驱动工程执行',
+        'step3.desc': '向大模型提出编码或排错需求，AI 将自动调用代码阅读与补丁工具，一切高危改动均在你的授权下运行。',
+        'modelsec.tag': 'COMPATIBILITY',
+        'modelsec.title': '原生适配主流大模型与工具',
+        'qs.tag': 'DOWNLOAD & SETUP',
+        'qs.title': '立即体验 Nexus'
+      },
+      en: {
+        'topbar.text': 'Native support for Google Gemini Spark & ChatGPT OAuth 2.0 PKCE Bridge',
+        'topbar.link': 'Learn more',
+        'nav.features': 'Features',
+        'nav.workflow': 'Workflow',
+        'nav.security': 'Security',
+        'nav.models': 'Ecosystem',
+        'nav.quickstart': 'Download & Setup',
+        'nav.faq': 'FAQ',
+        'nav.download': 'Download for Windows',
+        'hero.tag': 'Local-First · Zero-Trust Architecture · MCP 2.0 Standard',
+        'hero.headline_part1': 'Bridge Frontier AI to Local Code,',
+        'hero.headline_part2': 'Safe, Controllable Control Plane',
+        'hero.subtitle': 'Empower ChatGPT, Gemini Spark, and Claude with real, sandboxed local execution. Code stays 100% on-device with granular consent gates and instant emergency halt.',
+        'hero.btn_download': 'Download Nexus Desktop (v1.2.0)',
+        'hero.btn_quickstart': 'Quickstart Guide',
+        'metric.local': 'Source Stays On-Device',
+        'metric.mcp': 'Standard MCP 2.0',
+        'metric.policy': '3-Tier Consent Policy',
+        'metric.halt': '< 10ms Emergency Kill',
+        'pillars.tag': 'WHY NEXUS',
+        'pillars.title': 'Empower AI with Rigorous Local Safeguards',
+        'p1.title': '100% Local-First',
+        'p1.desc': 'All code reading, directory scanning, and patching execute strictly on your local machine. Jail directory boundaries prevent unauthorized leaks.',
+        'p2.title': '3-Tier Human Consent Policy',
+        'p2.desc': 'Categorizes actions into SAFE (auto-approved read-only), CAUTION (write confirmation), and DANGEROUS (strict intercept). Developer holds final authority.',
+        'p3.title': 'Frontier Model Native',
+        'p3.desc': 'Native optimization for Google Gemini Spark and OpenAI ChatGPT. Features enterprise OAuth 2.0 PKCE authentication and Claude Desktop support.',
+        'grid1.title': 'LSP Code Intelligence',
+        'grid1.desc': 'Integrated TypeScript / ESLint Language Servers. Equips AI agents with AST jump-to-definition, reference lookups, and compiler diagnostics.',
+        'grid2.title': 'Hardware-Level Emergency Stop',
+        'grid2.desc': 'Instant kill switch sends SIGKILL to all active runner child processes and closes MCP bridge listeners, halting all actions immediately.',
+        'grid3.title': 'Built-in Verified Skills',
+        'grid3.desc': 'Bundles 8 ready-to-use skills including code debugging and git review. Supports ZIP runtime loading with strict manifest checks.',
+        'grid4.title': 'Local SQLite Audit Ledger',
+        'grid4.desc': 'Records every tool invocation with timestamps, input hashes, durations, and approval decisions into a local transactional database.',
+        'steps.tag': 'HOW IT WORKS',
+        'steps.title': '3 Steps to Secure AI Coding',
+        'step1.title': 'Launch & Authorize Repo',
+        'step1.desc': 'Install Nexus and add your project directory. The system locks the sandbox perimeter and boots local services.',
+        'step2.title': 'Connect AI Model (MCP)',
+        'step2.desc': 'Enter the Nexus bridge endpoint into ChatGPT or Gemini Spark and authenticate with OAuth 2.0 PKCE.',
+        'step3.title': 'Execute with Natural Language',
+        'step3.desc': 'Ask the AI to refactor code or run tests. All critical file modifications run safely under your explicit consent.',
+        'modelsec.tag': 'COMPATIBILITY',
+        'modelsec.title': 'Native Support for Leading Models',
+        'qs.tag': 'DOWNLOAD & SETUP',
+        'qs.title': 'Get Started with Nexus'
+      }
+    };
+
+    let currentLang = 'zh';
+    const langBtn = document.getElementById('langToggle');
+    const langLabel = document.getElementById('langLabel');
+
+    langBtn.addEventListener('click', () => {
+      currentLang = currentLang === 'zh' ? 'en' : 'zh';
+      langLabel.innerText = currentLang === 'zh' ? 'EN' : '中文';
+
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (i18nData[currentLang] && i18nData[currentLang][key]) {
+          el.innerText = i18nData[currentLang][key];
+        }
+      });
+    });
+  </script>
+</body>
+</html>

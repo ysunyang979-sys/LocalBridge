@@ -366,7 +366,12 @@ impl TunnelSupervisor {
 
     pub fn is_active(&mut self) -> bool {
         if let Some(ref mut child) = self.process {
-            child.try_wait().ok().flatten().is_none()
+            if child.try_wait().ok().flatten().is_some() {
+                self.process = None;
+                false
+            } else {
+                true
+            }
         } else {
             false
         }

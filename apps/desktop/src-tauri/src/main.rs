@@ -1935,8 +1935,33 @@ fn spawn_tunnel_internal(
         s.tunnel_supervisor.stop();
     }
 
+    let sanitized_tunnel_id = {
+        let raw = cfg.tunnel_id.trim();
+        if let Some(pos) = raw.find("tunnel_") {
+            let candidate = &raw[pos..];
+            let end = candidate.find(|c: char| !c.is_ascii_alphanumeric() && c != '_').unwrap_or(candidate.len());
+            candidate[..end].to_string()
+        } else {
+            raw.to_string()
+        }
+    };
+
     let mut cmd = Command::new(&tunnel_exe);
-    cmd.args(["run", "--log.level=info", "--log.format=struct-text"]);
+    let mut args = vec![
+        "run".to_string(),
+        "--log.level=info".to_string(),
+        "--log.format=struct-text".to_string(),
+        format!("--health.listen-addr=127.0.0.1:{}", cfg.health_port),
+        format!("--control-plane.tunnel-id={}", sanitized_tunnel_id),
+        format!("--control-plane.api-key=env:CONTROL_PLANE_API_KEY"),
+        format!("--mcp.server-url=http://127.0.0.1:{}/mcp", server_port),
+        format!("--mcp.extra-headers=Authorization: env:LOCALBRIDGE_MCP_AUTH"),
+    ];
+    if let Some(ref p) = proxy_env {
+        args.push(format!("--control-plane.http-proxy={}", p));
+    }
+    cmd.args(&args);
+
     if let Some(parent) = tunnel_exe.parent() {
         cmd.current_dir(parent);
         let cf_path = parent.join("cloudflared.exe");
@@ -1945,7 +1970,7 @@ fn spawn_tunnel_internal(
         }
     }
     cmd.env("CONTROL_PLANE_API_KEY", &cfg.runtime_api_key);
-    cmd.env("CONTROL_PLANE_TUNNEL_ID", &cfg.tunnel_id);
+    cmd.env("CONTROL_PLANE_TUNNEL_ID", &sanitized_tunnel_id);
     cmd.env("MCP_SERVER_URL", format!("http://127.0.0.1:{}/mcp", server_port));
     cmd.env("LOCALBRIDGE_MCP_AUTH", format!("Bearer {}", cfg.mcp_token));
     cmd.env("MCP_EXTRA_HEADERS", "Authorization: env:LOCALBRIDGE_MCP_AUTH");
@@ -1970,7 +1995,7 @@ fn spawn_tunnel_internal(
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let child = match cmd.spawn() {
+    let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
             let msg = format!("Failed to spawn tunnel client: {}", e);
@@ -1981,6 +2006,18 @@ fn spawn_tunnel_internal(
             return Err(msg);
         }
     };
+
+    // Check if child process exited immediately on startup
+    std::thread::sleep(Duration::from_millis(150));
+    if let Ok(Some(exit_status)) = child.try_wait() {
+        let msg = format!("Tunnel client exited immediately on startup (exit code: {:?})", exit_status.code());
+        if let Ok(mut s) = state.lock() {
+            s.tunnel_supervisor.status = tunnel::TunnelStatus::Error;
+            s.tunnel_supervisor.error_message = Some(msg.clone());
+            s.tunnel_supervisor.process = None;
+        }
+        return Err(msg);
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -2034,6 +2071,7 @@ fn desktop_tunnel_save_config(
     let existing_cfg = {
         let s = state.lock().map_err(|e| e.to_string())?;
         s.tunnel_supervisor.config.clone()
+            .or_else(|| tunnel::TunnelConfig::load_encrypted(&data_dir).ok().flatten())
     };
 
     let final_api_key = match runtime_api_key {
@@ -2090,10 +2128,11 @@ fn desktop_tunnel_save_config(
 
 #[tauri::command]
 fn desktop_tunnel_auto_create_token(
+    app_handle: tauri::AppHandle,
     state: tauri::State<Arc<Mutex<SupervisorState>>>,
     scopes: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
-    let token_scopes = scopes.unwrap_or_else(|| vec!["read".into(), "write".into()]);
+    let token_scopes = scopes.unwrap_or_else(|| vec!["read".into(), "write".into(), "execute".into()]);
     let (port, mgmt_token, data_dir) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         let port = if s.server_port > 0 { s.server_port } else { 18080 };
@@ -2110,25 +2149,106 @@ fn desktop_tunnel_auto_create_token(
 
     let resp = loopback_management_request(port, &mgmt_token, "POST", "/api/tokens", Some(&payload))?;
     let lb_token = resp.get("token")
-        .and_then(|t| t.get("token"))
-        .and_then(|t| t.as_str())
+        .and_then(|t| t.as_str().or_else(|| t.get("token").and_then(|inner| inner.as_str())))
         .ok_or("Server response did not contain token secret")?;
 
-    if let Ok(mut s) = state.lock() {
-        let mut cfg = s.tunnel_supervisor.config.clone().unwrap_or(tunnel::TunnelConfig {
-            tunnel_id: String::new(),
-            runtime_api_key: String::new(),
-            mcp_token: lb_token.to_string(),
-            auto_reconnect: true,
-            health_port: 8080,
-            network_mode: tunnel::TunnelNetworkMode::System,
-            custom_proxy_url: None,
-        });
+    let was_running = {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        let mut cfg = s.tunnel_supervisor.config.clone()
+            .or_else(|| tunnel::TunnelConfig::load_encrypted(&data_dir).ok().flatten())
+            .unwrap_or(tunnel::TunnelConfig {
+                tunnel_id: String::new(),
+                runtime_api_key: String::new(),
+                mcp_token: lb_token.to_string(),
+                auto_reconnect: true,
+                health_port: 8080,
+                network_mode: tunnel::TunnelNetworkMode::System,
+                custom_proxy_url: None,
+            });
         cfg.mcp_token = lb_token.to_string();
+        let active = s.tunnel_supervisor.is_active();
         s.tunnel_supervisor.set_config(cfg, &data_dir)?;
+        active
+    };
+
+    if was_running {
+        let _ = spawn_tunnel_internal(&app_handle, state.inner().clone());
     }
 
-    Ok(serde_json::json!({ "success": true, "message": "Tunnel MCP token created and securely stored" }))
+    Ok(serde_json::json!({
+        "success": true,
+        "token": lb_token,
+        "message": "Tunnel MCP token created and securely stored"
+    }))
+}
+
+#[tauri::command]
+fn desktop_tunnel_get_mcp_token(
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+) -> Result<serde_json::Value, String> {
+    let s = state.lock().map_err(|e| e.to_string())?;
+    let token = {
+        let in_mem = s.tunnel_supervisor.config.as_ref().map(|c| c.mcp_token.clone()).unwrap_or_default();
+        if !in_mem.trim().is_empty() {
+            in_mem
+        } else if let Some(ref data_dir) = s.data_dir {
+            tunnel::TunnelConfig::load_encrypted(data_dir)
+                .ok()
+                .flatten()
+                .map(|c| c.mcp_token)
+                .unwrap_or_default()
+        } else {
+            String::new()
+        }
+    };
+    Ok(serde_json::json!({
+        "token": token
+    }))
+}
+
+#[tauri::command]
+fn desktop_tunnel_save_mcp_token(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<Arc<Mutex<SupervisorState>>>,
+    token: String,
+) -> Result<serde_json::Value, String> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return Err("Token cannot be empty".into());
+    }
+    let data_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.data_dir.clone().ok_or("Data directory unavailable")?
+    };
+
+    let was_running = {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        let mut cfg = s.tunnel_supervisor.config.clone()
+            .or_else(|| tunnel::TunnelConfig::load_encrypted(&data_dir).ok().flatten())
+            .unwrap_or(tunnel::TunnelConfig {
+                tunnel_id: String::new(),
+                runtime_api_key: String::new(),
+                mcp_token: trimmed.to_string(),
+                auto_reconnect: true,
+                health_port: 8080,
+                network_mode: tunnel::TunnelNetworkMode::System,
+                custom_proxy_url: None,
+            });
+        cfg.mcp_token = trimmed.to_string();
+        let active = s.tunnel_supervisor.is_active();
+        s.tunnel_supervisor.set_config(cfg, &data_dir)?;
+        active
+    };
+
+    if was_running {
+        let _ = spawn_tunnel_internal(&app_handle, state.inner().clone());
+    }
+
+    Ok(serde_json::json!({
+        "success": true,
+        "token": trimmed,
+        "message": "MCP token securely saved to DPAPI"
+    }))
 }
 
 #[tauri::command]
@@ -2560,6 +2680,7 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
         state.server_port = 18080;
         state.data_dir = Some(data_dir.clone());
         state.resource_diagnostics = Some(diag.clone());
+        state.tunnel_supervisor.init_from_disk(&data_dir);
     }
 
     // 7. Start the owned Server and require authenticated readiness.
@@ -2903,10 +3024,11 @@ fn start_supervisor(app: &tauri::AppHandle, supervisor: Arc<Mutex<SupervisorStat
             }
 
             let (health_port, is_running, auto_reconnect, reconnect_attempts) = {
-                let Ok(s) = sup_monitor.lock() else { continue; };
+                let Ok(mut s) = sup_monitor.lock() else { continue; };
+                let running = s.tunnel_supervisor.is_active();
                 (
                     s.tunnel_supervisor.config.as_ref().map(|c| c.health_port).unwrap_or(18082),
-                    s.tunnel_supervisor.process.is_some(),
+                    running,
                     s.tunnel_supervisor.config.as_ref().map(|c| c.auto_reconnect).unwrap_or(false),
                     s.tunnel_supervisor.reconnect_attempts,
                 )
@@ -3200,6 +3322,8 @@ fn main() {
             desktop_tunnel_get_status,
             desktop_tunnel_save_config,
             desktop_tunnel_auto_create_token,
+            desktop_tunnel_get_mcp_token,
+            desktop_tunnel_save_mcp_token,
             desktop_tunnel_start,
             desktop_tunnel_stop,
             desktop_tunnel_clear_config,

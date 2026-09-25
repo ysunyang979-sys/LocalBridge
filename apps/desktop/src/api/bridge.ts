@@ -1127,11 +1127,22 @@ class ApiBridge {
     getStatus: () => this.getTunnelStatus(),
     saveConfig: (input: TunnelSaveConfigInput) => this.saveTunnelConfig(input),
     autoCreateToken: (scopes?: string[]) => this.autoCreateTunnelToken(scopes),
+    getMcpToken: () => this.getTunnelMcpToken(),
+    saveMcpToken: (token: string) => this.saveTunnelMcpToken(token),
     start: () => this.startTunnel(),
     stop: () => this.stopTunnel(),
     clearConfig: () => this.clearTunnelConfig(),
     testConnection: () => this.testTunnelConnection(),
   };
+
+  async saveTunnelMcpToken(token: string): Promise<{ success: boolean; message: string; token?: string }> {
+    if (isTauri()) {
+      return invoke<{ success: boolean; message: string; token?: string }>("desktop_tunnel_save_mcp_token", {
+        token,
+      });
+    }
+    return { success: true, message: "Token saved", token };
+  }
 
   async saveTunnelConfig(params: TunnelSaveConfigInput): Promise<TunnelStatusDto> {
     if (isTauri()) {
@@ -1149,13 +1160,20 @@ class ApiBridge {
     throw new Error("Tunnel configuration requires desktop app");
   }
 
-  async autoCreateTunnelToken(scopes?: string[]): Promise<{ success: boolean; message: string }> {
+  async autoCreateTunnelToken(scopes?: string[]): Promise<{ success: boolean; message: string; token?: string }> {
     if (isTauri()) {
-      return invoke<{ success: boolean; message: string }>("desktop_tunnel_auto_create_token", {
+      return invoke<{ success: boolean; message: string; token?: string }>("desktop_tunnel_auto_create_token", {
         scopes: scopes ?? null,
       });
     }
     throw new Error("Auto creating tunnel token requires desktop app");
+  }
+
+  async getTunnelMcpToken(): Promise<{ token: string }> {
+    if (isTauri()) {
+      return invoke<{ token: string }>("desktop_tunnel_get_mcp_token");
+    }
+    return { token: "" };
   }
 
   async startTunnel(): Promise<TunnelStatusDto> {
@@ -1699,7 +1717,9 @@ export interface TunnelTestConnectionResult {
 export interface DesktopTunnelApi {
   getStatus(): Promise<TunnelStatusDto>;
   saveConfig(input: TunnelSaveConfigInput): Promise<TunnelStatusDto>;
-  autoCreateToken(scopes?: string[]): Promise<{ success: boolean; message: string }>;
+  autoCreateToken(scopes?: string[]): Promise<{ success: boolean; message: string; token?: string }>;
+  getMcpToken(): Promise<{ token: string }>;
+  saveMcpToken(token: string): Promise<{ success: boolean; message: string; token?: string }>;
   start(): Promise<TunnelStatusDto>;
   stop(): Promise<TunnelStatusDto>;
   clearConfig(): Promise<TunnelStatusDto>;

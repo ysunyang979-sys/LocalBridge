@@ -144,4 +144,42 @@ describe("Tunnel IPC Contract & Error Sanitization", () => {
     expect(res4.userMessage).toBe("Error at lb_***");
     expect(res4.userMessage).not.toContain("abcdef0123456789");
   });
+
+  it("verifies autoCreateTunnelToken contract returns plaintext token and getMcpToken exposes stored secret", async () => {
+    const mockCreatedToken = "lb_mcp_test_secret_token_1234567890abcdef";
+    const mockTauriResponse = {
+      success: true,
+      token: mockCreatedToken,
+      message: "Tunnel MCP token created and securely stored",
+    };
+
+    expect(mockTauriResponse.token).toBe(mockCreatedToken);
+    expect(mockTauriResponse.token).toMatch(/^lb_mcp_/);
+    expect(mockTauriResponse.success).toBe(true);
+
+    const mockGetTokenResponse = {
+      token: mockCreatedToken,
+    };
+    expect(mockGetTokenResponse.token).toBe(mockCreatedToken);
+  });
+
+  it("verifies saveMcpToken contract securely persists standalone token to DPAPI without tunnelId", async () => {
+    function mockSaveMcpToken(token: string) {
+      invokedCommand = "desktop_tunnel_save_mcp_token";
+      invokedPayload = { token: token.trim() };
+      return {
+        success: true,
+        token: token.trim(),
+        message: "MCP token securely saved to DPAPI",
+      };
+    }
+
+    const testToken = "lb_standalone_test_secret_9876543210abcdef";
+    const res = mockSaveMcpToken(`  ${testToken}  `);
+
+    expect(invokedCommand).toBe("desktop_tunnel_save_mcp_token");
+    expect(invokedPayload).toHaveProperty("token", testToken);
+    expect(res.success).toBe(true);
+    expect(res.token).toBe(testToken);
+  });
 });

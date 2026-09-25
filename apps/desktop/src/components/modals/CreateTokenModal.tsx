@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, KeyRound, Copy, Check, AlertTriangle } from "lucide-react";
+import { X, KeyRound, Copy, Check, AlertTriangle, Shield } from "lucide-react";
 import { bridge } from "../../api/bridge.js";
 import { useTranslation } from "../../i18n/useTranslation.js";
 
@@ -14,10 +14,13 @@ export const CreateTokenModal: React.FC<CreateTokenModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { t, translateError } = useTranslation();
+  const { t, translateError, language } = useTranslation();
+  const isZh = language === "zh-CN";
   const [name, setName] = useState("");
   const [type, setType] = useState<"mcp" | "runner">("mcp");
-  const [scopes, setScopes] = useState<string[]>(["read", "write"]);
+  const [scopes, setScopes] = useState<string[]>(["read", "write", "execute"]);
+  const [persistToTunnel, setPersistToTunnel] = useState(true);
+  const [persistedSuccess, setPersistedSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +33,9 @@ export const CreateTokenModal: React.FC<CreateTokenModalProps> = ({
   const handleClose = () => {
     setName("");
     setType("mcp");
-    setScopes(["read", "write"]);
+    setScopes(["read", "write", "execute"]);
+    setPersistToTunnel(true);
+    setPersistedSuccess(false);
     setCreatedToken(null);
     setCopied(false);
     setError(null);
@@ -67,6 +72,14 @@ export const CreateTokenModal: React.FC<CreateTokenModalProps> = ({
         scopes,
       });
       setCreatedToken(res.token);
+      if (type === "mcp" && persistToTunnel) {
+        try {
+          await bridge.tunnel.saveMcpToken(res.token);
+          setPersistedSuccess(true);
+        } catch {
+          // Fallback
+        }
+      }
       onSuccess();
     } catch (err: any) {
       setError(translateError(err.code, err.message));
@@ -132,6 +145,34 @@ export const CreateTokenModal: React.FC<CreateTokenModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {type === "mcp" && (
+              <div className="p-3 rounded-lg border text-xs flex items-center justify-between gap-2 bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>
+                    {persistedSuccess
+                      ? (isZh ? "已持久化为当前 ChatGPT 隧道生效令牌 (Windows DPAPI)" : "Saved as active ChatGPT Tunnel token in DPAPI")
+                      : (isZh ? "未持久化至 ChatGPT 隧道" : "Not persisted to tunnel")}
+                  </span>
+                </span>
+                {!persistedSuccess && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!createdToken) return;
+                      try {
+                        await bridge.tunnel.saveMcpToken(createdToken);
+                        setPersistedSuccess(true);
+                      } catch {}
+                    }}
+                    className="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded text-[11px] font-semibold transition cursor-pointer shrink-0"
+                  >
+                    {isZh ? "设为当前隧道令牌" : "Set as Tunnel Token"}
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="pt-3 border-t border-theme-subtle flex justify-end">
               <button
@@ -207,17 +248,53 @@ export const CreateTokenModal: React.FC<CreateTokenModalProps> = ({
             </div>
 
             {type === "mcp" && (
-              <div>
-                <label className="block text-xs font-medium text-theme-secondary mb-1.5">
-                  {t.modals.token.scopesLabel}
-                </label>
-                <div className="flex gap-2">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-medium text-theme-secondary">
+                    {t.modals.token.scopesLabel}
+                  </label>
+                  <span className="text-[10px] text-theme-muted font-mono">
+                    {isZh ? "快捷预设组合：" : "Presets:"}
+                  </span>
+                </div>
+
+                {/* Scope Presets */}
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: "read_only", label: isZh ? "只读" : "Read-Only", list: ["read"] },
+                    { id: "write_only", label: isZh ? "只写" : "Write-Only", list: ["write"] },
+                    { id: "read_write", label: isZh ? "读写" : "Read & Write", list: ["read", "write"] },
+                    { id: "exec_only", label: isZh ? "执行" : "Execute-Only", list: ["execute"] },
+                    { id: "full", label: isZh ? "读写执行 (推荐)" : "Full Control", list: ["read", "write", "execute"] },
+                  ].map((preset) => {
+                    const isSelected =
+                      preset.list.length === scopes.length &&
+                      preset.list.every((s) => scopes.includes(s));
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setScopes([...preset.list])}
+                        className={`px-2.5 py-1 rounded text-[11px] font-medium border transition cursor-pointer ${
+                          isSelected
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                            : "bg-theme-card-muted hover:bg-theme-card-hover text-theme-secondary border-theme-subtle"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Granular Individual Toggles */}
+                <div className="flex gap-2 pt-0.5">
                   {(["read", "write", "execute"] as const).map((scope) => (
                     <button
                       key={scope}
                       type="button"
                       onClick={() => handleToggleScope(scope)}
-                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition ${
+                      className={`flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer flex items-center justify-center gap-1.5 ${
                         scopes.includes(scope)
                           ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
                           : "bg-theme-input border-theme-input text-theme-muted hover:text-theme-primary"
@@ -231,6 +308,27 @@ export const CreateTokenModal: React.FC<CreateTokenModalProps> = ({
                     </button>
                   ))}
                 </div>
+
+                {/* DPAPI Persistence Option */}
+                <label className="flex items-start gap-2.5 cursor-pointer pt-1 bg-sky-500/5 dark:bg-sky-500/10 p-2.5 rounded-lg border border-sky-500/20">
+                  <input
+                    type="checkbox"
+                    checked={persistToTunnel}
+                    onChange={(e) => setPersistToTunnel(e.target.checked)}
+                    className="mt-0.5 rounded border-theme-subtle text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div className="space-y-0.5 text-xs text-theme-primary">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                      <span>{isZh ? "同时设为 ChatGPT 隧道当前生效令牌并持久化 (DPAPI)" : "Persist as active ChatGPT Tunnel token (DPAPI)"}</span>
+                    </span>
+                    <span className="block text-[11px] text-theme-muted">
+                      {isZh
+                        ? "自动加密保存到 Windows DPAPI，使 ChatGPT 与 Secure MCP Tunnel 立即获得读写或命令执行权限"
+                        : "Saves securely to DPAPI, allowing ChatGPT & Secure MCP Tunnel to execute commands immediately"}
+                    </span>
+                  </div>
+                </label>
               </div>
             )}
 

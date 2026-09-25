@@ -15,7 +15,7 @@ export const TokensPage: React.FC<TokensPageProps> = ({
   onOpenCreateTokenModal,
   onRefresh,
 }) => {
-  const { t, translateError } = useTranslation();
+  const { t, translateError, language } = useTranslation();
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,12 +105,54 @@ export const TokensPage: React.FC<TokensPageProps> = ({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-4 text-xs text-theme-muted font-mono">
+                  <div className="flex items-center gap-4 text-xs text-theme-muted font-mono flex-wrap">
                     <span>{t.tokens.createdAt}: {created.toLocaleDateString()}</span>
                     <span>
                       {t.tokens.lastUsed}: {lastUsed ? lastUsed.toLocaleTimeString() : t.tokens.neverUsed}
                     </span>
-                    <span>{t.tokens.scopes}: {(token.scopes || []).join(", ") || t.common.none}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-theme-muted">{t.tokens.scopes}:</span>
+                      {token.scopes && token.scopes.length > 0 ? (
+                        <>
+                          {token.scopes.includes("read") && token.scopes.includes("write") && token.scopes.includes("execute") ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
+                              {language === "zh-CN" ? "读写执行 (全权限)" : "Full Control (Read/Write/Exec)"}
+                            </span>
+                          ) : (
+                            token.scopes.map((sc) => {
+                              if (sc === "read") {
+                                return (
+                                  <span key={sc} className="px-1.5 py-0.5 rounded text-[10px] bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                                    {language === "zh-CN" ? "只读" : "read"}
+                                  </span>
+                                );
+                              }
+                              if (sc === "write") {
+                                return (
+                                  <span key={sc} className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                    {language === "zh-CN" ? "写入" : "write"}
+                                  </span>
+                                );
+                              }
+                              if (sc === "execute") {
+                                return (
+                                  <span key={sc} className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                    {language === "zh-CN" ? "执行" : "execute"}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span key={sc} className="px-1.5 py-0.5 rounded text-[10px] bg-theme-card-muted text-theme-secondary border border-theme-subtle">
+                                  {sc}
+                                </span>
+                              );
+                            })
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-theme-muted italic">{t.common.none}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus 官方技术文档概览 (Documentation) — Nexus Blog</title>
+  <meta name="description" content="Nexus 快速上手、架构拓扑、安全策略与模型连接参考手册。">
+  <link rel="icon" type="image/png" href="/images/nexus.png">
+  <link rel="stylesheet" href="/css/style.css">
+<meta name="generator" content="Hexo 7.3.0"></head>
+<body>
+  <div class="container">
+    <header>
+      <a href="/" class="brand">
+        <img src="/images/nexus.png" alt="Nexus">
+        <span>Nexus Blog</span>
+      </a>
+      <nav>
+        <a href="/">文章</a>
+        <a href="/docs/">文档</a>
+        <a href="/about/">关于</a>
+        <a href="https://github.com" target="_blank">GitHub</a>
+        <button id="themeToggle" class="theme-toggle" title="Toggle theme">🌙</button>
+      </nav>
+    </header>
+
+    <main>
+      <article class="article-detail">
+  <div class="article-header">
+    <h1>Nexus 官方技术文档概览 (Documentation)</h1>
+    
+      <p class="post-desc">Nexus 快速上手、架构拓扑、安全策略与模型连接参考手册。</p>
+    
+  </div>
+
+  <div class="article-content">
+    <p>欢迎查阅 <strong>Nexus 官方技术文档</strong>。本手册旨在帮助开发者快速掌握 Nexus 的安装、工程授权、模型集成与安全控制策略。</p>
+<hr>
+<h2 id="📚-目录指引"><a href="#📚-目录指引" class="headerlink" title="📚 目录指引"></a>📚 目录指引</h2><h3 id="1-快速上手"><a href="#1-快速上手" class="headerlink" title="1. 快速上手"></a>1. 快速上手</h3><ul>
+<li><strong>系统要求</strong>：Windows 10 &#x2F; 11 64-bit，至少 4GB 内存与 300MB 可用磁盘空间。</li>
+<li><strong>安装客户端</strong>：运行 <code>Nexus_1.2.0_x64-setup.exe</code>，启动后程序将常驻于系统托盘。</li>
+<li><strong>授权项目</strong>：在桌面主控台进入 <code>Projects</code> 页面，点击 <code>+ Authorize New Project</code> 添加本地目录。</li>
+</ul>
+<h3 id="2-模型接入与配置"><a href="#2-模型接入与配置" class="headerlink" title="2. 模型接入与配置"></a>2. 模型接入与配置</h3><ul>
+<li><strong>Google Gemini Spark</strong>：<ul>
+<li>进入 <code>Connections</code> 页面，一键启动内置 Cloudflare Tunnel。</li>
+<li>将生成的临时或自定义域名（如 <code>https://xxx.trycloudflare.com/mcp</code>）配置到 Gemini Spark 的 Tools 设置中。</li>
+</ul>
+</li>
+<li><strong>OpenAI ChatGPT</strong>：<ul>
+<li>通过专有网关挂载为 Custom Action 或 MCP 协议客户端，提供受控的只读与写操作。</li>
+</ul>
+</li>
+<li><strong>Claude Desktop &amp; Cursor</strong>：<ul>
+<li>直接在 <code>claude_desktop_config.json</code> 中配置本地 stdio 进程启动命令。</li>
+</ul>
+</li>
+</ul>
+<h3 id="3-安全策略与三级审批"><a href="#3-安全策略与三级审批" class="headerlink" title="3. 安全策略与三级审批"></a>3. 安全策略与三级审批</h3><ul>
+<li><strong>SAFE（只读免审）</strong>：读文件、获取目录结构、Git status，4ms 内毫秒响应。</li>
+<li><strong>CAUTION（修改确认）</strong>：修改文件、打补丁，桌面端弹出前后 Diff 等待开发者点击批准。</li>
+<li><strong>DANGEROUS（严格阻断）</strong>：系统级命令执行或文件删除，默认严格拦截。</li>
+<li><strong>Emergency Halt</strong>：随时点击右上角红色急停按钮，瞬间强制终止全部运行中子进程。</li>
+</ul>
+<hr>
+<h2 id="更多文章与深入解读"><a href="#更多文章与深入解读" class="headerlink" title="更多文章与深入解读"></a>更多文章与深入解读</h2><p>你可以阅读我们的工程博客以获取更深度的技术实现分析：</p>
+<ul>
+<li><a href="/2026/09/24/nexus-1-2-0-release/">Nexus 1.2.0 发布说明</a></li>
+<li><a href="/2026/09/23/mcp-zero-trust-threat-model/">威胁模型与安全沙箱深度拆解</a></li>
+<li><a href="/2026/09/22/gemini-spark-mcp-quickstart/">Gemini Spark 5分钟实战教程</a></li>
+</ul>
+
+  </div>
+</article>
+
+    </main>
+
+    <footer>
+      <div>
+        <span>© 2026 Nexus Team</span>
+        <span> · </span>
+        <span>Local AI Control Plane</span>
+      </div>
+      <div>
+        <a href="/archives/">归档</a>
+        <span> · </span>
+        <a href="/about/">下载客户端</a>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>
