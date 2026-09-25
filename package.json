@@ -18,6 +18,7 @@
     "dev:runner": "pnpm --filter @localbridge/runner dev",
     "bundle:runtime": "tsx scripts/prepare-bundled-resources.ts",
     "verify:resources": "tsx scripts/verify-bundled-resources.ts",
+    "site:preview": "node scripts/serve-website.js",
     "clean": "pnpm -r run clean"
   },
   "devDependencies": {
