@@ -237,13 +237,27 @@ async function main() {
   }
 
   try {
-    const koffiWinRoot = findPnpmPackage("@koromix/koffi-win32-x64");
+    const pnpmDir = path.resolve(rootDir, "node_modules/.pnpm");
     const koromixDir = path.join(runnerNodeModules, "@koromix");
     fs.mkdirSync(koromixDir, { recursive: true });
-    fs.cpSync(koffiWinRoot, path.join(koromixDir, "koffi-win32-x64"), { recursive: true });
-    console.log(`-> Packaged @koromix/koffi-win32-x64 into ${runnerNodeModules}`);
+    if (fs.existsSync(pnpmDir)) {
+      const entries = fs.readdirSync(pnpmDir);
+      for (const entry of entries) {
+        if (entry.startsWith("@koromix+koffi-")) {
+          const match = entry.match(/@koromix\+([a-zA-Z0-9_-]+)@/);
+          if (match && match[1]) {
+            const subName = match[1];
+            const src = path.join(pnpmDir, entry, "node_modules/@koromix", subName);
+            if (fs.existsSync(src)) {
+              fs.cpSync(src, path.join(koromixDir, subName), { recursive: true });
+              console.log(`-> Packaged @koromix/${subName} into ${runnerNodeModules}`);
+            }
+          }
+        }
+      }
+    }
   } catch (err) {
-    console.warn("Could not copy @koromix/koffi-win32-x64:", err);
+    console.warn("Could not copy @koromix packages:", err);
   }
 
   try {

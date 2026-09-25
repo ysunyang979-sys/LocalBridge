@@ -27,7 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg", "app"],
+    "targets": ["nsis", "dmg", "app", "deb", "appimage"],
     "publisher": "Nexus",
     "copyright": "Copyright © 2026 Nexus",
     "license": "Apache-2.0",

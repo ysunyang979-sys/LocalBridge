@@ -1,0 +1,85 @@
+name: Build Linux Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release Tag or Version (e.g. v1.2.0)"
+        required: false
+        default: "v1.2.0"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Package Linux (.deb & .AppImage) - x86_64
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libfuse2 \
+            squashfs-tools
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Core Packages
+        run: pnpm -r --filter=./packages/* run build
+
+      - name: Package Desktop & Linux Installers (.deb, .AppImage)
+        run: |
+          pnpm --filter=@localbridge/desktop exec tauri build --bundles deb,appimage
+
+      - name: Upload Linux Artifacts (.deb, .AppImage)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexus-Linux-x86_64
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/deb/*.deb
+            apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          retention-days: 30
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || 'v1.2.0' }}
+          files: |
+            apps/desktop/src-tauri/target/release/bundle/deb/*.deb
+            apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
