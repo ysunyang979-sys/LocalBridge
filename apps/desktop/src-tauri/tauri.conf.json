@@ -49,7 +49,7 @@
         "uninstallerIcon": "icons/icon.ico"
       }
     },
-    "macos": {
+    "macOS": {
       "minimumSystemVersion": "10.15"
     }
   }

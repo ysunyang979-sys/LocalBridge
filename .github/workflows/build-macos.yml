@@ -16,6 +16,7 @@ jobs:
     name: Package macOS (.dmg) - ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-14
@@ -51,7 +52,7 @@ jobs:
 
       - name: Package Desktop & macOS Installer (.dmg)
         run: |
-          pnpm --filter=@localbridge/desktop exec tauri build
+          pnpm --filter=@localbridge/desktop exec tauri build --bundles dmg,app
 
       - name: Upload macOS Artifacts (.dmg)
         uses: actions/upload-artifact@v4
@@ -60,4 +61,6 @@ jobs:
           path: |
             apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
             apps/desktop/src-tauri/target/release/bundle/macos/*.app
+            apps/desktop/src-tauri/target/*/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/*/release/bundle/macos/*.app
           retention-days: 30

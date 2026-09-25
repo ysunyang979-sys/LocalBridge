@@ -159,13 +159,24 @@ async function main() {
   const destRelease = path.join(destBetterSqlite, "build/Release");
   fs.mkdirSync(destRelease, { recursive: true });
 
+  const targetPrebuild = path.join(betterSqlite3Root, "prebuilds", `${process.platform}-${process.arch}.node`);
+  const buildReleaseNode = path.join(betterSqlite3Root, "build/Release/better_sqlite3.node");
   const win32Node = path.join(betterSqlite3Root, "prebuilds/win32-x64.node");
-  if (fs.existsSync(win32Node)) {
+
+  if (fs.existsSync(targetPrebuild)) {
+    fs.copyFileSync(targetPrebuild, path.join(destRelease, "better_sqlite3.node"));
+    console.log(`-> Copied prebuilt better_sqlite3.node for ${process.platform}-${process.arch}`);
+  } else if (fs.existsSync(buildReleaseNode)) {
+    fs.copyFileSync(buildReleaseNode, path.join(destRelease, "better_sqlite3.node"));
+    console.log(`-> Copied build/Release better_sqlite3.node`);
+  } else if (isWin && fs.existsSync(win32Node)) {
     fs.copyFileSync(win32Node, path.join(destRelease, "better_sqlite3.node"));
+    console.log(`-> Copied fallback win32-x64 better_sqlite3.node`);
   } else {
-    const buildReleaseNode = path.join(betterSqlite3Root, "build/Release/better_sqlite3.node");
-    if (fs.existsSync(buildReleaseNode)) {
-      fs.copyFileSync(buildReleaseNode, path.join(destRelease, "better_sqlite3.node"));
+    const prebuildFiles = fs.existsSync(prebuildsSrc) ? fs.readdirSync(prebuildsSrc).filter((f) => f.endsWith(".node")) : [];
+    if (prebuildFiles.length > 0) {
+      fs.copyFileSync(path.join(prebuildsSrc, prebuildFiles[0]!), path.join(destRelease, "better_sqlite3.node"));
+      console.log(`-> Copied fallback prebuild ${prebuildFiles[0]}`);
     }
   }
 
@@ -336,7 +347,8 @@ async function main() {
   }
 
   // 6. Test starting server import with bundled node.exe
-  const selfTestDir = fs.mkdtempSync(path.join(fs.realpathSync.native(path.resolve(process.env.TEMP || process.cwd())), "localbridge-resource-selftest-"));
+  const tmpBase = process.env.TEMP || process.env.TMPDIR || "/tmp";
+  const selfTestDir = fs.mkdtempSync(path.join(fs.realpathSync.native(path.resolve(tmpBase)), "localbridge-resource-selftest-"));
   let serverImportTest: string;
   try {
     serverImportTest = child_process.execFileSync(destNodeExe, [
@@ -388,7 +400,9 @@ async function main() {
     throw new Error("Bundled LSP files missing after packaging!");
   }
   const lspVersion = child_process.execFileSync(destNodeExe, [lspCliPath, "--version"], {
-    env: { PATH: "", SystemRoot: process.env.SystemRoot || "C:\\Windows" },
+    env: isWin
+      ? { PATH: "", SystemRoot: process.env.SystemRoot || "C:\\Windows" }
+      : { PATH: process.env.PATH || "" },
   }).toString().trim();
   console.log(`Language server verification (--version): ${lspVersion}`);
   if (!lspVersion.startsWith("6.")) {
