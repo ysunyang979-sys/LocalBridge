@@ -3,7 +3,7 @@
 
 # The Tunnel UUID (obtain by running: cloudflared tunnel create nexus-mcp-bridge)
 tunnel: <TUNNEL_UUID_OR_NAME>
-credentials-file: C:\Users\22365\.cloudflared\<TUNNEL_UUID>.json
+credentials-file: C:\Users\<username>\.cloudflared\<TUNNEL_UUID>.json
 
 # Ingress rules route traffic from Cloudflare's edge to local services
 ingress:

@@ -17,6 +17,13 @@ export interface NexusClientOptions {
   explicitMcpToken?: string;
 }
 
+function getDefaultDataDir(): string {
+  if (process.platform === "win32") {
+    return path.join(process.env.LOCALAPPDATA || process.env.APPDATA || "C:\\ProgramData", "LocalBridge");
+  }
+  return path.join(process.env.HOME || ".", ".localbridge");
+}
+
 export class NexusClient {
   private readonly coreUrl: string;
   private readonly managementTokenPath: string;
@@ -29,7 +36,7 @@ export class NexusClient {
     this.managementTokenPath =
       options.managementTokenPath ||
       process.env.NEXUS_MANAGEMENT_TOKEN_PATH ||
-      "C:\\Users\\22365\\AppData\\Local\\LocalBridge\\data\\management-token.key";
+      path.join(getDefaultDataDir(), "data/management-token.key");
     this.mcpToken = options.explicitMcpToken || process.env.NEXUS_MCP_TOKEN || null;
   }
 
@@ -126,7 +133,7 @@ export class NexusClient {
     // Try reading root paths from runner's projects.json if accessible
     const rootPathsMap = new Map<string, string>();
     try {
-      const projectsJsonPath = "C:\\Users\\22365\\AppData\\Local\\LocalBridge\\runner\\projects.json";
+      const projectsJsonPath = path.join(getDefaultDataDir(), "runner/projects.json");
       if (fs.existsSync(projectsJsonPath)) {
         const parsed = JSON.parse(fs.readFileSync(projectsJsonPath, "utf-8"));
         if (Array.isArray(parsed.projects)) {
