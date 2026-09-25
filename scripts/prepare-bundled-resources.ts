@@ -120,11 +120,6 @@ async function main() {
   fs.copyFileSync(nodeSrc, destNodeExe);
   if (!isWin) {
     fs.chmodSync(destNodeExe, 0o755);
-    const compatNode = path.join(runtimeDir, "node.exe");
-    if (!fs.existsSync(compatNode)) {
-      fs.copyFileSync(nodeSrc, compatNode);
-    }
-    fs.chmodSync(compatNode, 0o755);
   }
   console.log(`-> Copied verified ${nodeExeName} to ${destNodeExe}`);
 
@@ -161,13 +156,6 @@ async function main() {
   fs.cpSync(path.join(betterSqlite3Root, "lib"), path.join(destBetterSqlite, "lib"), { recursive: true });
 
   const prebuildsSrc = path.join(betterSqlite3Root, "prebuilds");
-  const destPrebuilds = path.join(destBetterSqlite, "prebuilds");
-  fs.mkdirSync(destPrebuilds, { recursive: true });
-  const hostPrebuildFile = `${process.platform}-${process.arch}.node`;
-  if (fs.existsSync(path.join(prebuildsSrc, hostPrebuildFile))) {
-    fs.copyFileSync(path.join(prebuildsSrc, hostPrebuildFile), path.join(destPrebuilds, hostPrebuildFile));
-  }
-
   const destRelease = path.join(destBetterSqlite, "build/Release");
   fs.mkdirSync(destRelease, { recursive: true });
 
@@ -253,6 +241,11 @@ async function main() {
             const src = path.join(pnpmDir, entry, "node_modules/@koromix", subName);
             if (fs.existsSync(src)) {
               fs.cpSync(src, path.join(koromixDir, subName), { recursive: true });
+              // Remove musl subdirectories to prevent linuxdeploy architecture mismatch on glibc Linux
+              const muslX64 = path.join(koromixDir, subName, "musl_x64");
+              if (fs.existsSync(muslX64)) fs.rmSync(muslX64, { recursive: true, force: true });
+              const muslArm = path.join(koromixDir, subName, "musl_arm64");
+              if (fs.existsSync(muslArm)) fs.rmSync(muslArm, { recursive: true, force: true });
               console.log(`-> Packaged @koromix/${subName} into ${runnerNodeModules}`);
             }
           }
@@ -350,11 +343,6 @@ async function main() {
     child_process.execSync(`rustc -O "${launcherSrc}" -o "${launcherOut}"`, { cwd: rootDir, stdio: "inherit" });
     if (!isWin) {
       fs.chmodSync(launcherOut, 0o755);
-      const compatLauncher = path.join(bridgeDir, "nexus-mcp-bridge.exe");
-      if (!fs.existsSync(compatLauncher)) {
-        fs.copyFileSync(launcherOut, compatLauncher);
-      }
-      fs.chmodSync(compatLauncher, 0o755);
     }
     const pdb = path.join(bridgeDir, "nexus-mcp-bridge.pdb");
     if (fs.existsSync(pdb)) fs.rmSync(pdb, { force: true });
