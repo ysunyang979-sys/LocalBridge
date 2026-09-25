@@ -1,0 +1,63 @@
+name: Build macOS Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release Tag or Version (e.g. v1.2.0)"
+        required: false
+        default: "v1.2.0"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-macos:
+    name: Package macOS (.dmg) - ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            arch: aarch64
+            name: "Apple Silicon (M1/M2/M3/M4)"
+          - os: macos-13
+            arch: x86_64
+            name: "Intel (x64)"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Core Packages
+        run: pnpm -r --filter=./packages/* run build
+
+      - name: Package Desktop & macOS Installer (.dmg)
+        run: |
+          pnpm --filter=@localbridge/desktop exec tauri build
+
+      - name: Upload macOS Artifacts (.dmg)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexus-macOS-${{ matrix.arch }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app
+          retention-days: 30

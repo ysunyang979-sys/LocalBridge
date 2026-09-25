@@ -315,10 +315,13 @@ fn resolve_production_resources(app: &tauri::AppHandle) -> Result<ResourceDiagno
     let mut found_root: Option<PathBuf> = None;
     let mut fallback_count: u32 = 0;
 
+    let node_bin_name = if cfg!(target_os = "windows") { "node.exe" } else { "node" };
+    let bridge_bin_name = if cfg!(target_os = "windows") { "nexus-mcp-bridge.exe" } else { "nexus-mcp-bridge" };
+
     for cand in &candidates {
-        let node_check = cand.join("runtime").join("node.exe");
+        let node_check = cand.join("runtime").join(node_bin_name);
         let server_check = cand.join("server").join("index.js");
-        if node_check.exists() && server_check.exists() {
+        if (node_check.exists() || cand.join("runtime").join("node.exe").exists()) && server_check.exists() {
             found_root = Some(cand.clone());
             break;
         }
@@ -328,7 +331,8 @@ fn resolve_production_resources(app: &tauri::AppHandle) -> Result<ResourceDiagno
     if found_root.is_none() {
         if is_inside_repo() {
             let dev_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
-            if dev_root.join("runtime").join("node.exe").exists()
+            if (dev_root.join("runtime").join(node_bin_name).exists()
+                || dev_root.join("runtime").join("node.exe").exists())
                 && dev_root.join("server").join("index.js").exists()
             {
                 found_root = Some(dev_root);
@@ -356,11 +360,25 @@ fn resolve_production_resources(app: &tauri::AppHandle) -> Result<ResourceDiagno
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let node_path = resource_root.join("runtime").join("node.exe");
+    let node_path = {
+        let preferred = resource_root.join("runtime").join(node_bin_name);
+        if preferred.exists() {
+            preferred
+        } else {
+            resource_root.join("runtime").join("node.exe")
+        }
+    };
     let server_entry = resource_root.join("server").join("index.js");
     let runner_entry = resource_root.join("runner").join("index.js");
     let bridge_entry = resource_root.join("bridge").join("index.js");
-    let bridge_exe = resource_root.join("bridge").join("nexus-mcp-bridge.exe");
+    let bridge_exe = {
+        let preferred = resource_root.join("bridge").join(bridge_bin_name);
+        if preferred.exists() {
+            preferred
+        } else {
+            resource_root.join("bridge").join("nexus-mcp-bridge.exe")
+        }
+    };
     let lsp_root = resource_root.join("lsp");
     let skills_root = resource_root.join("skills");
     let laya_root = resource_root.join("laya");

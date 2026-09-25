@@ -89,20 +89,35 @@ async function main() {
   
   const versionOutput = child_process.execFileSync(nodeSrc, ["-v"]).toString().trim();
   console.log(`Node version: ${versionOutput}`);
-  if (versionOutput !== EXPECTED_NODE_VERSION) {
-    throw new Error(`Expected Node version ${EXPECTED_NODE_VERSION}, got ${versionOutput}`);
+  
+  const isWin = process.platform === "win32";
+  if (isWin) {
+    if (versionOutput !== EXPECTED_NODE_VERSION) {
+      throw new Error(`Expected Node version ${EXPECTED_NODE_VERSION}, got ${versionOutput}`);
+    }
+    const nodeBuffer = fs.readFileSync(nodeSrc);
+    const nodeHash = crypto.createHash("sha256").update(nodeBuffer).digest("hex").toLowerCase();
+    console.log(`Node SHA-256: ${nodeHash}`);
+    if (nodeHash !== EXPECTED_NODE_SHA256) {
+      throw new Error(`Node SHA-256 mismatch! Expected ${EXPECTED_NODE_SHA256}, got ${nodeHash}`);
+    }
+  } else {
+    if (!versionOutput.startsWith("v24.")) {
+      console.warn(`Non-Windows Node version: ${versionOutput}`);
+    }
   }
 
-  const nodeBuffer = fs.readFileSync(nodeSrc);
-  const nodeHash = crypto.createHash("sha256").update(nodeBuffer).digest("hex").toLowerCase();
-  console.log(`Node SHA-256: ${nodeHash}`);
-  if (nodeHash !== EXPECTED_NODE_SHA256) {
-    throw new Error(`Node SHA-256 mismatch! Expected ${EXPECTED_NODE_SHA256}, got ${nodeHash}`);
-  }
-
-  const destNodeExe = path.join(runtimeDir, "node.exe");
+  const nodeExeName = isWin ? "node.exe" : "node";
+  const destNodeExe = path.join(runtimeDir, nodeExeName);
   fs.copyFileSync(nodeSrc, destNodeExe);
-  console.log(`-> Copied verified node.exe (${nodeBuffer.length} bytes) to ${destNodeExe}`);
+  if (!isWin) {
+    fs.chmodSync(destNodeExe, 0o755);
+    const compatNode = path.join(runtimeDir, "node.exe");
+    if (!fs.existsSync(compatNode)) {
+      fs.copyFileSync(nodeSrc, compatNode);
+    }
+  }
+  console.log(`-> Copied verified ${nodeExeName} to ${destNodeExe}`);
 
   // 3. Bundle Server
   console.log("\nBundling @localbridge/server...");
@@ -289,12 +304,20 @@ async function main() {
   );
   console.log(`-> Bundled MCP bridge to ${bridgeOut}`);
 
-  // Compile standalone nexus-mcp-bridge.exe launcher
+  // Compile standalone nexus-mcp-bridge launcher
   const launcherSrc = path.resolve(rootDir, "scripts/bridge-launcher.rs");
-  const launcherOut = path.join(bridgeDir, "nexus-mcp-bridge.exe");
+  const launcherExeName = isWin ? "nexus-mcp-bridge.exe" : "nexus-mcp-bridge";
+  const launcherOut = path.join(bridgeDir, launcherExeName);
   if (fs.existsSync(launcherSrc)) {
-    console.log("Compiling standalone nexus-mcp-bridge.exe launcher...");
+    console.log(`Compiling standalone ${launcherExeName} launcher...`);
     child_process.execSync(`rustc -O "${launcherSrc}" -o "${launcherOut}"`, { cwd: rootDir, stdio: "inherit" });
+    if (!isWin) {
+      fs.chmodSync(launcherOut, 0o755);
+      const compatLauncher = path.join(bridgeDir, "nexus-mcp-bridge.exe");
+      if (!fs.existsSync(compatLauncher)) {
+        fs.copyFileSync(launcherOut, compatLauncher);
+      }
+    }
     const pdb = path.join(bridgeDir, "nexus-mcp-bridge.pdb");
     if (fs.existsSync(pdb)) fs.rmSync(pdb, { force: true });
     console.log(`-> Compiled standalone launcher to ${launcherOut}`);

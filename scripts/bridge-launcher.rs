@@ -7,14 +7,17 @@ fn main() {
     exe_path.pop(); // current directory: resources/bridge
     let bridge_js = exe_path.join("index.js");
 
-    // Look for bundled runtime node.exe at ../runtime/node.exe
+    // Look for bundled runtime node at ../runtime/node or node.exe
     let mut runtime_node = exe_path.clone();
     runtime_node.pop(); // resources/
     runtime_node.push("runtime");
-    runtime_node.push("node.exe");
+    let node_name = if cfg!(target_os = "windows") { "node.exe" } else { "node" };
+    runtime_node.push(node_name);
 
     let node_bin = if runtime_node.exists() {
         runtime_node
+    } else if runtime_node.with_file_name("node.exe").exists() {
+        runtime_node.with_file_name("node.exe")
     } else {
         // Fallback to system node if running in development
         PathBuf::from("node")

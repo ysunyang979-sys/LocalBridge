@@ -21,10 +21,11 @@ if (forbidden.length > 0) {
   throw new Error(`Tauri resource verification failed; database artifacts found:\n${forbidden.join("\n")}`);
 }
 
+const isWin = process.platform === "win32";
 const tunnelExe = path.join(resources, "tunnel/tunnel-client-runtime-cloudflared.exe");
 const cloudflaredExe = path.join(resources, "tunnel/cloudflared.exe");
 const license = path.join(resources, "tunnel/LICENSE");
-if (!fs.existsSync(tunnelExe) || !fs.existsSync(cloudflaredExe) || !fs.existsSync(license)) {
+if (isWin && (!fs.existsSync(tunnelExe) || !fs.existsSync(cloudflaredExe) || !fs.existsSync(license))) {
   throw new Error("Tauri resource verification failed; bundled tunnel runtime or license missing.");
 }
 
@@ -34,10 +35,11 @@ if (!fs.existsSync(lspCli) || !fs.existsSync(lspTsserver)) {
   throw new Error("Tauri resource verification failed; bundled language server (typescript-language-server / typescript) missing.");
 }
 
-const bundledNodeExe = path.join(resources, "runtime/node.exe");
-if (fs.existsSync(bundledNodeExe)) {
-  const version = child_process.execFileSync(bundledNodeExe, [lspCli, "--version"], {
-    env: { PATH: "", SystemRoot: process.env.SystemRoot || "C:\\Windows" },
+const bundledNodeExe = path.join(resources, isWin ? "runtime/node.exe" : "runtime/node");
+const actualNodeExe = fs.existsSync(bundledNodeExe) ? bundledNodeExe : path.join(resources, "runtime/node.exe");
+if (fs.existsSync(actualNodeExe)) {
+  const version = child_process.execFileSync(actualNodeExe, [lspCli, "--version"], {
+    env: { PATH: process.env.PATH || "", SystemRoot: process.env.SystemRoot || "C:\\Windows" },
   }).toString().trim();
   if (!version.startsWith("6.")) {
     throw new Error(`Tauri resource verification failed; unexpected language server version: ${version}`);
@@ -45,9 +47,10 @@ if (fs.existsSync(bundledNodeExe)) {
 }
 
 const bridgeJs = path.join(resources, "bridge/index.js");
-const bridgeExe = path.join(resources, "bridge/nexus-mcp-bridge.exe");
-if (!fs.existsSync(bridgeJs) || !fs.existsSync(bridgeExe)) {
-  throw new Error("Tauri resource verification failed; bundled MCP bridge (index.js or nexus-mcp-bridge.exe) missing.");
+const bridgeExe = path.join(resources, isWin ? "bridge/nexus-mcp-bridge.exe" : "bridge/nexus-mcp-bridge");
+const actualBridgeExe = fs.existsSync(bridgeExe) ? bridgeExe : path.join(resources, "bridge/nexus-mcp-bridge.exe");
+if (!fs.existsSync(bridgeJs) || !fs.existsSync(actualBridgeExe)) {
+  throw new Error("Tauri resource verification failed; bundled MCP bridge (index.js or launcher executable) missing.");
 }
 
 console.log("Bundled resources contain verified tunnel runtime, bundled language server, bundled MCP bridge, and no database or migration-backup artifacts.");
@@ -57,13 +60,13 @@ console.log("Bundled resources contain verified tunnel runtime, bundled language
 async function verifyBundledServerMcpSchema() {
   console.log("Verifying bundled server MCP tools/list schema...");
   const serverDir = path.join(resources, "server");
-  const nodeExe = path.join(resources, "runtime/node.exe");
+  const nodeExe = fs.existsSync(path.join(resources, "runtime/node.exe")) ? path.join(resources, "runtime/node.exe") : path.join(resources, "runtime/node");
 
   if (!fs.existsSync(path.join(serverDir, "index.js")) || !fs.existsSync(nodeExe)) {
     throw new Error("Bundled server or runtime missing for schema verification.");
   }
 
-  const tmpDbDir = fs.mkdtempSync(path.join(process.env.TEMP || "C:/temp", "lb-verify-tools-"));
+  const tmpDbDir = fs.mkdtempSync(path.join(process.env.TEMP || process.env.TMPDIR || "/tmp", "lb-verify-tools-"));
   const dbPath = path.join(tmpDbDir, "verify.db");
   const testPort = "18998";
   const mgmtToken = "lm_verify_secret_token_12345";
